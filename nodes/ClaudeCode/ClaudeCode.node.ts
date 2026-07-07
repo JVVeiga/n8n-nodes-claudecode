@@ -61,20 +61,52 @@ export class ClaudeCode implements INodeType {
 				displayName: 'Model',
 				name: 'model',
 				type: 'options',
+				// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
 				options: [
 					{
-						name: 'Sonnet',
+						name: 'Sonnet (Latest Alias)',
 						value: 'sonnet',
-						description: 'Fast and efficient model for most tasks',
+						description: 'Auto-resolves to the latest Sonnet — balanced speed and intelligence',
 					},
 					{
-						name: 'Opus',
+						name: 'Opus (Latest Alias)',
 						value: 'opus',
-						description: 'Most capable model for complex tasks',
+						description: 'Auto-resolves to the latest Opus — most capable for complex tasks',
+					},
+					{
+						name: 'Haiku (Latest Alias)',
+						value: 'haiku',
+						description: 'Auto-resolves to the latest Haiku — fastest and most cost-effective',
+					},
+					{
+						name: 'Opus 4.8',
+						value: 'claude-opus-4-8',
+						description: 'Most capable Opus-tier model, state-of-the-art agentic work',
+					},
+					{
+						name: 'Opus 4.7',
+						value: 'claude-opus-4-7',
+						description: 'Previous-generation Opus, highly autonomous',
+					},
+					{
+						name: 'Sonnet 5',
+						value: 'claude-sonnet-5',
+						description: 'Near-Opus quality on coding/agentic work at Sonnet cost',
+					},
+					{
+						name: 'Haiku 4.5',
+						value: 'claude-haiku-4-5',
+						description: 'Fast and cost-effective for simpler tasks',
+					},
+					{
+						name: 'Fable 5',
+						value: 'claude-fable-5',
+						description: 'Anthropic’s most capable model for demanding long-horizon work',
 					},
 				],
 				default: 'sonnet',
-				description: 'Claude model to use',
+				description:
+					'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
 			},
 			{
 				displayName: 'Max Turns',
@@ -195,21 +227,30 @@ export class ClaudeCode implements INodeType {
 						displayName: 'Fallback Model',
 						name: 'fallbackModel',
 						type: 'options',
+						// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
 						options: [
+							{ name: 'None', value: '', description: 'No fallback model' },
 							{
-								name: 'None',
-								value: '',
-								description: 'No fallback model',
-							},
-							{
-								name: 'Sonnet',
+								name: 'Sonnet (Latest Alias)',
 								value: 'sonnet',
-								description: 'Fallback to Sonnet when primary model is overloaded',
+								description: 'Fallback to latest Sonnet',
 							},
 							{
-								name: 'Opus',
+								name: 'Opus (Latest Alias)',
 								value: 'opus',
-								description: 'Fallback to Opus when primary model is overloaded',
+								description: 'Fallback to latest Opus',
+							},
+							{
+								name: 'Haiku (Latest Alias)',
+								value: 'haiku',
+								description: 'Fallback to latest Haiku',
+							},
+							{ name: 'Opus 4.8', value: 'claude-opus-4-8', description: 'Fallback to Opus 4.8' },
+							{ name: 'Sonnet 5', value: 'claude-sonnet-5', description: 'Fallback to Sonnet 5' },
+							{
+								name: 'Haiku 4.5',
+								value: 'claude-haiku-4-5',
+								description: 'Fallback to Haiku 4.5',
 							},
 						],
 						default: '',
