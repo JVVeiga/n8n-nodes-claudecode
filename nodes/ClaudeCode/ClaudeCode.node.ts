@@ -17,6 +17,7 @@ export class ClaudeCode implements INodeType {
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 		description:
 			'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',
+		usableAsTool: true,
 		defaults: {
 			name: 'Claude Code',
 		},
@@ -249,6 +250,15 @@ export class ClaudeCode implements INodeType {
 				default: {},
 				options: [
 					{
+						displayName: 'Claude Code Executable Path',
+						name: 'pathToClaudeCodeExecutable',
+						type: 'string',
+						default: '',
+						placeholder: '/usr/local/bin/claude',
+						description:
+							'Absolute path to a Claude Code CLI binary to use instead of the one bundled with the SDK (e.g. a globally installed "claude"). Leave empty to use the bundled executable.',
+					},
+					{
 						displayName: 'Debug Mode',
 						name: 'debug',
 						type: 'boolean',
@@ -371,6 +381,7 @@ export class ClaudeCode implements INodeType {
 					debug?: boolean;
 					fallbackModel?: string;
 					maxThinkingTokens?: number;
+					pathToClaudeCodeExecutable?: string;
 				};
 
 				// Create abort controller for timeout
@@ -423,7 +434,9 @@ export class ClaudeCode implements INodeType {
 						maxThinkingTokens?: number;
 						continue?: boolean;
 						cwd?: string;
+						pathToClaudeCodeExecutable?: string;
 						settings?: { ultracode?: boolean };
+						hooks?: any;
 					};
 				}
 
@@ -444,6 +457,22 @@ export class ClaudeCode implements INodeType {
 					queryOptions.options.settings = { ultracode: true };
 				}
 
+				// Capture the effort level Claude Code actually applies (post-downgrade).
+				// It is exposed only inside hooks, not in the message stream; Stop/SubagentStop
+				// fire at end of turn so plain replies (no tool use) are covered too.
+				let appliedEffort: string | undefined;
+				const captureEffort = async (input: any) => {
+					const level = input?.effort?.level;
+					if (level) appliedEffort = level;
+					return { continue: true };
+				};
+				queryOptions.options.hooks = {
+					PreToolUse: [{ hooks: [captureEffort] }],
+					PostToolUse: [{ hooks: [captureEffort] }],
+					Stop: [{ hooks: [captureEffort] }],
+					SubagentStop: [{ hooks: [captureEffort] }],
+				};
+
 				// Append the user-provided system prompt to Claude Code's default preset
 				// (rather than replacing it), preserving the built-in agent behavior.
 				if (additionalOptions.systemPrompt) {
@@ -452,6 +481,13 @@ export class ClaudeCode implements INodeType {
 						preset: 'claude_code',
 						append: additionalOptions.systemPrompt,
 					};
+				}
+
+				// Use a custom Claude Code executable if provided (e.g. a globally
+				// installed CLI) instead of the one bundled with the SDK.
+				if (additionalOptions.pathToClaudeCodeExecutable?.trim()) {
+					queryOptions.options.pathToClaudeCodeExecutable =
+						additionalOptions.pathToClaudeCodeExecutable.trim();
 				}
 
 				// Add project path (cwd) if specified
@@ -586,6 +622,38 @@ export class ClaudeCode implements INodeType {
 						this.logger.debug('All messages in order', { messageTypes });
 					}
 
+					// Diagnostics — verifiable proof of what actually ran. Lets callers
+					// confirm the resolved model, the effort Claude Code applied, and
+					// whether Ultracode orchestration (Workflow/subagent tools) fired.
+					const systemInitMsg = messages.find(
+						(m) => m.type === 'system' && (m as any).subtype === 'init',
+					) as any;
+					const countToolUse = (toolName: string): number =>
+						messages
+							.filter((m) => m.type === 'assistant')
+							.reduce(
+								(acc, m) =>
+									acc +
+									(((m as any).message?.content || []).filter(
+										(c: any) => c.type === 'tool_use' && c.name === toolName,
+									).length as number),
+								0,
+							);
+					const diagnostics = {
+						requestedModel: model,
+						resolvedModel: systemInitMsg?.model ?? null,
+						requestedEffort: effort,
+						effectiveEffort,
+						appliedEffort: appliedEffort ?? null,
+						ultracodeRequested: ultracode,
+						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
+						workflowToolUses: countToolUse('Workflow'),
+						subagentToolUses: countToolUse('Task'),
+					};
+					if (additionalOptions.debug) {
+						this.logger.debug('Run diagnostics', diagnostics);
+					}
+
 					// Format output based on selected format
 					if (outputFormat === 'text') {
 						// Find the result message
@@ -685,6 +753,7 @@ export class ClaudeCode implements INodeType {
 							success: resultMessage?.subtype === 'success' ? true : false,
 							duration_ms: Number(resultMessage?.duration_ms || 0),
 							total_cost_usd: Number(resultMessage?.total_cost_usd || 0),
+							diagnostics,
 						};
 
 						// Debug logging
@@ -735,6 +804,7 @@ export class ClaudeCode implements INodeType {
 							json: {
 								messages,
 								messageCount: messages.length,
+								diagnostics,
 							},
 							pairedItem: { item: itemIndex },
 						});
@@ -774,6 +844,7 @@ export class ClaudeCode implements INodeType {
 										}
 									: null,
 								success: resultMessage?.subtype === 'success',
+								diagnostics,
 							},
 							pairedItem: { item: itemIndex },
 						});
