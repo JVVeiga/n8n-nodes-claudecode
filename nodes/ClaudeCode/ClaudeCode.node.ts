@@ -109,6 +109,38 @@ export class ClaudeCode implements INodeType {
 					'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
 			},
 			{
+				displayName: 'Effort',
+				name: 'effort',
+				type: 'options',
+				// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+				options: [
+					{ name: 'Low', value: 'low', description: 'Minimal thinking, fastest responses' },
+					{ name: 'Medium', value: 'medium', description: 'Moderate thinking' },
+					{ name: 'High', value: 'high', description: 'Deep reasoning (recommended default)' },
+					{
+						name: 'xHigh',
+						value: 'xhigh',
+						description: 'Best for most coding and agentic tasks (Opus 4.7+, Sonnet 5)',
+					},
+					{
+						name: 'Max',
+						value: 'max',
+						description: 'Maximum effort when correctness matters more than cost',
+					},
+				],
+				default: 'high',
+				description:
+					'Reasoning effort — controls how much thinking Claude applies. Silently downgraded on models that don’t support the selected level.',
+			},
+			{
+				displayName: 'Enable Ultracode (Dynamic Workflows)',
+				name: 'ultracode',
+				type: 'boolean',
+				default: false,
+				description:
+					'Whether to enable Ultracode: standing dynamic multi-agent workflow orchestration (the Workflow tool) at xhigh effort. Applied as a real session setting; requires an xhigh-capable model (Opus 4.7+/Sonnet 5). Best for large, decomposable tasks.',
+			},
+			{
 				displayName: 'Max Turns',
 				name: 'maxTurns',
 				type: 'number',
@@ -318,8 +350,15 @@ export class ClaudeCode implements INodeType {
 			let timeout = 300; // Default timeout
 			try {
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
-				const prompt = this.getNodeParameter('prompt', itemIndex) as string;
+				const rawPrompt = this.getNodeParameter('prompt', itemIndex) as string;
 				const model = this.getNodeParameter('model', itemIndex) as string;
+				const effort = this.getNodeParameter('effort', itemIndex, 'high') as
+					| 'low'
+					| 'medium'
+					| 'high'
+					| 'xhigh'
+					| 'max';
+				const ultracode = this.getNodeParameter('ultracode', itemIndex, false) as boolean;
 				const maxTurns = this.getNodeParameter('maxTurns', itemIndex) as number;
 				timeout = this.getNodeParameter('timeout', itemIndex) as number;
 				const projectPath = this.getNodeParameter('projectPath', itemIndex) as string;
@@ -340,11 +379,18 @@ export class ClaudeCode implements INodeType {
 				const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
 
 				// Validate required parameters
-				if (!prompt || prompt.trim() === '') {
+				if (!rawPrompt || rawPrompt.trim() === '') {
 					throw new NodeOperationError(this.getNode(), 'Prompt is required and cannot be empty', {
 						itemIndex,
 					});
 				}
+
+				const prompt = rawPrompt;
+
+				// Ultracode is a real session setting (settings.ultracode) applied below:
+				// it enables standing dynamic-workflow orchestration and requires xhigh
+				// effort on an xhigh-capable model, so bump effort to xhigh when lower.
+				const effectiveEffort = ultracode && effort !== 'max' ? 'xhigh' : effort;
 
 				// Log start
 				if (additionalOptions.debug) {
@@ -368,6 +414,7 @@ export class ClaudeCode implements INodeType {
 						maxTurns: number;
 						permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
 						model: string;
+						effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 						systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
 						mcpServers?: Record<string, any>;
 						allowedTools?: string[];
@@ -376,6 +423,7 @@ export class ClaudeCode implements INodeType {
 						maxThinkingTokens?: number;
 						continue?: boolean;
 						cwd?: string;
+						settings?: { ultracode?: boolean };
 					};
 				}
 
@@ -386,8 +434,15 @@ export class ClaudeCode implements INodeType {
 						maxTurns,
 						permissionMode: (additionalOptions.permissionMode || 'bypassPermissions') as any,
 						model,
+						effort: effectiveEffort,
 					},
 				};
+
+				// Enable Ultracode as a real session setting: standing dynamic-workflow
+				// orchestration at xhigh effort (requires an xhigh-capable model + workflows).
+				if (ultracode) {
+					queryOptions.options.settings = { ultracode: true };
+				}
 
 				// Append the user-provided system prompt to Claude Code's default preset
 				// (rather than replacing it), preserving the built-in agent behavior.
