@@ -5,7 +5,7 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
-import { query, type SDKMessage } from '@anthropic-ai/claude-code';
+import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export class ClaudeCode implements INodeType {
 	description: INodeTypeDescription = {
@@ -322,12 +322,12 @@ export class ClaudeCode implements INodeType {
 				// Build query options
 				interface QueryOptions {
 					prompt: string;
-					abortController: AbortController;
 					options: {
+						abortController: AbortController;
 						maxTurns: number;
 						permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
 						model: string;
-						systemPrompt?: string;
+						systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
 						mcpServers?: Record<string, any>;
 						allowedTools?: string[];
 						disallowedTools?: string[];
@@ -340,17 +340,22 @@ export class ClaudeCode implements INodeType {
 
 				const queryOptions: QueryOptions = {
 					prompt,
-					abortController,
 					options: {
+						abortController,
 						maxTurns,
 						permissionMode: (additionalOptions.permissionMode || 'bypassPermissions') as any,
 						model,
 					},
 				};
 
-				// Add optional parameters
+				// Append the user-provided system prompt to Claude Code's default preset
+				// (rather than replacing it), preserving the built-in agent behavior.
 				if (additionalOptions.systemPrompt) {
-					queryOptions.options.systemPrompt = additionalOptions.systemPrompt;
+					queryOptions.options.systemPrompt = {
+						type: 'preset',
+						preset: 'claude_code',
+						append: additionalOptions.systemPrompt,
+					};
 				}
 
 				// Add project path (cwd) if specified
@@ -430,9 +435,9 @@ export class ClaudeCode implements INodeType {
 									type: message.type,
 									subtype: resultMsg.subtype,
 									hasResult: !!resultMsg.result,
-									hasError: !!resultMsg.error,
+									hasError: !!(resultMsg.error || resultMsg.errors?.length),
 									resultLength: resultMsg.result ? String(resultMsg.result).length : 0,
-									error: resultMsg.error || 'none',
+									error: resultMsg.error || resultMsg.errors?.join('; ') || 'none',
 									duration_ms: resultMsg.duration_ms,
 									total_cost: resultMsg.total_cost_usd,
 								});
@@ -441,7 +446,7 @@ export class ClaudeCode implements INodeType {
 								if (resultMsg.subtype === 'error_during_execution') {
 									this.logger.error('Claude Code execution error', {
 										subtype: resultMsg.subtype,
-										error: resultMsg.error,
+										error: resultMsg.error || resultMsg.errors?.join('; '),
 										details: JSON.stringify(resultMsg).substring(0, 500),
 									});
 								}
@@ -504,9 +509,9 @@ export class ClaudeCode implements INodeType {
 						if (resultMessage) {
 							if (resultMessage.result) {
 								finalText = resultMessage.result;
-							} else if (resultMessage.error) {
-								errorText = resultMessage.error;
-								finalText = `Error: ${resultMessage.error}`;
+							} else if (resultMessage.error || resultMessage.errors?.length) {
+								errorText = resultMessage.error || resultMessage.errors.join('; ');
+								finalText = `Error: ${errorText}`;
 							} else if (resultMessage.subtype === 'error_max_turns') {
 								errorText = 'Maximum turns reached';
 								// Try to get the last assistant message before max turns
@@ -555,9 +560,9 @@ export class ClaudeCode implements INodeType {
 									type: resultMessage.type,
 									subtype: resultMessage.subtype,
 									hasResult: !!resultMessage.result,
-									hasError: !!resultMessage.error,
+									hasError: !!(resultMessage.error || resultMessage.errors?.length),
 									resultLength: resultMessage.result ? String(resultMessage.result).length : 0,
-									errorMessage: resultMessage.error || 'none',
+									errorMessage: resultMessage.error || resultMessage.errors?.join('; ') || 'none',
 								});
 							}
 						} else {
@@ -660,7 +665,10 @@ export class ClaudeCode implements INodeType {
 									hasResult: !!resultMessage,
 									toolsAvailable: systemInit?.tools || [],
 								},
-								result: resultMessage?.result || resultMessage?.error || null,
+								result:
+									resultMessage?.result ||
+									resultMessage?.error ||
+									(resultMessage?.errors?.length ? resultMessage.errors.join('; ') : null),
 								metrics: resultMessage
 									? {
 											duration_ms: resultMessage.duration_ms,
