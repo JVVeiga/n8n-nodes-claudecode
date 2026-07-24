@@ -80,9 +80,14 @@ export class ClaudeCode implements INodeType {
 						description: 'Auto-resolves to the latest Haiku — fastest and most cost-effective',
 					},
 					{
+						name: 'Opus 5',
+						value: 'claude-opus-5',
+						description: 'Latest and most capable Opus model',
+					},
+					{
 						name: 'Opus 4.8',
 						value: 'claude-opus-4-8',
-						description: 'Most capable Opus-tier model, state-of-the-art agentic work',
+						description: 'Previous-generation Opus, state-of-the-art agentic work',
 					},
 					{
 						name: 'Opus 4.7',
@@ -286,6 +291,7 @@ export class ClaudeCode implements INodeType {
 								value: 'haiku',
 								description: 'Fallback to latest Haiku',
 							},
+							{ name: 'Opus 5', value: 'claude-opus-5', description: 'Fallback to Opus 5' },
 							{ name: 'Opus 4.8', value: 'claude-opus-4-8', description: 'Fallback to Opus 4.8' },
 							{ name: 'Sonnet 5', value: 'claude-sonnet-5', description: 'Fallback to Sonnet 5' },
 							{
