@@ -728,6 +728,48 @@ export class ClaudeCode implements INodeType {
 				const includeTranscript = additionalOptions.includeTranscript !== false;
 				const startTime = Date.now();
 
+				// Diagnostics — verifiable proof of what actually ran. Lets callers
+				// confirm the resolved model, the effort Claude Code applied, and
+				// whether Ultracode orchestration (Workflow/subagent tools) fired.
+				// Built from whatever arrived, so it is also usable from the catch.
+				const buildDiagnostics = (): Record<string, unknown> => {
+					const systemInitMsg = messages.find(
+						(m) => m.type === 'system' && (m as any).subtype === 'init',
+					) as any;
+					const resultMsg = messages.find((m) => m.type === 'result') as any;
+					const countContent = (predicate: (c: any) => boolean): number =>
+						messages
+							.filter((m) => m.type === 'assistant')
+							.reduce(
+								(acc, m) => acc + ((m as any).message?.content || []).filter(predicate).length,
+								0,
+							);
+					return {
+						requestedModel: model,
+						resolvedModel: systemInitMsg?.model ?? null,
+						// Per-model spend, the only post-hoc record of which models ran.
+						// The init message reports the model chosen at session start, so
+						// it does not reflect a mid-run switch to the fallback.
+						modelsUsed: Object.keys(resultMsg?.modelUsage ?? {}),
+						fallbackModelRequested: additionalOptions.fallbackModel || null,
+						requestedEffort: effort,
+						effectiveEffort,
+						appliedEffort: appliedEffort ?? null,
+						permissionMode: queryOptions.options.permissionMode,
+						sessionId: resultMsg?.session_id ?? systemInitMsg?.session_id ?? null,
+						ultracodeRequested: ultracode,
+						// Whether the CLI loaded the Workflow tool for this run. Allowed
+						// Tools cannot gate this: it is the SDK's auto-approve list, not a
+						// restriction. Disallowed Tools does remove tools from the model's
+						// context, so the init list already accounts for it.
+						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
+						workflowToolUses: countContent((c) => c.type === 'tool_use' && c.name === 'Workflow'),
+						subagentToolUses: countContent((c) => c.type === 'tool_use' && c.name === 'Task'),
+						thinkingRequested: additionalOptions.thinking || 'default',
+						thinkingBlocks: countContent((c) => c.type === 'thinking'),
+					};
+				};
+
 				try {
 					for await (const message of query(queryOptions)) {
 						messages.push(message);
@@ -815,57 +857,7 @@ export class ClaudeCode implements INodeType {
 						this.logger.debug('All messages in order', { messageTypes });
 					}
 
-					// Diagnostics — verifiable proof of what actually ran. Lets callers
-					// confirm the resolved model, the effort Claude Code applied, and
-					// whether Ultracode orchestration (Workflow/subagent tools) fired.
-					const systemInitMsg = messages.find(
-						(m) => m.type === 'system' && (m as any).subtype === 'init',
-					) as any;
-					const countToolUse = (toolName: string): number =>
-						messages
-							.filter((m) => m.type === 'assistant')
-							.reduce(
-								(acc, m) =>
-									acc +
-									(((m as any).message?.content || []).filter(
-										(c: any) => c.type === 'tool_use' && c.name === toolName,
-									).length as number),
-								0,
-							);
-					const finalResultMsg = messages.find((m) => m.type === 'result') as any;
-					// Per-model spend, the only post-hoc record of which models ran. The
-					// init message reports the model chosen at session start, so it does
-					// not reflect a mid-run switch to the fallback.
-					const modelsUsed = Object.keys(finalResultMsg?.modelUsage ?? {});
-					diagnostics = {
-						requestedModel: model,
-						resolvedModel: systemInitMsg?.model ?? null,
-						modelsUsed,
-						fallbackModelRequested: additionalOptions.fallbackModel || null,
-						requestedEffort: effort,
-						effectiveEffort,
-						appliedEffort: appliedEffort ?? null,
-						permissionMode: queryOptions.options.permissionMode,
-						sessionId: finalResultMsg?.session_id ?? systemInitMsg?.session_id ?? null,
-						ultracodeRequested: ultracode,
-						// Whether the CLI loaded the Workflow tool for this run. Allowed
-						// Tools cannot gate this: it is the SDK's auto-approve list, not a
-						// restriction. Disallowed Tools does remove tools from the model's
-						// context, so the init list already accounts for it.
-						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
-						workflowToolUses: countToolUse('Workflow'),
-						subagentToolUses: countToolUse('Task'),
-						thinkingRequested: additionalOptions.thinking || 'default',
-						thinkingBlocks: messages
-							.filter((m) => m.type === 'assistant')
-							.reduce(
-								(acc, m) =>
-									acc +
-									(((m as any).message?.content || []).filter((c: any) => c.type === 'thinking')
-										.length as number),
-								0,
-							),
-					};
+					diagnostics = buildDiagnostics();
 					if (additionalOptions.debug) {
 						this.logger.debug('Run diagnostics', diagnostics);
 					}
@@ -1075,6 +1067,7 @@ export class ClaudeCode implements INodeType {
 					// and session data are already in `messages` — report them instead of
 					// claiming the run was free.
 					const failedResult = messages.find((m) => m.type === 'result') as any;
+					diagnostics = buildDiagnostics();
 
 					// Only soften the failure when the workflow asked for it. Returning a
 					// normal item unconditionally hid every failure behind a green
