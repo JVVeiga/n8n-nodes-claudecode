@@ -455,6 +455,7 @@ export class ClaudeCode implements INodeType {
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			let timeout = 300; // Default timeout
+			let timedOut = false;
 			try {
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 				const rawPrompt = this.getNodeParameter('prompt', itemIndex) as string;
@@ -485,17 +486,26 @@ export class ClaudeCode implements INodeType {
 					thinking?: string;
 				};
 
-				// Create abort controller for timeout
-				const abortController = new AbortController();
-				const timeoutMs = timeout * 1000;
-				const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
-
-				// Validate required parameters
+				// Validate required parameters before arming the timer, so a rejected
+				// prompt cannot leak a pending timeout handle.
 				if (!rawPrompt || rawPrompt.trim() === '') {
 					throw new NodeOperationError(this.getNode(), 'Prompt is required and cannot be empty', {
 						itemIndex,
 					});
 				}
+
+				// Create abort controller for timeout
+				const abortController = new AbortController();
+				const timeoutMs = timeout * 1000;
+				const timeoutId = setTimeout(() => {
+					timedOut = true;
+					abortController.abort();
+				}, timeoutMs);
+
+				// Stopping the n8n execution must also stop the agent. Without this the
+				// spawned Claude Code process keeps running — and keeps spending — until
+				// its own timeout, with its output discarded.
+				this.onExecutionCancellation(() => abortController.abort());
 
 				const prompt = rawPrompt;
 
@@ -724,8 +734,6 @@ export class ClaudeCode implements INodeType {
 							}
 						}
 					}
-
-					clearTimeout(timeoutId);
 
 					const duration = Date.now() - startTime;
 					if (additionalOptions.debug) {
@@ -985,8 +993,6 @@ export class ClaudeCode implements INodeType {
 						});
 					}
 				} catch (queryError) {
-					clearTimeout(timeoutId);
-
 					// If we're in text output mode and error occurs during query, return error data
 					if (outputFormat === 'text') {
 						const errorMessage =
@@ -1003,10 +1009,14 @@ export class ClaudeCode implements INodeType {
 					} else {
 						throw queryError;
 					}
+				} finally {
+					clearTimeout(timeoutId);
 				}
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-				const isTimeout = error instanceof Error && error.name === 'AbortError';
+				// The SDK's AbortError does not override `name`, so it reports as 'Error'.
+				// Track the timeout ourselves instead of sniffing the error.
+				const isTimeout = timedOut;
 
 				if (this.continueOnFail()) {
 					returnData.push({
