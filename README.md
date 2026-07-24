@@ -192,7 +192,7 @@ Extend Claude Code with specialized capabilities:
   "allowedTools": ["Read", "Write", "Edit", "MultiEdit", "Grep"],
   "disallowedTools": ["Bash"],  // Prevent command execution for safety
   "additionalOptions": {
-    "permissionMode": "plan",  // Claude will plan before executing
+    "permissionMode": "plan",  // Claude plans and executes no tools
     "fallbackModel": "sonnet",  // Auto-switch if Opus is overloaded
     "maxThinkingTokens": 50000,  // Allow deep reasoning for complex refactoring
     "systemPrompt": "Preserve all existing functionality while modernizing the code"

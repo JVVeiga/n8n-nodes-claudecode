@@ -158,7 +158,8 @@ export class ClaudeCode implements INodeType {
 				name: 'timeout',
 				type: 'number',
 				default: 300,
-				description: 'Maximum time to wait for completion (in seconds) before aborting',
+				description:
+					'Maximum time to wait for completion (in seconds) before aborting. Applies per input item, so a node processing N items can run for up to N times this long.',
 			},
 			{
 				displayName: 'Project Path',
@@ -250,7 +251,7 @@ export class ClaudeCode implements INodeType {
 				],
 				default: ['WebFetch', 'TodoWrite', 'WebSearch', 'Task'],
 				description:
-					'Restrict Claude Code to these built-in tools. Leave empty to allow every tool the CLI provides; selecting any tool blocks the rest. When Effort is set to Ultracode, Workflow and Task are added automatically so orchestration still works.',
+					'Pre-approve these tools so they run without a permission prompt. This does NOT restrict anything — unlisted tools stay available. To block a tool, use Disallowed Tools, which removes it from the model entirely.',
 			},
 			{
 				displayName: 'Disallowed Tools',
@@ -436,7 +437,8 @@ export class ClaudeCode implements INodeType {
 							{
 								name: 'Plan',
 								value: 'plan',
-								description: 'Planning mode - Claude will plan before executing',
+								description:
+									'Planning mode - Claude produces a plan and executes no tools. Nothing is written.',
 							},
 						],
 						default: 'bypassPermissions',
@@ -646,10 +648,9 @@ export class ClaudeCode implements INodeType {
 					}
 				}
 
-				// Set allowed tools if any are specified
-				// Allowed Tools is an allowlist, so a selection that omits Workflow would
-				// silently disable Ultracode orchestration. Add what Ultracode needs when
-				// it is the selected effort.
+				// Allowed Tools is the SDK's auto-approve list — it pre-approves tools
+				// rather than restricting the set. Under Ultracode, pre-approve what the
+				// orchestration needs so it is not gated by a permission prompt.
 				const effectiveAllowedTools =
 					ultracode && allowedTools.length > 0
 						? Array.from(new Set([...allowedTools, 'Workflow', 'Task']))
