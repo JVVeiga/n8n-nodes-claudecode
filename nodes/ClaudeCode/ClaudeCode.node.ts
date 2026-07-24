@@ -246,6 +246,7 @@ export class ClaudeCode implements INodeType {
 				type: 'collection',
 				placeholder: 'Add Option',
 				default: {},
+				// eslint-disable-next-line n8n-nodes-base/node-param-collection-type-unsorted-items
 				options: [
 					{
 						displayName: 'Claude Code Executable Path',
@@ -295,6 +296,35 @@ export class ClaudeCode implements INodeType {
 						],
 						default: '',
 						description: 'Automatically switch to fallback model when primary model is overloaded',
+					},
+					{
+						displayName: 'Thinking',
+						name: 'thinking',
+						type: 'options',
+						// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+						options: [
+							{
+								name: 'Default (Model/Effort Decides)',
+								value: '',
+								description: 'Let the model and effort level decide; reasoning text stays hidden',
+							},
+							{
+								name: 'Adaptive',
+								value: 'adaptive',
+								description:
+									'Claude decides when and how much to think; reasoning text stays hidden',
+							},
+							{
+								name: 'Adaptive (Show Summary)',
+								value: 'summarized',
+								description:
+									'Adaptive thinking with a readable summary of the reasoning included in the output messages',
+							},
+							{ name: 'Off', value: 'disabled', description: 'Disable extended thinking' },
+						],
+						default: '',
+						description:
+							'Control extended/adaptive thinking. Takes precedence over Max Thinking Tokens. On recent models budget-based thinking is unsupported — use Effort to tune depth.',
 					},
 					{
 						displayName: 'Max Thinking Tokens',
@@ -383,6 +413,7 @@ export class ClaudeCode implements INodeType {
 					fallbackModel?: string;
 					maxThinkingTokens?: number;
 					pathToClaudeCodeExecutable?: string;
+					thinking?: string;
 				};
 
 				// Create abort controller for timeout
@@ -436,6 +467,7 @@ export class ClaudeCode implements INodeType {
 						continue?: boolean;
 						cwd?: string;
 						pathToClaudeCodeExecutable?: string;
+						thinking?: { type: 'adaptive' | 'disabled'; display?: 'summarized' };
 						settings?: { ultracode?: boolean };
 						hooks?: any;
 					};
@@ -518,6 +550,16 @@ export class ClaudeCode implements INodeType {
 				// Add fallback model if specified
 				if (additionalOptions.fallbackModel) {
 					queryOptions.options.fallbackModel = additionalOptions.fallbackModel;
+				}
+
+				// Map the Thinking selection to the SDK thinking config. When set, it
+				// takes precedence over Max Thinking Tokens (SDK behavior).
+				if (additionalOptions.thinking === 'disabled') {
+					queryOptions.options.thinking = { type: 'disabled' };
+				} else if (additionalOptions.thinking === 'adaptive') {
+					queryOptions.options.thinking = { type: 'adaptive' };
+				} else if (additionalOptions.thinking === 'summarized') {
+					queryOptions.options.thinking = { type: 'adaptive', display: 'summarized' };
 				}
 
 				// Add max thinking tokens if specified
@@ -650,6 +692,16 @@ export class ClaudeCode implements INodeType {
 						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
 						workflowToolUses: countToolUse('Workflow'),
 						subagentToolUses: countToolUse('Task'),
+						thinkingRequested: additionalOptions.thinking || 'default',
+						thinkingBlocks: messages
+							.filter((m) => m.type === 'assistant')
+							.reduce(
+								(acc, m) =>
+									acc +
+									(((m as any).message?.content || []).filter((c: any) => c.type === 'thinking')
+										.length as number),
+								0,
+							),
 					};
 					if (additionalOptions.debug) {
 						this.logger.debug('Run diagnostics', diagnostics);
