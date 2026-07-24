@@ -821,19 +821,27 @@ export class ClaudeCode implements INodeType {
 									).length as number),
 								0,
 							);
+					const finalResultMsg = messages.find((m) => m.type === 'result') as any;
+					// Per-model spend, the only post-hoc record of which models ran. The
+					// init message reports the model chosen at session start, so it does
+					// not reflect a mid-run switch to the fallback.
+					const modelsUsed = Object.keys(finalResultMsg?.modelUsage ?? {});
 					diagnostics = {
 						requestedModel: model,
 						resolvedModel: systemInitMsg?.model ?? null,
+						modelsUsed,
+						fallbackModelRequested: additionalOptions.fallbackModel || null,
 						requestedEffort: effort,
 						effectiveEffort,
 						appliedEffort: appliedEffort ?? null,
+						permissionMode: queryOptions.options.permissionMode,
+						sessionId: finalResultMsg?.session_id ?? systemInitMsg?.session_id ?? null,
 						ultracodeRequested: ultracode,
-						// True only if the CLI provides Workflow *and* the allow/disallow
-						// selection actually leaves it usable for this run.
-						workflowToolAvailable:
-							(systemInitMsg?.tools ?? []).includes('Workflow') &&
-							(effectiveAllowedTools.length === 0 || effectiveAllowedTools.includes('Workflow')) &&
-							!disallowedTools.includes('Workflow'),
+						// Whether the CLI loaded the Workflow tool for this run. Allowed
+						// Tools cannot gate this: it is the SDK's auto-approve list, not a
+						// restriction. Disallowed Tools does remove tools from the model's
+						// context, so the init list already accounts for it.
+						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
 						workflowToolUses: countToolUse('Workflow'),
 						subagentToolUses: countToolUse('Task'),
 						thinkingRequested: additionalOptions.thinking || 'default',
