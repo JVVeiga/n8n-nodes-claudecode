@@ -334,6 +334,15 @@ export class ClaudeCode implements INodeType {
 						description: 'Whether to enable debug logging',
 					},
 					{
+						displayName: 'Max Budget (USD)',
+						name: 'maxBudgetUsd',
+						type: 'number',
+						default: 0,
+						typeOptions: { minValue: 0, numberPrecision: 4 },
+						description:
+							'Hard spend cap for a single run. The query stops once it is exceeded and returns an error result. Set to 0 to disable. Max Turns and Timeout bound length, not cost.',
+					},
+					{
 						displayName: 'Fallback Model',
 						name: 'fallbackModel',
 						type: 'options',
@@ -487,6 +496,7 @@ export class ClaudeCode implements INodeType {
 					debug?: boolean;
 					fallbackModel?: string;
 					maxThinkingTokens?: number;
+					maxBudgetUsd?: number;
 					pathToClaudeCodeExecutable?: string;
 					thinking?: string;
 				};
@@ -548,6 +558,7 @@ export class ClaudeCode implements INodeType {
 						disallowedTools?: string[];
 						fallbackModel?: string;
 						maxThinkingTokens?: number;
+						maxBudgetUsd?: number;
 						continue?: boolean;
 						cwd?: string;
 						pathToClaudeCodeExecutable?: string;
@@ -690,6 +701,12 @@ export class ClaudeCode implements INodeType {
 				// Add max thinking tokens if specified
 				if (additionalOptions.maxThinkingTokens && additionalOptions.maxThinkingTokens > 0) {
 					queryOptions.options.maxThinkingTokens = additionalOptions.maxThinkingTokens;
+				}
+
+				// Hard spend cap. Max Turns and Timeout bound how long a run goes, not
+				// what it costs; this is the only money bound the SDK offers.
+				if (additionalOptions.maxBudgetUsd && additionalOptions.maxBudgetUsd > 0) {
+					queryOptions.options.maxBudgetUsd = additionalOptions.maxBudgetUsd;
 				}
 
 				// Add continue flag if needed
