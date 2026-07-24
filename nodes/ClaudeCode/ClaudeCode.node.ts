@@ -335,6 +335,14 @@ export class ClaudeCode implements INodeType {
 						description: 'Whether to enable debug logging',
 					},
 					{
+						displayName: 'Include Raw Transcript',
+						name: 'includeTranscript',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether to embed the full message transcript in the output. It carries every tool result verbatim — file contents, command output — and n8n stores it with the execution. Turn off to keep only the summary, result and metrics.',
+					},
+					{
 						displayName: 'Max Budget (USD)',
 						name: 'maxBudgetUsd',
 						type: 'number',
@@ -499,6 +507,7 @@ export class ClaudeCode implements INodeType {
 					fallbackModel?: string;
 					maxThinkingTokens?: number;
 					maxBudgetUsd?: number;
+					includeTranscript?: boolean;
 					pathToClaudeCodeExecutable?: string;
 					thinking?: string;
 				};
@@ -716,6 +725,7 @@ export class ClaudeCode implements INodeType {
 				}
 
 				// Execute query
+				const includeTranscript = additionalOptions.includeTranscript !== false;
 				const startTime = Date.now();
 
 				try {
@@ -1013,7 +1023,7 @@ export class ClaudeCode implements INodeType {
 						// Return raw messages
 						returnData.push({
 							json: {
-								messages,
+								...(includeTranscript ? { messages } : {}),
 								messageCount: messages.length,
 								diagnostics,
 							},
@@ -1034,7 +1044,7 @@ export class ClaudeCode implements INodeType {
 
 						returnData.push({
 							json: {
-								messages,
+								...(includeTranscript ? { messages } : {}),
 								summary: {
 									userMessageCount: userMessages.length,
 									assistantMessageCount: assistantMessages.length,
