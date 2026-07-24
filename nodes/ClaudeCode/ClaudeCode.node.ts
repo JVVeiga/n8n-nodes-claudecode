@@ -128,18 +128,16 @@ export class ClaudeCode implements INodeType {
 						value: 'max',
 						description: 'Maximum effort when correctness matters more than cost',
 					},
+					{
+						name: 'Ultracode (xHigh + Workflows)',
+						value: 'ultracode',
+						description:
+							'Standing dynamic multi-agent workflow orchestration (the Workflow tool) on top of xHigh effort. Requires an xHigh-capable model (Opus 4.7+/Sonnet 5). Best for large, decomposable tasks.',
+					},
 				],
 				default: 'high',
 				description:
-					'Reasoning effort — controls how much thinking Claude applies. Silently downgraded on models that don’t support the selected level.',
-			},
-			{
-				displayName: 'Enable Ultracode (Dynamic Workflows)',
-				name: 'ultracode',
-				type: 'boolean',
-				default: false,
-				description:
-					'Whether to enable Ultracode: standing dynamic multi-agent workflow orchestration (the Workflow tool) at xhigh effort. Applied as a real session setting; requires an xhigh-capable model (Opus 4.7+/Sonnet 5). Best for large, decomposable tasks.',
+					'Reasoning effort — controls how much thinking Claude applies. Ultracode adds standing dynamic-workflow orchestration on top of xHigh. Silently downgraded on models that don’t support the selected level.',
 			},
 			{
 				displayName: 'Max Turns',
@@ -367,8 +365,11 @@ export class ClaudeCode implements INodeType {
 					| 'medium'
 					| 'high'
 					| 'xhigh'
-					| 'max';
-				const ultracode = this.getNodeParameter('ultracode', itemIndex, false) as boolean;
+					| 'max'
+					| 'ultracode';
+				// Ultracode is the top of the effort selector (matches Claude Code's own UI):
+				// it means xHigh effort plus standing dynamic-workflow orchestration.
+				const ultracode = effort === 'ultracode';
 				const maxTurns = this.getNodeParameter('maxTurns', itemIndex) as number;
 				timeout = this.getNodeParameter('timeout', itemIndex) as number;
 				const projectPath = this.getNodeParameter('projectPath', itemIndex) as string;
@@ -398,10 +399,10 @@ export class ClaudeCode implements INodeType {
 
 				const prompt = rawPrompt;
 
-				// Ultracode is a real session setting (settings.ultracode) applied below:
-				// it enables standing dynamic-workflow orchestration and requires xhigh
-				// effort on an xhigh-capable model, so bump effort to xhigh when lower.
-				const effectiveEffort = ultracode && effort !== 'max' ? 'xhigh' : effort;
+				// Ultracode maps to xHigh effort (its defined level) plus the
+				// settings.ultracode session flag applied below. All other selections
+				// pass through unchanged.
+				const effectiveEffort = effort === 'ultracode' ? 'xhigh' : effort;
 
 				// Log start
 				if (additionalOptions.debug) {
