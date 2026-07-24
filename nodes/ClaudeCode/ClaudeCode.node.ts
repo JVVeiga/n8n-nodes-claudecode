@@ -456,6 +456,10 @@ export class ClaudeCode implements INodeType {
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			let timeout = 300; // Default timeout
 			let timedOut = false;
+			// Declared per item and outside the try blocks so every error path can
+			// still report what ran and what it cost.
+			const messages: SDKMessage[] = [];
+			let diagnostics: Record<string, unknown> | null = null;
 			try {
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 				const rawPrompt = this.getNodeParameter('prompt', itemIndex) as string;
@@ -660,7 +664,6 @@ export class ClaudeCode implements INodeType {
 				}
 
 				// Execute query
-				const messages: SDKMessage[] = [];
 				const startTime = Date.now();
 
 				try {
@@ -697,9 +700,9 @@ export class ClaudeCode implements INodeType {
 									type: message.type,
 									subtype: resultMsg.subtype,
 									hasResult: !!resultMsg.result,
-									hasError: !!(resultMsg.error || resultMsg.errors?.length),
+									hasError: !!resultMsg.errors?.length,
 									resultLength: resultMsg.result ? String(resultMsg.result).length : 0,
-									error: resultMsg.error || resultMsg.errors?.join('; ') || 'none',
+									error: resultMsg.errors?.join('; ') || 'none',
 									duration_ms: resultMsg.duration_ms,
 									total_cost: resultMsg.total_cost_usd,
 								});
@@ -708,7 +711,7 @@ export class ClaudeCode implements INodeType {
 								if (resultMsg.subtype === 'error_during_execution') {
 									this.logger.error('Claude Code execution error', {
 										subtype: resultMsg.subtype,
-										error: resultMsg.error || resultMsg.errors?.join('; '),
+										error: resultMsg.errors?.join('; '),
 										details: JSON.stringify(resultMsg).substring(0, 500),
 									});
 								}
@@ -767,7 +770,7 @@ export class ClaudeCode implements INodeType {
 									).length as number),
 								0,
 							);
-					const diagnostics = {
+					diagnostics = {
 						requestedModel: model,
 						resolvedModel: systemInitMsg?.model ?? null,
 						requestedEffort: effort,
@@ -814,13 +817,13 @@ export class ClaudeCode implements INodeType {
 						let errorText = '';
 
 						if (resultMessage) {
+							// Subtype must be checked before the generic errors branch:
+							// SDKResultError always carries a non-empty `errors` array, so a
+							// generic-first order makes the recovery branches below dead code.
 							if (resultMessage.result) {
 								finalText = resultMessage.result;
-							} else if (resultMessage.error || resultMessage.errors?.length) {
-								errorText = resultMessage.error || resultMessage.errors.join('; ');
-								finalText = `Error: ${errorText}`;
 							} else if (resultMessage.subtype === 'error_max_turns') {
-								errorText = 'Maximum turns reached';
+								errorText = resultMessage.errors?.join('; ') || 'Maximum turns reached';
 								// Try to get the last assistant message before max turns
 								const assistantMessages = messages.filter(
 									(m) => m.type === 'assistant' && m.message?.content,
@@ -841,7 +844,7 @@ export class ClaudeCode implements INodeType {
 										'Error: Maximum conversation turns reached. Consider increasing maxTurns parameter.';
 								}
 							} else if (resultMessage.subtype === 'error_during_execution') {
-								errorText = 'Error during execution';
+								errorText = resultMessage.errors?.join('; ') || 'Error during execution';
 								// Try to get the last assistant message before the error
 								const assistantMessages = messages.filter(
 									(m) => m.type === 'assistant' && m.message?.content,
@@ -859,6 +862,11 @@ export class ClaudeCode implements INodeType {
 								} else {
 									finalText = 'Error: Execution failed. No output available.';
 								}
+							} else if (resultMessage.errors?.length) {
+								// Remaining error subtypes (error_max_budget_usd,
+								// error_max_structured_output_retries).
+								errorText = resultMessage.errors.join('; ');
+								finalText = `Error: ${errorText}`;
 							}
 
 							// Debug log the result message
@@ -867,9 +875,9 @@ export class ClaudeCode implements INodeType {
 									type: resultMessage.type,
 									subtype: resultMessage.subtype,
 									hasResult: !!resultMessage.result,
-									hasError: !!(resultMessage.error || resultMessage.errors?.length),
+									hasError: !!resultMessage.errors?.length,
 									resultLength: resultMessage.result ? String(resultMessage.result).length : 0,
-									errorMessage: resultMessage.error || resultMessage.errors?.join('; ') || 'none',
+									errorMessage: resultMessage.errors?.join('; ') || 'none',
 								});
 							}
 						} else {
@@ -976,7 +984,6 @@ export class ClaudeCode implements INodeType {
 								},
 								result:
 									resultMessage?.result ||
-									resultMessage?.error ||
 									(resultMessage?.errors?.length ? resultMessage.errors.join('; ') : null),
 								metrics: resultMessage
 									? {
@@ -984,6 +991,7 @@ export class ClaudeCode implements INodeType {
 											num_turns: resultMessage.num_turns,
 											total_cost_usd: resultMessage.total_cost_usd,
 											usage: resultMessage.usage,
+											modelUsage: resultMessage.modelUsage,
 										}
 									: null,
 								success: resultMessage?.subtype === 'success',
@@ -993,16 +1001,29 @@ export class ClaudeCode implements INodeType {
 						});
 					}
 				} catch (queryError) {
-					// If we're in text output mode and error occurs during query, return error data
-					if (outputFormat === 'text') {
+					// The SDK delivers the result message before rejecting, so the spend
+					// and session data are already in `messages` — report them instead of
+					// claiming the run was free.
+					const failedResult = messages.find((m) => m.type === 'result') as any;
+
+					// Only soften the failure when the workflow asked for it. Returning a
+					// normal item unconditionally hid every failure behind a green
+					// execution and bypassed n8n's error output.
+					if (outputFormat === 'text' && this.continueOnFail()) {
 						const errorMessage =
 							queryError instanceof Error ? queryError.message : String(queryError);
 						returnData.push({
 							json: {
 								result: `Error during execution: ${errorMessage}`,
 								success: false,
-								duration_ms: Date.now() - startTime,
-								total_cost_usd: 0,
+								errorType: timedOut ? 'timeout' : 'execution_error',
+								duration_ms: failedResult?.duration_ms ?? Date.now() - startTime,
+								// null, not 0 — an unknown cost is not a free run
+								total_cost_usd: failedResult?.total_cost_usd ?? null,
+								num_turns: failedResult?.num_turns ?? null,
+								session_id: failedResult?.session_id ?? null,
+								usage: failedResult?.usage ?? null,
+								diagnostics,
 							},
 							pairedItem: { item: itemIndex },
 						});
@@ -1019,14 +1040,21 @@ export class ClaudeCode implements INodeType {
 				const isTimeout = timedOut;
 
 				if (this.continueOnFail()) {
+					const failedResult = messages.find((m) => m.type === 'result') as any;
 					returnData.push({
 						json: {
 							error: errorMessage,
 							errorType: isTimeout ? 'timeout' : 'execution_error',
 							errorDetails: error instanceof Error ? error.stack : undefined,
 							itemIndex,
+							// A failed run still costs money — surface what it spent.
+							total_cost_usd: failedResult?.total_cost_usd ?? null,
+							num_turns: failedResult?.num_turns ?? null,
+							session_id: failedResult?.session_id ?? null,
+							usage: failedResult?.usage ?? null,
+							diagnostics,
 						},
-						pairedItem: itemIndex,
+						pairedItem: { item: itemIndex },
 					});
 					continue;
 				}
