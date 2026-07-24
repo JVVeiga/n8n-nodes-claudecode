@@ -249,7 +249,7 @@ export class ClaudeCode implements INodeType {
 				],
 				default: ['WebFetch', 'TodoWrite', 'WebSearch', 'Task'],
 				description:
-					'Restrict Claude Code to these built-in tools. Leave empty to allow every tool the CLI provides; selecting any tool blocks the rest — including Workflow, which Ultracode needs.',
+					'Restrict Claude Code to these built-in tools. Leave empty to allow every tool the CLI provides; selecting any tool blocks the rest. When Effort is set to Ultracode, Workflow and Task are added automatically so orchestration still works.',
 			},
 			{
 				displayName: 'Disallowed Tools',
@@ -601,10 +601,18 @@ export class ClaudeCode implements INodeType {
 				}
 
 				// Set allowed tools if any are specified
-				if (allowedTools.length > 0) {
-					queryOptions.options.allowedTools = allowedTools;
+				// Allowed Tools is an allowlist, so a selection that omits Workflow would
+				// silently disable Ultracode orchestration. Add what Ultracode needs when
+				// it is the selected effort.
+				const effectiveAllowedTools =
+					ultracode && allowedTools.length > 0
+						? Array.from(new Set([...allowedTools, 'Workflow', 'Task']))
+						: allowedTools;
+
+				if (effectiveAllowedTools.length > 0) {
+					queryOptions.options.allowedTools = effectiveAllowedTools;
 					if (additionalOptions.debug) {
-						this.logger.debug('Allowed tools configured', { allowedTools });
+						this.logger.debug('Allowed tools configured', { allowedTools: effectiveAllowedTools });
 					}
 				}
 
@@ -758,7 +766,12 @@ export class ClaudeCode implements INodeType {
 						effectiveEffort,
 						appliedEffort: appliedEffort ?? null,
 						ultracodeRequested: ultracode,
-						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
+						// True only if the CLI provides Workflow *and* the allow/disallow
+						// selection actually leaves it usable for this run.
+						workflowToolAvailable:
+							(systemInitMsg?.tools ?? []).includes('Workflow') &&
+							(effectiveAllowedTools.length === 0 || effectiveAllowedTools.includes('Workflow')) &&
+							!disallowedTools.includes('Workflow'),
 						workflowToolUses: countToolUse('Workflow'),
 						subagentToolUses: countToolUse('Task'),
 						thinkingRequested: additionalOptions.thinking || 'default',
