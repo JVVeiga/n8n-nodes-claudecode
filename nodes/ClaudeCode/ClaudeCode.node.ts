@@ -113,6 +113,16 @@ export class ClaudeCode implements INodeType {
 				hint: 'Use expressions like {{$json.prompt}} to use data from previous nodes',
 			},
 			{
+				displayName: 'Session ID',
+				name: 'sessionId',
+				type: 'string',
+				default: '',
+				displayOptions: { show: { operation: ['continue'] } },
+				description:
+					"Resume this specific session, taken from a previous run's diagnostics.sessionId. Leave empty to continue the most recent conversation in the working directory — which every execution on this instance shares, so concurrent runs will collide.",
+				placeholder: 'e.g. 0b7f2c1e-...',
+			},
+			{
 				displayName: 'Model',
 				name: 'model',
 				type: 'options',
@@ -572,6 +582,7 @@ export class ClaudeCode implements INodeType {
 						maxThinkingTokens?: number;
 						maxBudgetUsd?: number;
 						continue?: boolean;
+						resume?: string;
 						cwd?: string;
 						pathToClaudeCodeExecutable?: string;
 						thinking?: { type: 'adaptive' | 'disabled'; display?: 'summarized' };
@@ -748,9 +759,16 @@ export class ClaudeCode implements INodeType {
 					queryOptions.options.maxBudgetUsd = additionalOptions.maxBudgetUsd;
 				}
 
-				// Add continue flag if needed
+				// Resume an explicit session when one is given. Otherwise fall back to
+				// `continue`, which resolves "the most recent conversation in this
+				// directory" — shared by every execution on the instance.
 				if (operation === 'continue') {
-					queryOptions.options.continue = true;
+					const sessionId = (this.getNodeParameter('sessionId', itemIndex, '') as string).trim();
+					if (sessionId) {
+						queryOptions.options.resume = sessionId;
+					} else {
+						queryOptions.options.continue = true;
+					}
 				}
 
 				// Execute query
