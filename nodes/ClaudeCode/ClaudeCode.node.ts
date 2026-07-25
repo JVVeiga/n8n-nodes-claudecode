@@ -301,6 +301,15 @@ export class ClaudeCode implements INodeType {
 						description: 'Whether to enable debug logging',
 					},
 					{
+						displayName: 'Allow Plan Execution',
+						name: 'allowPlanExecution',
+						type: 'boolean',
+						default: false,
+						displayOptions: { show: { permissionMode: ['plan'] } },
+						description:
+							'Whether Claude may leave planning mode and carry the plan out. Plan mode alone never exposes an exit tool, so the run ends with a plan and nothing written.',
+					},
+					{
 						displayName: 'Include Raw Transcript',
 						name: 'includeTranscript',
 						type: 'boolean',
@@ -394,19 +403,31 @@ export class ClaudeCode implements INodeType {
 						type: 'options',
 						options: [
 							{
-								name: 'Default',
-								value: 'default',
-								description: 'Standard permission prompts',
-							},
-							{
 								name: 'Accept Edits',
 								value: 'acceptEdits',
 								description: 'Automatically accept file edits',
 							},
 							{
+								name: 'Auto',
+								value: 'auto',
+								description: 'Let Claude Code decide, without prompting',
+							},
+							{
 								name: 'Bypass Permissions',
 								value: 'bypassPermissions',
 								description: 'Skip all permission checks',
+							},
+							{
+								name: 'Default',
+								value: 'default',
+								description:
+									'Standard permission prompts. Headless runs cannot answer them, so anything not pre-approved is denied.',
+							},
+							{
+								name: "Don't Ask",
+								value: 'dontAsk',
+								description:
+									'Never prompt. Tools that are pre-approved in Allowed Tools run; anything else is denied.',
 							},
 							{
 								name: 'Plan',
@@ -416,7 +437,8 @@ export class ClaudeCode implements INodeType {
 							},
 						],
 						default: 'bypassPermissions',
-						description: 'How to handle permission requests for tool usage',
+						description:
+							"How to handle permission requests for tool usage. Bypass Permissions is the default because n8n runs headless and cannot answer a prompt; pair Don't Ask with Allowed Tools for a bounded run.",
 					},
 					{
 						displayName: 'System Prompt',
@@ -475,6 +497,7 @@ export class ClaudeCode implements INodeType {
 					maxThinkingTokens?: number;
 					maxBudgetUsd?: number;
 					includeTranscript?: boolean;
+					allowPlanExecution?: boolean;
 					pathToClaudeCodeExecutable?: string;
 					thinking?: string;
 				};
@@ -527,7 +550,17 @@ export class ClaudeCode implements INodeType {
 					options: {
 						abortController: AbortController;
 						maxTurns: number;
-						permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
+						permissionMode:
+							| 'default'
+							| 'acceptEdits'
+							| 'bypassPermissions'
+							| 'plan'
+							| 'dontAsk'
+							| 'auto';
+						canUseTool?: (
+							toolName: string,
+							input: Record<string, unknown>,
+						) => Promise<{ behavior: 'allow'; updatedInput: Record<string, unknown> }>;
 						model: string;
 						effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 						systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
@@ -557,6 +590,19 @@ export class ClaudeCode implements INodeType {
 						effort: effectiveEffort,
 					},
 				};
+
+				// Plan mode exposes no exit tool unless a permission callback is
+				// registered, so on its own it always ends with a plan and nothing
+				// written. Registering one lets Claude leave plan mode and act.
+				if (
+					queryOptions.options.permissionMode === 'plan' &&
+					additionalOptions.allowPlanExecution
+				) {
+					queryOptions.options.canUseTool = async (_toolName, input) => ({
+						behavior: 'allow',
+						updatedInput: input,
+					});
+				}
 
 				// Enable Ultracode as a real session setting: standing dynamic-workflow
 				// orchestration at xhigh effort (requires an xhigh-capable model + workflows).
