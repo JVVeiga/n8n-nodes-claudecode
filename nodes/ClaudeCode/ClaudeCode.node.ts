@@ -8,6 +8,59 @@ import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
+/**
+ * Built-in Claude Code tools (v2). The exact set varies by CLI version and
+ * environment; unknown names are simply ignored. Shared by every tool
+ * selector so the lists cannot drift apart.
+ */
+const BUILT_IN_TOOL_OPTIONS = [
+	{ name: 'Artifact', value: 'Artifact', description: 'Publish an artifact page' },
+	{ name: 'Bash', value: 'Bash', description: 'Execute bash commands' },
+	{ name: 'CronCreate', value: 'CronCreate', description: 'Create a scheduled job' },
+	{ name: 'CronDelete', value: 'CronDelete', description: 'Delete a scheduled job' },
+	{ name: 'CronList', value: 'CronList', description: 'List scheduled jobs' },
+	{ name: 'DesignSync', value: 'DesignSync', description: 'Sync design assets' },
+	{ name: 'Edit', value: 'Edit', description: 'Edit files' },
+	{ name: 'EnterWorktree', value: 'EnterWorktree', description: 'Enter a git worktree' },
+	{ name: 'ExitWorktree', value: 'ExitWorktree', description: 'Exit a git worktree' },
+	{ name: 'Glob', value: 'Glob', description: 'Find files by pattern' },
+	{ name: 'Grep', value: 'Grep', description: 'Search file contents' },
+	{ name: 'Monitor', value: 'Monitor', description: 'Watch a command or condition' },
+	{ name: 'NotebookEdit', value: 'NotebookEdit', description: 'Edit Jupyter notebooks' },
+	{
+		name: 'PushNotification',
+		value: 'PushNotification',
+		description: 'Send a notification',
+	},
+	{ name: 'Read', value: 'Read', description: 'Read file contents' },
+	{ name: 'RemoteTrigger', value: 'RemoteTrigger', description: 'Trigger a remote agent' },
+	{
+		name: 'ReportFindings',
+		value: 'ReportFindings',
+		description: 'Report review findings',
+	},
+	{ name: 'ScheduleWakeup', value: 'ScheduleWakeup', description: 'Schedule a wake-up' },
+	{ name: 'SendMessage', value: 'SendMessage', description: 'Message a running agent' },
+	{ name: 'Skill', value: 'Skill', description: 'Invoke a skill' },
+	{ name: 'Task', value: 'Task', description: 'Launch subagents for complex work' },
+	{ name: 'TaskCreate', value: 'TaskCreate', description: 'Create a background task' },
+	{ name: 'TaskGet', value: 'TaskGet', description: 'Get a background task' },
+	{ name: 'TaskList', value: 'TaskList', description: 'List background tasks' },
+	{ name: 'TaskOutput', value: 'TaskOutput', description: 'Read background task output' },
+	{ name: 'TaskStop', value: 'TaskStop', description: 'Stop a background task' },
+	{ name: 'TaskUpdate', value: 'TaskUpdate', description: 'Update a background task' },
+	{ name: 'TodoWrite', value: 'TodoWrite', description: 'Manage todo lists' },
+	{ name: 'ToolSearch', value: 'ToolSearch', description: 'Discover deferred tools' },
+	{ name: 'WebFetch', value: 'WebFetch', description: 'Fetch web content' },
+	{ name: 'WebSearch', value: 'WebSearch', description: 'Search the web' },
+	{
+		name: 'Workflow',
+		value: 'Workflow',
+		description: 'Run dynamic multi-agent workflows (required for Ultracode)',
+	},
+	{ name: 'Write', value: 'Write', description: 'Write files' },
+];
+
 export class ClaudeCode implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Claude Code',
@@ -200,55 +253,7 @@ export class ClaudeCode implements INodeType {
 				displayName: 'Allowed Tools',
 				name: 'allowedTools',
 				type: 'multiOptions',
-				options: [
-					// Built-in Claude Code tools (v2). The exact set varies by CLI
-					// version and environment; unknown names are simply ignored.
-					{ name: 'Artifact', value: 'Artifact', description: 'Publish an artifact page' },
-					{ name: 'Bash', value: 'Bash', description: 'Execute bash commands' },
-					{ name: 'CronCreate', value: 'CronCreate', description: 'Create a scheduled job' },
-					{ name: 'CronDelete', value: 'CronDelete', description: 'Delete a scheduled job' },
-					{ name: 'CronList', value: 'CronList', description: 'List scheduled jobs' },
-					{ name: 'DesignSync', value: 'DesignSync', description: 'Sync design assets' },
-					{ name: 'Edit', value: 'Edit', description: 'Edit files' },
-					{ name: 'EnterWorktree', value: 'EnterWorktree', description: 'Enter a git worktree' },
-					{ name: 'ExitWorktree', value: 'ExitWorktree', description: 'Exit a git worktree' },
-					{ name: 'Glob', value: 'Glob', description: 'Find files by pattern' },
-					{ name: 'Grep', value: 'Grep', description: 'Search file contents' },
-					{ name: 'Monitor', value: 'Monitor', description: 'Watch a command or condition' },
-					{ name: 'NotebookEdit', value: 'NotebookEdit', description: 'Edit Jupyter notebooks' },
-					{
-						name: 'PushNotification',
-						value: 'PushNotification',
-						description: 'Send a notification',
-					},
-					{ name: 'Read', value: 'Read', description: 'Read file contents' },
-					{ name: 'RemoteTrigger', value: 'RemoteTrigger', description: 'Trigger a remote agent' },
-					{
-						name: 'ReportFindings',
-						value: 'ReportFindings',
-						description: 'Report review findings',
-					},
-					{ name: 'ScheduleWakeup', value: 'ScheduleWakeup', description: 'Schedule a wake-up' },
-					{ name: 'SendMessage', value: 'SendMessage', description: 'Message a running agent' },
-					{ name: 'Skill', value: 'Skill', description: 'Invoke a skill' },
-					{ name: 'Task', value: 'Task', description: 'Launch subagents for complex work' },
-					{ name: 'TaskCreate', value: 'TaskCreate', description: 'Create a background task' },
-					{ name: 'TaskGet', value: 'TaskGet', description: 'Get a background task' },
-					{ name: 'TaskList', value: 'TaskList', description: 'List background tasks' },
-					{ name: 'TaskOutput', value: 'TaskOutput', description: 'Read background task output' },
-					{ name: 'TaskStop', value: 'TaskStop', description: 'Stop a background task' },
-					{ name: 'TaskUpdate', value: 'TaskUpdate', description: 'Update a background task' },
-					{ name: 'TodoWrite', value: 'TodoWrite', description: 'Manage todo lists' },
-					{ name: 'ToolSearch', value: 'ToolSearch', description: 'Discover deferred tools' },
-					{ name: 'WebFetch', value: 'WebFetch', description: 'Fetch web content' },
-					{ name: 'WebSearch', value: 'WebSearch', description: 'Search the web' },
-					{
-						name: 'Workflow',
-						value: 'Workflow',
-						description: 'Run dynamic multi-agent workflows (required for Ultracode)',
-					},
-					{ name: 'Write', value: 'Write', description: 'Write files' },
-				],
+				options: BUILT_IN_TOOL_OPTIONS,
 				default: ['WebFetch', 'TodoWrite', 'WebSearch', 'Task'],
 				description:
 					'Pre-approve these tools so they run without a permission prompt. This does NOT restrict anything — unlisted tools stay available. To block a tool, use Disallowed Tools, which removes it from the model entirely.',
@@ -257,58 +262,19 @@ export class ClaudeCode implements INodeType {
 				displayName: 'Disallowed Tools',
 				name: 'disallowedTools',
 				type: 'multiOptions',
-				options: [
-					// Built-in Claude Code tools (v2). The exact set varies by CLI
-					// version and environment; unknown names are simply ignored.
-					{ name: 'Artifact', value: 'Artifact', description: 'Publish an artifact page' },
-					{ name: 'Bash', value: 'Bash', description: 'Execute bash commands' },
-					{ name: 'CronCreate', value: 'CronCreate', description: 'Create a scheduled job' },
-					{ name: 'CronDelete', value: 'CronDelete', description: 'Delete a scheduled job' },
-					{ name: 'CronList', value: 'CronList', description: 'List scheduled jobs' },
-					{ name: 'DesignSync', value: 'DesignSync', description: 'Sync design assets' },
-					{ name: 'Edit', value: 'Edit', description: 'Edit files' },
-					{ name: 'EnterWorktree', value: 'EnterWorktree', description: 'Enter a git worktree' },
-					{ name: 'ExitWorktree', value: 'ExitWorktree', description: 'Exit a git worktree' },
-					{ name: 'Glob', value: 'Glob', description: 'Find files by pattern' },
-					{ name: 'Grep', value: 'Grep', description: 'Search file contents' },
-					{ name: 'Monitor', value: 'Monitor', description: 'Watch a command or condition' },
-					{ name: 'NotebookEdit', value: 'NotebookEdit', description: 'Edit Jupyter notebooks' },
-					{
-						name: 'PushNotification',
-						value: 'PushNotification',
-						description: 'Send a notification',
-					},
-					{ name: 'Read', value: 'Read', description: 'Read file contents' },
-					{ name: 'RemoteTrigger', value: 'RemoteTrigger', description: 'Trigger a remote agent' },
-					{
-						name: 'ReportFindings',
-						value: 'ReportFindings',
-						description: 'Report review findings',
-					},
-					{ name: 'ScheduleWakeup', value: 'ScheduleWakeup', description: 'Schedule a wake-up' },
-					{ name: 'SendMessage', value: 'SendMessage', description: 'Message a running agent' },
-					{ name: 'Skill', value: 'Skill', description: 'Invoke a skill' },
-					{ name: 'Task', value: 'Task', description: 'Launch subagents for complex work' },
-					{ name: 'TaskCreate', value: 'TaskCreate', description: 'Create a background task' },
-					{ name: 'TaskGet', value: 'TaskGet', description: 'Get a background task' },
-					{ name: 'TaskList', value: 'TaskList', description: 'List background tasks' },
-					{ name: 'TaskOutput', value: 'TaskOutput', description: 'Read background task output' },
-					{ name: 'TaskStop', value: 'TaskStop', description: 'Stop a background task' },
-					{ name: 'TaskUpdate', value: 'TaskUpdate', description: 'Update a background task' },
-					{ name: 'TodoWrite', value: 'TodoWrite', description: 'Manage todo lists' },
-					{ name: 'ToolSearch', value: 'ToolSearch', description: 'Discover deferred tools' },
-					{ name: 'WebFetch', value: 'WebFetch', description: 'Fetch web content' },
-					{ name: 'WebSearch', value: 'WebSearch', description: 'Search the web' },
-					{
-						name: 'Workflow',
-						value: 'Workflow',
-						description: 'Run dynamic multi-agent workflows (required for Ultracode)',
-					},
-					{ name: 'Write', value: 'Write', description: 'Write files' },
-				],
+				options: BUILT_IN_TOOL_OPTIONS,
 				default: [],
 				description:
 					'Select which built-in tools Claude Code is explicitly blocked from using. Takes precedence over Allowed Tools.',
+			},
+			{
+				displayName: 'Restrict Built-in Tools',
+				name: 'restrictTools',
+				type: 'multiOptions',
+				options: BUILT_IN_TOOL_OPTIONS,
+				default: [],
+				description:
+					'Limit Claude Code to this base set of built-in tools — everything else is never loaded. Leave empty for the full set. This is the real allowlist; Allowed Tools only pre-approves. Note: list Grep and Glob explicitly or search falls back to Bash.',
 			},
 			{
 				displayName: 'Additional Options',
@@ -500,6 +466,7 @@ export class ClaudeCode implements INodeType {
 				const outputFormat = this.getNodeParameter('outputFormat', itemIndex) as string;
 				const allowedTools = this.getNodeParameter('allowedTools', itemIndex, []) as string[];
 				const disallowedTools = this.getNodeParameter('disallowedTools', itemIndex, []) as string[];
+				const restrictTools = this.getNodeParameter('restrictTools', itemIndex, []) as string[];
 				const additionalOptions = this.getNodeParameter('additionalOptions', itemIndex) as {
 					systemPrompt?: string;
 					permissionMode?: string;
@@ -565,6 +532,7 @@ export class ClaudeCode implements INodeType {
 						effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 						systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
 						mcpServers?: Record<string, any>;
+						tools?: string[];
 						allowedTools?: string[];
 						disallowedTools?: string[];
 						fallbackModel?: string;
@@ -654,6 +622,21 @@ export class ClaudeCode implements INodeType {
 					queryOptions.options.cwd = cwd;
 					if (additionalOptions.debug) {
 						this.logger.debug('Working directory set', { cwd: queryOptions.options.cwd });
+					}
+				}
+
+				// Restrict Built-in Tools is the real allowlist: an empty selection keeps
+				// the full set. Ultracode needs Workflow and Task, so add them rather
+				// than let a restriction silently disable orchestration.
+				const effectiveTools =
+					ultracode && restrictTools.length > 0
+						? Array.from(new Set([...restrictTools, 'Workflow', 'Task']))
+						: restrictTools;
+
+				if (effectiveTools.length > 0) {
+					queryOptions.options.tools = effectiveTools;
+					if (additionalOptions.debug) {
+						this.logger.debug('Built-in tools restricted', { tools: effectiveTools });
 					}
 				}
 
