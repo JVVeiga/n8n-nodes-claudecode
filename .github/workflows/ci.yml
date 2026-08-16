@@ -51,17 +51,21 @@ jobs:
         with:
           node-version: '22'
 
+      # Derive the tarball name and package name from package.json rather than
+      # hard-coding them, so a rename cannot silently break this job again.
       - name: Build package
         run: |
           npm ci
           npm run build
-          npm pack
+          tarball=$(npm pack --silent)
+          echo "TARBALL=$tarball" >> "$GITHUB_ENV"
+          echo "PKG_NAME=$(node -p "require('./package.json').name")" >> "$GITHUB_ENV"
 
       - name: Test installation
         run: |
           mkdir test-install
           cd test-install
           npm init -y
-          npm install ../johnlindquist-n8n-nodes-claudecode-*.tgz
+          npm install "../$TARBALL"
           # Verify the package was installed
-          npm list @johnlindquist/n8n-nodes-claudecode
+          npm list "$PKG_NAME"
