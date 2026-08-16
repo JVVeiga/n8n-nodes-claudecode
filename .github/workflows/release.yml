@@ -25,8 +25,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-          scope: '@joaoveiga'
+          # Deliberately no registry-url/scope: setup-node would write an
+          # .npmrc pinning _authToken to a placeholder NODE_AUTH_TOKEN, which
+          # can shadow the OIDC credential exchange. npmjs.org is the default
+          # registry anyway.
 
       # setup-node ships an older npm; Trusted Publishing needs a recent CLI.
       - name: Upgrade npm
