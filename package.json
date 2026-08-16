@@ -1,5 +1,5 @@
 {
-  "name": "@johnlindquist/n8n-nodes-claudecode",
+  "name": "@joaoveiga/n8n-nodes-claudecode",
   "version": "0.7.0",
   "description": "n8n node for Claude Code SDK integration with MCP support",
   "keywords": [
@@ -13,17 +13,17 @@
     "model-context-protocol"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/johnlindquist/n8n-nodes-claudecode#readme",
+  "homepage": "https://github.com/JVVeiga/n8n-nodes-claudecode#readme",
   "bugs": {
-    "url": "https://github.com/johnlindquist/n8n-nodes-claudecode/issues"
+    "url": "https://github.com/JVVeiga/n8n-nodes-claudecode/issues"
   },
   "author": {
-    "name": "Adam Holt",
-    "email": "john@scriptkit.com"
+    "name": "João Veiga",
+    "email": "joaovveiga@gaudium.com.br"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/johnlindquist/n8n-nodes-claudecode.git"
+    "url": "https://github.com/JVVeiga/n8n-nodes-claudecode.git"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -77,5 +77,8 @@
     "commitizen": {
       "path": "./node_modules/cz-conventional-changelog"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
