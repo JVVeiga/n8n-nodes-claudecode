@@ -23,7 +23,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/JVVeiga/n8n-nodes-claudecode.git"
+    "url": "git+https://github.com/JVVeiga/n8n-nodes-claudecode.git"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -40,7 +40,8 @@
     "commit": "cz"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/tsconfig.tsbuildinfo"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
