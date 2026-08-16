@@ -1,13 +1,29 @@
 # 🚀 Claude Code for n8n
 
+> **This is a fork** of [@johnlindquist/n8n-nodes-claudecode](https://github.com/johnlindquist/n8n-nodes-claudecode), which is itself a fork of [holt-web-ai/n8n-nodes-claudecode](https://github.com/holt-web-ai/n8n-nodes-claudecode). All credit for the original node goes to them.
+>
+> It is published separately because it migrates to the Claude Agent SDK for Claude Code v2 and adds effort, thinking, Ultracode, tool restriction, a spend cap and run diagnostics. See [What this fork changes](#-what-this-fork-changes).
+
 **Bring the power of Claude Code directly into your n8n automation workflows!**
 
 Imagine having an AI coding assistant that can analyze your codebase, fix bugs, write new features, manage databases, interact with APIs, and automate your entire development workflow - all within n8n. That's exactly what this node enables.
 
 [![n8n](https://img.shields.io/badge/n8n-community_node-orange.svg)](https://n8n.io/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Powered-blue.svg)](https://claude.ai/code)
-[![npm](https://img.shields.io/npm/v/@johnlindquist/n8n-nodes-claudecode.svg)](https://www.npmjs.com/package/@johnlindquist/n8n-nodes-claudecode)
+[![npm](https://img.shields.io/npm/v/@joaoveiga/n8n-nodes-claudecode.svg)](https://www.npmjs.com/package/@joaoveiga/n8n-nodes-claudecode)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
+
+## 🔀 What this fork changes
+
+Everything below this section is the upstream node's documentation. This fork adds:
+
+- **Claude Code v2 support** — migrated from `@anthropic-ai/claude-code` (CLI-only since v2, so the original node no longer resolves) to `@anthropic-ai/claude-agent-sdk`. Requires Node 22+.
+- **Model, Effort and Thinking selectors** — Opus 5 / Sonnet 5 / Haiku 4.5 / Fable 5, effort from low to max, plus Ultracode (xHigh + the Workflow tool).
+- **Restrict Built-in Tools** — the control that actually bounds the tool set. Upstream's Allowed Tools maps to the SDK's auto-approve list and cannot restrict anything.
+- **Max Budget (USD)** — a hard spend cap. Max Turns and Timeout bound length, not cost.
+- **Diagnostics** — every run reports the resolved model, the effort actually applied, the models billed, the session id and whether Ultracode orchestration was available.
+- **Cancellation and failure handling** — stopping the n8n execution now stops the agent; failed runs report their real cost instead of `$0`; Text output no longer swallows errors into a green execution.
+- **Session ID** on Continue, so concurrent executions stop sharing one conversation.
 
 ## 🌟 What Can You Build?
 
@@ -52,14 +68,14 @@ Transform support tickets into code fixes automatically:
 1. Open your n8n instance
 2. Go to **Settings** → **Community Nodes**
 3. Click **Install a community node**
-4. Enter: `@johnlindquist/n8n-nodes-claudecode`
+4. Enter: `@joaoveiga/n8n-nodes-claudecode`
 5. Click **Install**
 6. Restart n8n when prompted
 
 #### Option 2: Manual Installation
 ```bash
 cd ~/.n8n/nodes
-npm install @johnlindquist/n8n-nodes-claudecode
+npm install @joaoveiga/n8n-nodes-claudecode
 # Restart n8n
 ```
 
@@ -67,14 +83,14 @@ npm install @johnlindquist/n8n-nodes-claudecode
 ```bash
 docker run -it --rm \
   -p 5678:5678 \
-  -e N8N_COMMUNITY_NODE_PACKAGES=@johnlindquist/n8n-nodes-claudecode \
+  -e N8N_COMMUNITY_NODE_PACKAGES=@joaoveiga/n8n-nodes-claudecode \
   -v ~/.n8n:/home/node/.n8n \
   n8nio/n8n
 ```
 
 **Note**: For Docker, you'll need to ensure Claude Code CLI is installed inside the container. Consider creating a custom Dockerfile.
 
-📦 **NPM Package**: [@johnlindquist/n8n-nodes-claudecode](https://www.npmjs.com/package/@johnlindquist/n8n-nodes-claudecode)
+📦 **NPM Package**: [@joaoveiga/n8n-nodes-claudecode](https://www.npmjs.com/package/@joaoveiga/n8n-nodes-claudecode)
 
 ## 🎯 Real-World Use Cases
 
@@ -305,10 +321,10 @@ Use "Continue" operation to build complex multi-step workflows while maintaining
 
 ## 🤝 Community & Support
 
-- 📖 [Documentation](https://github.com/johnlindquist/n8n-nodes-claudecode)
-- 🐛 [Report Issues](https://github.com/johnlindquist/n8n-nodes-claudecode/issues)
-- 💬 [Discussions](https://github.com/johnlindquist/n8n-nodes-claudecode/discussions)
-- 🌟 [Star on GitHub](https://github.com/johnlindquist/n8n-nodes-claudecode)
+- 📖 [Documentation](https://github.com/JVVeiga/n8n-nodes-claudecode)
+- 🐛 [Report Issues](https://github.com/JVVeiga/n8n-nodes-claudecode/issues) — for this fork. Please do not open issues about it on the upstream repositories.
+- 🌟 [Star on GitHub](https://github.com/JVVeiga/n8n-nodes-claudecode)
+- ⬆️ [Upstream project](https://github.com/johnlindquist/n8n-nodes-claudecode) by John Lindquist
 
 ## 📈 What's Next?
 
@@ -351,6 +367,10 @@ MIT - Build amazing things!
 
 **Ready to revolutionize your development workflow?** Install Claude Code for n8n today and join the future of automated software development!
 
-Originally created by [Adam Holt](https://github.com/holt-web-ai) - [Original Repository](https://github.com/holt-web-ai/n8n-nodes-claudecode)
+### Lineage
 
-Forked and maintained by [John Lindquist](https://github.com/johnlindquist)
+1. Originally created by [Adam Holt](https://github.com/holt-web-ai) — [holt-web-ai/n8n-nodes-claudecode](https://github.com/holt-web-ai/n8n-nodes-claudecode)
+2. Forked and maintained by [John Lindquist](https://github.com/johnlindquist) — [johnlindquist/n8n-nodes-claudecode](https://github.com/johnlindquist/n8n-nodes-claudecode)
+3. This fork, maintained by [João Veiga](https://github.com/JVVeiga) — [JVVeiga/n8n-nodes-claudecode](https://github.com/JVVeiga/n8n-nodes-claudecode)
+
+MIT throughout. The original copyright notice is kept intact in [LICENSE.md](LICENSE.md).

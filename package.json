@@ -1,7 +1,7 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
   "version": "0.7.0",
-  "description": "n8n node for Claude Code SDK integration with MCP support",
+  "description": "Fork of @johnlindquist/n8n-nodes-claudecode: n8n node for Claude Code v2 via the Claude Agent SDK, with effort, thinking, Ultracode, tool restriction, a spend cap and run diagnostics",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -80,5 +80,15 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "contributors": [
+    {
+      "name": "Adam Holt",
+      "url": "https://github.com/holt-web-ai"
+    },
+    {
+      "name": "John Lindquist",
+      "url": "https://github.com/johnlindquist"
+    }
+  ]
 }
