@@ -2,9 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Semantic Versioning & Release Process
+## Versioning & Release Process
 
-This project uses automated semantic versioning with conventional commits:
+This project uses conventional commits. Releases are **manual** — there is no
+CI and no semantic-release. Publishing happens from a developer machine.
 
 ### Commit Conventions
 - `feat:` New features (triggers minor version bump)
@@ -15,14 +16,15 @@ This project uses automated semantic versioning with conventional commits:
 - `test:` Test updates (no version bump)
 - `BREAKING CHANGE:` in commit body (triggers major version bump)
 
-### Automated Release Process
+### Manual Release Process
 1. Make changes following conventional commit format
-2. Push to `main` branch
-3. GitHub Actions runs semantic-release automatically
-4. Version is bumped based on commit types since last release
-5. npm package is published
-6. GitHub release is created with changelog
-7. Version updates are committed back to repository
+2. Validate locally: `npm run lint && npm run build && npm publish --dry-run`
+3. Bump the version and tag: `npm version patch|minor|major`
+4. Publish: `npm publish --otp=<code>` (the account requires 2FA)
+5. Push the commit and the tag: `git push && git push --tags`
+
+The package is `@joaoveiga/n8n-nodes-claudecode`. Nothing publishes on push —
+there are no GitHub Actions workflows in this repository.
 
 ### Interactive Commits
 Use `npm run commit` to use commitizen for guided commit creation.

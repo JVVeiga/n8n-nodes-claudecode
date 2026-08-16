@@ -338,7 +338,7 @@ We're constantly improving! Upcoming features:
 
 ### Commit Conventions
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/) and automated semantic versioning:
+This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat:` New features (minor version bump)
 - `fix:` Bug fixes (patch version bump)
@@ -350,14 +350,23 @@ Use `npm run commit` for an interactive commit message builder.
 
 ### Release Process
 
-Releases are **fully automated** using semantic-release:
-1. Push commits to `main` branch
-2. CI analyzes commit messages
-3. Version is automatically bumped based on commit types
-4. Package is published to npm
-5. GitHub release is created with changelog
+Releases are published manually. There is no CI — validate locally first:
 
-No manual version management required!
+```bash
+npm run lint
+npm run build
+npm publish --dry-run        # check the file list and version
+```
+
+Then bump the version and publish. npm requires a 2FA code:
+
+```bash
+npm version patch            # or minor / major
+npm publish --otp=123456
+git push && git push --tags
+```
+
+`npm version` writes `package.json` and creates the matching git tag.
 
 ## 📄 License
 
