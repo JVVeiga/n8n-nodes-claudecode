@@ -509,6 +509,7 @@ export class ClaudeCode implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
+		const nodeVersion = this.getNode().typeVersion;
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			let timeout = 300; // Default timeout
@@ -517,6 +518,24 @@ export class ClaudeCode implements INodeType {
 			// A graceful stop asks Claude to summarise. That turn can itself run out of time, in
 			// which case the metrics still survive but the summary does not.
 			let wrapUpSucceeded = false;
+
+			/**
+			 * n8n moves an item to the error output branch only when the item carries a top-level
+			 * `error` field, or when its json holds nothing but error/message/details
+			 * (`workflow-execute.ts:2756-2763`). A payload with metrics alongside the message fails
+			 * that second test, so without this field the item would silently land on the SUCCESS
+			 * branch under `onError: continueErrorOutput`. Gated on 1.1: v1 keeps the old shape,
+			 * including the pre-existing bug, rather than moving items between branches on an upgrade.
+			 */
+			const errorField = (cause: unknown): { error?: NodeOperationError } => {
+				if (nodeVersion < 1.1) return {};
+				return {
+					error:
+						cause instanceof NodeOperationError
+							? cause
+							: new NodeOperationError(this.getNode(), cause as Error, { itemIndex }),
+				};
+			};
 			// Declared per item and outside the try blocks so every error path can
 			// still report what ran and what it cost.
 			const messages: SDKMessage[] = [];
@@ -560,7 +579,6 @@ export class ClaudeCode implements INodeType {
 				// inside a collection — so an unset field arrives as undefined and the version-aware
 				// fallback is applied here. v1 keeps the 0.7.2 behaviour of a plain kill at the
 				// timeout, with no wrap-up and therefore no spend reporting.
-				const nodeVersion = this.getNode().typeVersion;
 				const graceWindow = resolveGraceWindow(
 					timeout,
 					additionalOptions.wrapUpGraceSeconds ?? (nodeVersion >= 1.1 ? 60 : 0),
@@ -1315,6 +1333,7 @@ export class ClaudeCode implements INodeType {
 								usage: failedResult?.usage ?? null,
 								diagnostics,
 							},
+							...errorField(queryError),
 							pairedItem: { item: itemIndex },
 						});
 					} else {
@@ -1341,6 +1360,7 @@ export class ClaudeCode implements INodeType {
 					if (timeoutError) {
 						returnData.push({
 							json: timeoutError.context as IDataObject,
+							...errorField(timeoutError),
 							pairedItem: { item: itemIndex },
 						});
 						continue;
@@ -1360,6 +1380,7 @@ export class ClaudeCode implements INodeType {
 							usage: failedResult?.usage ?? null,
 							diagnostics,
 						},
+						...errorField(error),
 						pairedItem: { item: itemIndex },
 					});
 					continue;
