@@ -6,7 +6,8 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { createPromptStream } from './promptStream';
 import { resolveGraceWindow } from './timeout';
 
 /**
@@ -559,6 +560,10 @@ export class ClaudeCode implements INodeType {
 				// its own timeout, with its output discarded.
 				this.onExecutionCancellation(() => abortController.abort());
 
+				// Delivered as a stream, not a string: control requests such as interrupt() are only
+				// available in streaming input mode. The stream must be closed once the run is done
+				// or the SDK keeps the session open and the query never ends.
+				const promptStream = createPromptStream(rawPrompt);
 				const prompt = rawPrompt;
 
 				// Ultracode maps to xHigh effort (its defined level) plus the
@@ -586,7 +591,7 @@ export class ClaudeCode implements INodeType {
 
 				// Build query options
 				interface QueryOptions {
-					prompt: string;
+					prompt: AsyncIterable<SDKUserMessage>;
 					options: {
 						abortController: AbortController;
 						maxTurns: number;
@@ -622,7 +627,7 @@ export class ClaudeCode implements INodeType {
 				}
 
 				const queryOptions: QueryOptions = {
-					prompt,
+					prompt: promptStream.stream,
 					options: {
 						abortController,
 						maxTurns,
@@ -847,9 +852,19 @@ export class ClaudeCode implements INodeType {
 					};
 				};
 
+				// Held in a variable rather than iterated inline so control requests can reach it.
+				const runningQuery = query(queryOptions);
+
 				try {
-					for await (const message of query(queryOptions)) {
+					for await (const message of runningQuery) {
 						messages.push(message);
+
+						// In streaming input mode the session stays open while the input stream is
+						// open, so the result message is the signal to close it. Without this the
+						// query would never end.
+						if (message.type === 'result') {
+							promptStream.close();
+						}
 
 						if (additionalOptions.debug) {
 							// Log detailed message content based on type
@@ -1172,6 +1187,9 @@ export class ClaudeCode implements INodeType {
 					}
 				} finally {
 					clearTimeout(timeoutId);
+					// On an error path the loop stops consuming while the input generator is still
+					// suspended waiting for a follow-up turn. Closing releases it.
+					promptStream.close();
 				}
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
