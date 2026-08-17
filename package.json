@@ -31,9 +31,10 @@
   "main": "index.js",
   "scripts": {
     "build": "npm run format:check && npx rimraf dist && tsc && gulp build:icons",
-    "format:check": "prettier nodes --check",
+    "format:check": "prettier nodes tests --check",
     "dev": "tsc --watch",
-    "format": "prettier nodes --write",
+    "format": "prettier nodes tests --write",
+    "test": "tsc -p tsconfig.test.json && node --test \".tmp/tests/tests/**/*.test.js\"",
     "lint": "eslint nodes package.json",
     "lintfix": "eslint nodes package.json --fix",
     "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes package.json",
