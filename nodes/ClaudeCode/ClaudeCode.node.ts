@@ -8,7 +8,22 @@ import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
 import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createPromptStream } from './promptStream';
-import { resolveGraceWindow } from './timeout';
+import { resolveGraceWindow, type TerminationReason } from './timeout';
+
+/**
+ * Sent as a normal user turn after the interrupt. The run is already over as far as its own work
+ * goes; the only thing wanted here is a handover a following node or a human can act on.
+ */
+const WRAP_UP_PROMPT = [
+	'Your time budget for this task is exhausted. Stop all work now.',
+	'Do not start new tasks, do not call tools, do not edit files.',
+	'Reply with, in this order:',
+	'1. What you completed.',
+	'2. What is incomplete or in progress.',
+	'3. The exact next steps to resume.',
+	'4. Any file paths, IDs, or state a follow-up run needs.',
+	'Be concise and factual. Do not apologise.',
+].join('\n');
 
 /**
  * Built-in Claude Code tools (v2). The exact set varies by CLI version and
@@ -490,6 +505,10 @@ export class ClaudeCode implements INodeType {
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			let timeout = 300; // Default timeout
 			let timedOut = false;
+			let terminationReason: TerminationReason | null = null;
+			// A graceful stop asks Claude to summarise. That turn can itself run out of time, in
+			// which case the metrics still survive but the summary does not.
+			let wrapUpSucceeded = false;
 			// Declared per item and outside the try blocks so every error path can
 			// still report what ran and what it cost.
 			const messages: SDKMessage[] = [];
@@ -539,7 +558,7 @@ export class ClaudeCode implements INodeType {
 					additionalOptions.wrapUpGraceSeconds ?? (nodeVersion >= 1.1 ? 60 : 0),
 				);
 
-				// Validate required parameters before arming the timer, so a rejected
+				// Validate required parameters before arming the timers, so a rejected
 				// prompt cannot leak a pending timeout handle.
 				if (!rawPrompt || rawPrompt.trim() === '') {
 					throw new NodeOperationError(this.getNode(), 'Prompt is required and cannot be empty', {
@@ -547,13 +566,9 @@ export class ClaudeCode implements INodeType {
 					});
 				}
 
-				// Create abort controller for timeout
+				// Create abort controller for timeout. The timers themselves are armed further down,
+				// once the query exists — the soft one has to call interrupt() on it.
 				const abortController = new AbortController();
-				const timeoutMs = timeout * 1000;
-				const timeoutId = setTimeout(() => {
-					timedOut = true;
-					abortController.abort();
-				}, timeoutMs);
 
 				// Stopping the n8n execution must also stop the agent. Without this the
 				// spawned Claude Code process keeps running — and keeps spending — until
@@ -855,6 +870,56 @@ export class ClaudeCode implements INodeType {
 				// Held in a variable rather than iterated inline so control requests can reach it.
 				const runningQuery = query(queryOptions);
 
+				// Whether the wrap-up turn has been requested. Until it has, a result message means
+				// the run is over; after it, the FIRST result is the interrupt's own and the stream
+				// has to stay open for the summary that follows.
+				let wrapUpRequested = false;
+				let resultsSinceInterrupt = 0;
+				let streamClosed = false;
+
+				const closeStream = () => {
+					streamClosed = true;
+					promptStream.close();
+				};
+
+				// Interrupting is what makes the SDK account for the run: it emits a result message
+				// within ~100ms carrying the cumulative cost, tokens and session id. A plain abort()
+				// emits nothing at all, which is why a timed-out run used to report zeroes.
+				const wrapUpTimer =
+					graceWindow.wrapUpAtMs === null
+						? undefined
+						: setTimeout(() => {
+								// The run may have finished in the meantime; never interrupt a closed stream.
+								if (streamClosed) return;
+
+								timedOut = true;
+								terminationReason = 'timeout_graceful';
+								wrapUpRequested = true;
+
+								void (async () => {
+									try {
+										await runningQuery.interrupt();
+									} catch (interruptError) {
+										// Best effort. The hard timer below is the backstop, and the metrics
+										// the interrupt was after may still have been emitted.
+										if (additionalOptions.debug) {
+											this.logger.debug('Interrupt failed', {
+												error: interruptError instanceof Error ? interruptError.message : 'unknown',
+											});
+										}
+									}
+									promptStream.push(WRAP_UP_PROMPT);
+								})();
+							}, graceWindow.wrapUpAtMs);
+
+				// Always armed, whatever the grace: a wrap-up turn that hangs must not push the run
+				// past the timeout the workflow author configured.
+				const timeoutId = setTimeout(() => {
+					timedOut = true;
+					if (terminationReason === null) terminationReason = 'timeout_hard_abort';
+					abortController.abort();
+				}, graceWindow.hardAbortAtMs);
+
 				try {
 					for await (const message of runningQuery) {
 						messages.push(message);
@@ -863,7 +928,13 @@ export class ClaudeCode implements INodeType {
 						// open, so the result message is the signal to close it. Without this the
 						// query would never end.
 						if (message.type === 'result') {
-							promptStream.close();
+							if (!wrapUpRequested) {
+								closeStream();
+							} else if (++resultsSinceInterrupt >= 2) {
+								// First result was the interrupt's; this one is the summary.
+								wrapUpSucceeded = true;
+								closeStream();
+							}
 						}
 
 						if (additionalOptions.debug) {
@@ -932,6 +1003,26 @@ export class ClaudeCode implements INodeType {
 								}
 							}
 						}
+					}
+
+					// A graceful timeout ends the generator normally — the wrap-up turn completed, so
+					// nothing threw. Without this the run would fall through to the success path and a
+					// timed-out execution would report as green. The payload this error carries is
+					// filled in by the timeout reporting that follows in a later change.
+					if (timedOut) {
+						if (additionalOptions.debug) {
+							this.logger.debug('Run timed out', {
+								terminationReason,
+								wrapUpSucceeded,
+								wrapUpGraceSeconds: graceWindow.graceSeconds,
+								resultMessages: messages.filter((m) => m.type === 'result').length,
+							});
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Operation timed out after ${timeout} seconds. Consider increasing the timeout in Additional Options.`,
+							{ itemIndex, type: 'timeout' },
+						);
 					}
 
 					const duration = Date.now() - startTime;
@@ -1187,6 +1278,7 @@ export class ClaudeCode implements INodeType {
 					}
 				} finally {
 					clearTimeout(timeoutId);
+					if (wrapUpTimer !== undefined) clearTimeout(wrapUpTimer);
 					// On an error path the loop stops consuming while the input generator is still
 					// suspended waiting for a follow-up turn. Closing releases it.
 					promptStream.close();
