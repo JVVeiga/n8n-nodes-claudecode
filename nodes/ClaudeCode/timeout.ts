@@ -1,8 +1,8 @@
 import type { ModelUsage, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 /**
- * Pure helpers for reporting what a stopped run actually did. Kept free of n8n and of the SDK's
- * `query()` so they can be unit-tested against hand-written message arrays.
+ * Pure helpers for reporting what a stopped run actually did. They encode n8n's and the SDK's
+ * quirks but import neither, so they can be unit-tested against hand-written message arrays.
  */
 
 /** A 900s run can produce thousands of tool calls and this report is stored with every failed
@@ -247,6 +247,27 @@ export function formatTimeoutMessage(input: TimeoutPayloadInput): string {
 		metrics.numTurns,
 		metrics.assistantTurns,
 	)}, ${formatCost(metrics.totalCostUsd)}, ${session}`;
+}
+
+/**
+ * Shapes a failure item's json so `onError: continueErrorOutput` routes it to the error branch
+ * without losing the report.
+ *
+ * n8n routes on a top-level `error` field, or on json holding nothing beyond
+ * `error`/`message`/`details` (`workflow-execute.ts:2756-2763`). The top-level field is the obvious
+ * pick and it is a trap: n8n then rewrites the json to `{ error: <message> }` and every metric is
+ * lost. Hence the json route, with the report under `details`.
+ *
+ * Node version 1 keeps the flat shape 0.7.2 produced, which never reached the error branch at all.
+ */
+export function shapeFailureJson(
+	nodeVersion: number,
+	message: string,
+	description: string | null,
+	report: Record<string, unknown>,
+): Record<string, unknown> {
+	if (nodeVersion < 1.1) return report;
+	return { error: message, message: description ?? message, details: report };
 }
 
 export function formatTimeoutDescription(input: TimeoutPayloadInput): string {

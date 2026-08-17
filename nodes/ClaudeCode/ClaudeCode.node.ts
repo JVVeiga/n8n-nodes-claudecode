@@ -15,6 +15,7 @@ import {
 	formatTimeoutDescription,
 	formatTimeoutMessage,
 	resolveGraceWindow,
+	shapeFailureJson,
 	type TerminationReason,
 } from './timeout';
 
@@ -515,23 +516,8 @@ export class ClaudeCode implements INodeType {
 			// which case the metrics still survive but the summary does not.
 			let wrapUpSucceeded = false;
 
-			/**
-			 * Shapes a failure item so `onError: continueErrorOutput` routes it to the error branch
-			 * without losing the report.
-			 *
-			 * n8n routes on a top-level `error` field, or on json holding nothing beyond
-			 * `error`/`message`/`details` (`workflow-execute.ts:2756-2763`). The top-level field is the
-			 * obvious pick and it is a trap: n8n then rewrites the json to `{ error: <message> }` and
-			 * every metric is lost. Hence the json route, with the report under `details`.
-			 */
-			const failureJson = (
-				message: string,
-				description: string | null,
-				report: IDataObject,
-			): IDataObject =>
-				nodeVersion < 1.1
-					? report
-					: { error: message, message: description ?? message, details: report };
+			const failureJson = (message: string, description: string | null, report: IDataObject) =>
+				shapeFailureJson(nodeVersion, message, description, report) as IDataObject;
 			// Declared per item and outside the try blocks so every error path can
 			// still report what ran and what it cost.
 			const messages: SDKMessage[] = [];
@@ -943,8 +929,11 @@ export class ClaudeCode implements INodeType {
 					graceWindow.wrapUpAtMs === null
 						? undefined
 						: setTimeout(() => {
-								// The run may have finished in the meantime; never interrupt a closed stream.
-								if (streamClosed) return;
+								// The run may have finished in the meantime. The SDK emits no result message
+								// until a turn ends, so one already present means there is nothing left to
+								// interrupt — bail out rather than bill a wrap-up turn and report a completed
+								// run as a timeout.
+								if (streamClosed || messages.some((m) => m.type === 'result')) return;
 
 								timedOut = true;
 								terminationReason = 'timeout_graceful';

@@ -7,6 +7,7 @@ import {
 	formatTimeoutDescription,
 	formatTimeoutMessage,
 	resolveGraceWindow,
+	shapeFailureJson,
 	type RunMetrics,
 	type TimeoutPayloadInput,
 } from '../nodes/ClaudeCode/timeout';
@@ -374,5 +375,42 @@ describe('formatTimeoutDescription', () => {
 
 		assert.match(description, /Token counts are unavailable/);
 		assert.match(description, /Tools used: 1/);
+	});
+});
+
+describe('shapeFailureJson', () => {
+	const report = { errorType: 'timeout', total_cost_usd: 0.5, session_id: 'abc', diagnostics: {} };
+
+	it('nests the report under details on 1.1, so n8n routes without rewriting the json', () => {
+		const json = shapeFailureJson(1.1, 'timed out', 'grace 60s', report);
+
+		// n8n only routes an item whose json holds nothing beyond these three keys.
+		assert.deepEqual(Object.keys(json).sort(), ['details', 'error', 'message']);
+		assert.equal(json.error, 'timed out');
+		assert.equal(json.message, 'grace 60s');
+		assert.deepEqual(json.details, report);
+	});
+
+	it('satisfies n8n’s routing predicate', () => {
+		const json = shapeFailureJson(1.1, 'timed out', null, report);
+		const routes =
+			!!json.error && Object.keys(json).every((k) => ['error', 'message', 'details'].includes(k));
+
+		assert.equal(routes, true);
+	});
+
+	it('falls back to the message when there is no description', () => {
+		assert.equal(shapeFailureJson(1.1, 'boom', null, report).message, 'boom');
+	});
+
+	it('keeps the flat 0.7.2 shape on version 1', () => {
+		const json = shapeFailureJson(1, 'timed out', 'grace 60s', report);
+
+		assert.deepEqual(json, report);
+		assert.equal(json.total_cost_usd, 0.5);
+	});
+
+	it('treats any version below 1.1 as flat', () => {
+		assert.deepEqual(shapeFailureJson(1.0, 'x', null, report), report);
 	});
 });
