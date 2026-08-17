@@ -259,10 +259,34 @@ Everything inside `details`:
 | `toolTimeline`, `toolUseCount`, `toolTimelineTruncated` | The last 100 tool calls, and the true total |
 | `duration_ms`, `assistantTurns`, `messageCount`, `diagnostics` | Everything else about the run |
 
-With **On Error** left at its default the execution still fails, as it should — the same data is on
-the error's `context`, and the message and description are shown in the execution panel. An **Error
-Workflow** only ever receives `execution.error.message`, which is why that message carries the turns,
-cost and session ID inline.
+With **On Error** left at its default the execution still fails, as it should. What you see in the
+error panel is the message and the description:
+
+```
+Problem in node ‘Claude Code‘
+Claude Code timed out after 25s (wrap-up summary returned) — 6 turns, $0.0651 spent, session dd05ec45…
+Grace window: 10s. Tokens: 650 in / 1080 out / 100893 cache read / 3022 cache write.
+Models: claude-haiku-4-5, claude-sonnet-5. Tools used: 3.
+Resume with the Continue operation and session id dd05ec45….
+```
+
+The full report is also attached to the error object and saved with the execution, but n8n 2.34.6
+does not render it in the panel — *Other info* there shows only the node type, versions, time and
+stack trace. That is why the message and description are written to stand on their own. Use one of
+the continue modes above when a following node needs the numbers.
+
+An **Error Workflow** gets more than the panel does. The `Error Trigger` receives the whole report:
+
+```javascript
+{{ $json.execution.error.message }}                    // the one-line summary
+{{ $json.execution.error.context.total_cost_usd }}     // 0.0257
+{{ $json.execution.error.context.session_id }}
+{{ $json.execution.error.context.usageReliable }}
+{{ $json.execution.lastNodeExecuted }}                 // "Claude Code"
+```
+
+So an alerting workflow can report what a timed-out run cost without any extra wiring. The message
+still carries the headline numbers inline, because that is the line a human reads in a Slack alert.
 
 ## 📋 Configuration Examples
 
