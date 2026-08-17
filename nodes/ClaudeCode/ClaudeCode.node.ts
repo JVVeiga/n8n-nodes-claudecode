@@ -18,10 +18,7 @@ import {
 	type TerminationReason,
 } from './timeout';
 
-/**
- * Sent as a normal user turn after the interrupt. The run is already over as far as its own work
- * goes; the only thing wanted here is a handover a following node or a human can act on.
- */
+/** Sent as a normal user turn after the interrupt, to get a handover rather than more work. */
 const WRAP_UP_PROMPT = [
 	'Your time budget for this task is exhausted. Stop all work now.',
 	'Do not start new tasks, do not call tools, do not edit files.',
@@ -92,10 +89,9 @@ export class ClaudeCode implements INodeType {
 		name: 'claudeCode',
 		icon: 'file:claudecode.svg',
 		group: ['transform'],
-		// 1.1 changes two observable behaviours, so existing nodes stay on 1 until their author
-		// opts in: Timeout Wrap-Up Grace defaults to 60s instead of 0 (a run is interrupted and
-		// asked to summarise before the hard abort), and failure items carry the top-level `error`
-		// field n8n needs to route them to the error output branch.
+		// 1.1 changes two observable behaviours, so existing nodes stay on 1 until their author opts
+		// in: Timeout Wrap-Up Grace defaults to 60s instead of 0, and failure items are reshaped so
+		// they reach the error output branch.
 		version: [1, 1.1],
 		defaultVersion: 1.1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
@@ -520,19 +516,13 @@ export class ClaudeCode implements INodeType {
 			let wrapUpSucceeded = false;
 
 			/**
-			 * Shapes a failure item so `onError: continueErrorOutput` actually routes it to the error
-			 * branch without losing the report.
+			 * Shapes a failure item so `onError: continueErrorOutput` routes it to the error branch
+			 * without losing the report.
 			 *
-			 * n8n routes on one of two conditions (`workflow-execute.ts:2756-2763`): the item carries a
-			 * top-level `error` field, or its json holds nothing beyond `error`/`message`/`details`.
-			 * The top-level field is the obvious choice and it is a trap — n8n then reduces the item's
-			 * json to `{ error: <message> }`, so every metric is destroyed. Measured end-to-end: the
-			 * same run reported 22 json keys without the field and 1 with it.
-			 *
-			 * So take the json route and park the report under `details`, which is one of the three
-			 * permitted keys. Downstream reads `{{ $json.details.total_cost_usd }}`.
-			 *
-			 * v1 keeps the flat shape 0.7.2 produced, which never reached the error branch at all.
+			 * n8n routes on a top-level `error` field, or on json holding nothing beyond
+			 * `error`/`message`/`details` (`workflow-execute.ts:2756-2763`). The top-level field is the
+			 * obvious pick and it is a trap: n8n then rewrites the json to `{ error: <message> }` and
+			 * every metric is lost. Hence the json route, with the report under `details`.
 			 */
 			const failureJson = (
 				message: string,
@@ -581,10 +571,8 @@ export class ClaudeCode implements INodeType {
 					wrapUpGraceSeconds?: number;
 				};
 
-				// The declarative schema cannot vary a default by typeVersion, and the field lives
-				// inside a collection — so an unset field arrives as undefined and the version-aware
-				// fallback is applied here. v1 keeps the 0.7.2 behaviour of a plain kill at the
-				// timeout, with no wrap-up and therefore no spend reporting.
+				// The declarative schema cannot vary a default by typeVersion, and an unset collection
+				// field arrives as undefined — so the version-aware fallback is applied here.
 				const graceWindow = resolveGraceWindow(
 					timeout,
 					additionalOptions.wrapUpGraceSeconds ?? (nodeVersion >= 1.1 ? 60 : 0),
@@ -598,8 +586,8 @@ export class ClaudeCode implements INodeType {
 					});
 				}
 
-				// Create abort controller for timeout. The timers themselves are armed further down,
-				// once the query exists — the soft one has to call interrupt() on it.
+				// The timers are armed further down, once the query exists — the soft one calls
+				// interrupt() on it.
 				const abortController = new AbortController();
 
 				// Stopping the n8n execution must also stop the agent. Without this the
@@ -926,8 +914,9 @@ export class ClaudeCode implements INodeType {
 						},
 					);
 
-					// `context` is public on ExecutionBaseError and serialised by its toJSON(), so the
-					// payload still reaches the execution panel on the path that throws.
+					// Saved with the execution and readable by an Error Workflow via
+					// `execution.error.context`. The UI panel does not render it — hence the message
+					// and description above carrying the numbers themselves.
 					timeoutError.context = buildTimeoutPayload(report) as IDataObject;
 					return timeoutError;
 				};
@@ -965,8 +954,7 @@ export class ClaudeCode implements INodeType {
 									try {
 										await runningQuery.interrupt();
 									} catch (interruptError) {
-										// Best effort. The hard timer below is the backstop, and the metrics
-										// the interrupt was after may still have been emitted.
+										// Best effort — the hard timer is the backstop.
 										if (additionalOptions.debug) {
 											this.logger.debug('Interrupt failed', {
 												error: interruptError instanceof Error ? interruptError.message : 'unknown',
@@ -1070,10 +1058,8 @@ export class ClaudeCode implements INodeType {
 						}
 					}
 
-					// A graceful timeout ends the generator normally — the wrap-up turn completed, so
-					// nothing threw. Without this the run would fall through to the success path and a
-					// timed-out execution would report as green, with the wrap-up summary presented as
-					// though it were the answer.
+					// A graceful timeout ends the generator normally, so without this the run falls
+					// through to the success path and reports green with the wrap-up as the answer.
 					if (timedOut) {
 						if (additionalOptions.debug) {
 							this.logger.debug('Run timed out', {
@@ -1313,9 +1299,8 @@ export class ClaudeCode implements INodeType {
 					const failedResult = messages.find((m) => m.type === 'result') as any;
 					diagnostics = buildDiagnostics();
 
-					// Every timeout is reported through a single path in the outer catch, so the shape
-					// is identical whether the generator threw or ended cleanly after a wrap-up. An
-					// error built above already carries its payload; a raw SDK abort does not.
+					// Report every timeout through the outer catch, so the shape is identical whether
+					// the generator threw or ended cleanly after a wrap-up.
 					if (timedOut) {
 						throw queryError instanceof NodeOperationError ? queryError : buildTimeoutError();
 					}

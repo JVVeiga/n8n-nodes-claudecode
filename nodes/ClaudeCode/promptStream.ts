@@ -1,12 +1,9 @@
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 /**
- * The prompt delivered to the SDK as a stream rather than a plain string.
- *
- * `query.interrupt()` and every other control request is only supported in streaming input mode, so
- * stopping a run gracefully requires the prompt to be an AsyncIterable. The catch is that the SDK
- * keeps the session open for as long as the input stream is open — a stream that never closes means
- * a query that never finishes. So the caller must close this explicitly once it has what it needs.
+ * The prompt as a stream rather than a string, because `interrupt()` and the other control requests
+ * only work in streaming input mode. The SDK keeps the session open for as long as the input stream
+ * is, so a stream that never closes is a query that never finishes — the caller must close it.
  */
 export type PromptStream = {
 	stream: AsyncIterable<SDKUserMessage>;

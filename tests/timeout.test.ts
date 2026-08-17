@@ -53,7 +53,7 @@ const model = (over: Partial<Record<string, number>> = {}) => ({
 	...over,
 });
 
-/** Result #1 from spike 2: the interrupt's own result. Per-turn counts, no text. */
+/** The interrupt's own result, values taken from a real run. Per-turn counts, no text. */
 const interruptResult = msg({
 	type: 'result',
 	subtype: 'error_during_execution',
@@ -71,7 +71,7 @@ const interruptResult = msg({
 const WRAP_UP_TEXT =
 	'- Read `claudecode.svg`.\n- Left: describe `ClaudeCode.node.ts`.\n- Next: read it.';
 
-/** Result #2 from spike 2: the wrap-up turn. num_turns restarts at 1, modelUsage is cumulative. */
+/** The wrap-up turn's result. Note num_turns restarts at 1 while modelUsage is cumulative. */
 const wrapUpResult = msg({
 	type: 'result',
 	subtype: 'success',
@@ -296,7 +296,7 @@ describe('buildTimeoutPayload', () => {
 		assert.match(payload.error as string, /timed out/);
 	});
 
-	it('exposes the metrics as sibling keys for downstream nodes', () => {
+	it('returns the metrics as flat fields', () => {
 		assert.equal(payload.total_cost_usd, 0.21266249999999998);
 		assert.equal(payload.num_turns, 6);
 		assert.equal(payload.session_id, SESSION);

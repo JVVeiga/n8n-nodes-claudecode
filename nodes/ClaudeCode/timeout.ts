@@ -5,9 +5,8 @@ import type { ModelUsage, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
  * `query()` so they can be unit-tested against hand-written message arrays.
  */
 
-/** How many tool_use entries the timeline keeps. A 900s run can produce thousands, and this
- * payload is persisted on every failed execution in the n8n database. The tail is kept rather
- * than the head: where a run stalled matters more than how it started. */
+/** A 900s run can produce thousands of tool calls and this report is stored with every failed
+ * execution. The tail is kept, not the head: where a run stalled matters more than how it started. */
 const TOOL_TIMELINE_LIMIT = 100;
 
 export type UsageTotals = {
@@ -62,16 +61,12 @@ const contentOf = (m: AssistantMessage): ContentBlock[] => {
 };
 
 /**
- * Reads spend and progress from the message stream.
+ * Reads spend and progress from the message stream. A graceful timeout emits TWO result messages,
+ * one for the interrupt and one for the wrap-up, and the fields split awkwardly: `total_cost_usd`
+ * and `modelUsage` accumulate across turns while `usage` and `num_turns` cover only their own.
  *
- * A graceful timeout emits TWO result messages — one for the interrupt, one for the wrap-up turn —
- * and the fields split awkwardly: `total_cost_usd` and `modelUsage` accumulate across turns while
- * `usage` and `num_turns` report only their own turn. So totals come from the LAST result's
- * `modelUsage`, and turns are summed across every result.
- *
- * Deliberately does not fall back to summing assistant-message `usage` when no result exists.
- * Measured against the SDK's own accounting that under-reports output tokens by more than 20x
- * (26 vs 619 on a real run), which would be a fabricated number rather than an estimate.
+ * Never falls back to summing assistant-message `usage` — measured, it under-reports output tokens
+ * by more than 20x, so it would be a fabricated number rather than an estimate.
  */
 export function collectRunMetrics(messages: SDKMessage[]): RunMetrics {
 	const results = messages.filter(isResult);
@@ -163,9 +158,8 @@ export type GraceWindow = {
 };
 
 /**
- * Splits the configured timeout into a wrap-up point and a hard deadline. The grace is carved out
- * of the timeout rather than added to it, so a node configured for 900s never runs longer than
- * 900s. Clamped to half the timeout so a large grace on a short timeout cannot swallow the run.
+ * The grace is carved out of the timeout rather than added to it, so a node configured for 900s
+ * never runs longer than 900s.
  */
 export function resolveGraceWindow(timeoutSeconds: number, graceSeconds: number): GraceWindow {
 	const hardAbortAtMs = timeoutSeconds * 1000;
@@ -191,11 +185,7 @@ export type TimeoutPayloadInput = {
 
 export type TimeoutPayload = Record<string, unknown>;
 
-/**
- * Builds the object emitted on every timeout path. `error` is a plain message string so
- * `{{ $json.error }}` reads the same here as after any other n8n node failure; the metrics live in
- * sibling keys.
- */
+/** Builds the report emitted on every timeout path. */
 export function buildTimeoutPayload(input: TimeoutPayloadInput): TimeoutPayload {
 	const { metrics } = input;
 
@@ -239,9 +229,8 @@ const formatTurns = (turns: number | null, assistantTurns: number): string =>
 	turns === null ? `${assistantTurns} assistant turns` : `${turns} turns`;
 
 /**
- * The `error.message`. This string is the ONLY field an n8n Error Workflow receives
- * (`execution.error.message`), so it has to name the timeout and carry the headline numbers on its
- * own — `error.context` never reaches the Error Trigger.
+ * The `error.message`. n8n's error panel renders this and the description and nothing else — not
+ * `error.context` — so it has to name the timeout and carry the headline numbers on its own.
  */
 export function formatTimeoutMessage(input: TimeoutPayloadInput): string {
 	const { metrics } = input;
@@ -260,9 +249,6 @@ export function formatTimeoutMessage(input: TimeoutPayloadInput): string {
 	)}, ${formatCost(metrics.totalCostUsd)}, ${session}`;
 }
 
-/**
- * The `error.description` — the supporting detail line n8n renders under the message.
- */
 export function formatTimeoutDescription(input: TimeoutPayloadInput): string {
 	const { metrics } = input;
 	const parts: string[] = [`Grace window: ${input.graceSeconds}s.`];
