@@ -67,7 +67,12 @@ export class ClaudeCode implements INodeType {
 		name: 'claudeCode',
 		icon: 'file:claudecode.svg',
 		group: ['transform'],
-		version: 1,
+		// 1.1 changes two observable behaviours, so existing nodes stay on 1 until their author
+		// opts in: Timeout Wrap-Up Grace defaults to 60s instead of 0 (a run is interrupted and
+		// asked to summarise before the hard abort), and failure items carry the top-level `error`
+		// field n8n needs to route them to the error output branch.
+		version: [1, 1.1],
+		defaultVersion: 1.1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 		description:
 			'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',
