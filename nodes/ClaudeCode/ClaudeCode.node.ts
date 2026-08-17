@@ -520,22 +520,28 @@ export class ClaudeCode implements INodeType {
 			let wrapUpSucceeded = false;
 
 			/**
-			 * n8n moves an item to the error output branch only when the item carries a top-level
-			 * `error` field, or when its json holds nothing but error/message/details
-			 * (`workflow-execute.ts:2756-2763`). A payload with metrics alongside the message fails
-			 * that second test, so without this field the item would silently land on the SUCCESS
-			 * branch under `onError: continueErrorOutput`. Gated on 1.1: v1 keeps the old shape,
-			 * including the pre-existing bug, rather than moving items between branches on an upgrade.
+			 * Shapes a failure item so `onError: continueErrorOutput` actually routes it to the error
+			 * branch without losing the report.
+			 *
+			 * n8n routes on one of two conditions (`workflow-execute.ts:2756-2763`): the item carries a
+			 * top-level `error` field, or its json holds nothing beyond `error`/`message`/`details`.
+			 * The top-level field is the obvious choice and it is a trap — n8n then reduces the item's
+			 * json to `{ error: <message> }`, so every metric is destroyed. Measured end-to-end: the
+			 * same run reported 22 json keys without the field and 1 with it.
+			 *
+			 * So take the json route and park the report under `details`, which is one of the three
+			 * permitted keys. Downstream reads `{{ $json.details.total_cost_usd }}`.
+			 *
+			 * v1 keeps the flat shape 0.7.2 produced, which never reached the error branch at all.
 			 */
-			const errorField = (cause: unknown): { error?: NodeOperationError } => {
-				if (nodeVersion < 1.1) return {};
-				return {
-					error:
-						cause instanceof NodeOperationError
-							? cause
-							: new NodeOperationError(this.getNode(), cause as Error, { itemIndex }),
-				};
-			};
+			const failureJson = (
+				message: string,
+				description: string | null,
+				report: IDataObject,
+			): IDataObject =>
+				nodeVersion < 1.1
+					? report
+					: { error: message, message: description ?? message, details: report };
 			// Declared per item and outside the try blocks so every error path can
 			// still report what ran and what it cost.
 			const messages: SDKMessage[] = [];
@@ -1321,7 +1327,7 @@ export class ClaudeCode implements INodeType {
 						const errorMessage =
 							queryError instanceof Error ? queryError.message : String(queryError);
 						returnData.push({
-							json: {
+							json: failureJson(errorMessage, null, {
 								result: `Error during execution: ${errorMessage}`,
 								success: false,
 								errorType: timedOut ? 'timeout' : 'execution_error',
@@ -1332,8 +1338,7 @@ export class ClaudeCode implements INodeType {
 								session_id: failedResult?.session_id ?? null,
 								usage: failedResult?.usage ?? null,
 								diagnostics,
-							},
-							...errorField(queryError),
+							}),
 							pairedItem: { item: itemIndex },
 						});
 					} else {
@@ -1359,8 +1364,11 @@ export class ClaudeCode implements INodeType {
 				if (this.continueOnFail()) {
 					if (timeoutError) {
 						returnData.push({
-							json: timeoutError.context as IDataObject,
-							...errorField(timeoutError),
+							json: failureJson(
+								timeoutError.message,
+								timeoutError.description ?? null,
+								timeoutError.context as IDataObject,
+							),
 							pairedItem: { item: itemIndex },
 						});
 						continue;
@@ -1368,7 +1376,7 @@ export class ClaudeCode implements INodeType {
 
 					const failedResult = messages.find((m) => m.type === 'result') as any;
 					returnData.push({
-						json: {
+						json: failureJson(errorMessage, null, {
 							error: errorMessage,
 							errorType: isTimeout ? 'timeout' : 'execution_error',
 							errorDetails: error instanceof Error ? error.stack : undefined,
@@ -1379,8 +1387,7 @@ export class ClaudeCode implements INodeType {
 							session_id: failedResult?.session_id ?? null,
 							usage: failedResult?.usage ?? null,
 							diagnostics,
-						},
-						...errorField(error),
+						}),
 						pairedItem: { item: itemIndex },
 					});
 					continue;

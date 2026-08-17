@@ -214,6 +214,7 @@ by a package upgrade:
 | | Version 1 (existing nodes) | Version 1.1 (new nodes) |
 |---|---|---|
 | Timeout Wrap-Up Grace default | `0` — process killed at the Timeout, as before | `60` |
+| Failure item shape | flat report at the top level | `{ error, message, details }` |
 | Failure items on the error output | stay on the main output | routed to the error output |
 
 Existing nodes keep behaving exactly as they did. To opt in, either set the grace explicitly or add
@@ -222,19 +223,28 @@ error message.
 
 ### Reading the timeout data in the next node
 
-Set the node's **On Error** to *Continue (using error output)* and the timeout item arrives on the
-error branch with everything on it:
+Set the node's **On Error** to *Continue (using error output)* — or *Continue (using regular
+output)* — and the timeout item carries the whole report under `details`:
 
 ```javascript
-{{ $json.total_cost_usd }}   // 4.812  — cumulative across the whole run
-{{ $json.num_turns }}        // 47
-{{ $json.usage.outputTokens }}
-{{ $json.session_id }}       // feed to the Continue operation to resume
-{{ $json.result }}           // the handover summary
-{{ $json.timedOut }}         // true
+{{ $json.error }}                      // one-line summary: timed out, turns, cost, session
+{{ $json.message }}                    // token breakdown and how to resume
+{{ $json.details.total_cost_usd }}     // 4.812 — cumulative across the whole run
+{{ $json.details.num_turns }}          // 47
+{{ $json.details.usage.outputTokens }}
+{{ $json.details.session_id }}         // feed to the Continue operation to resume
+{{ $json.details.result }}             // the handover summary
+{{ $json.details.timedOut }}           // true
 ```
 
-Full payload:
+> **Why `details` and not the top level?** n8n sends an item to the error branch when the item has a
+> top-level `error` field, *or* when its json holds nothing beyond `error`, `message` and `details`.
+> The top-level field looks like the natural choice, but n8n then rewrites the item's json to just
+> `{ error: <message> }` and every metric is lost. Using the three permitted keys keeps the routing
+> and the report. On node version 1 the report stays flat at the top level, and never reaches the
+> error branch at all.
+
+Everything inside `details`:
 
 | Field | Meaning |
 |---|---|
