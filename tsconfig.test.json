@@ -1,0 +1,11 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./.tmp/tests/",
+		"declaration": false,
+		"sourceMap": false,
+		"incremental": false,
+		"noUnusedLocals": false
+	},
+	"include": ["nodes/**/*.ts", "tests/**/*.ts"]
+}
