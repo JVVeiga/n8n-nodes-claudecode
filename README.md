@@ -154,6 +154,8 @@ Fine-tune Claude Code's behavior with these powerful options:
 - 🔄 **Fallback Model**: Automatically switch models when primary is overloaded
 - 🧠 **Max Thinking Tokens**: Control Claude's internal reasoning depth
 - 🔐 **Permission Modes**: Choose from `default`, `acceptEdits`, `bypassPermissions`, or `plan`
+- ⏱️ **Timeout Wrap-Up Grace**: Stop a run that overruns *and still get its tokens, cost and a
+  handover summary — see [Timeouts](#-timeouts)
 
 ### **Model Context Protocol (MCP)**
 Extend Claude Code with specialized capabilities:
@@ -161,6 +163,96 @@ Extend Claude Code with specialized capabilities:
 - GitHub repository management
 - Slack workspace integration
 - Custom tool development
+
+## ⏱️ Timeouts
+
+A long agentic run that hits its **Timeout** used to report nothing but a string:
+
+```
+Operation timed out after 900 seconds. Consider increasing the timeout in Additional Options.
+```
+
+Fifteen minutes of real spend, and no record of how much it cost, how far it got, or which session
+to resume. That is because killing the Claude Code process outright makes the SDK emit no accounting
+at all.
+
+**Timeout Wrap-Up Grace (Seconds)** fixes this. Instead of killing the process at the deadline, the
+node *interrupts* it a little earlier and asks Claude to stop and hand over what it did. Interrupting
+is what makes the SDK report the run, so a timed-out node now returns real numbers and a usable
+answer.
+
+```
+Claude Code timed out after 900s (wrap-up summary returned) — 47 turns, $4.81 spent, session c0ffee…
+```
+
+### How the grace window works
+
+The grace is taken **out of** the Timeout, never added to it. A node set to `timeout: 900` with
+`Timeout Wrap-Up Grace: 60`:
+
+| At | What happens |
+|---|---|
+| 840s | Claude is interrupted. The SDK emits the run's cumulative cost, tokens and session ID within ~100ms. |
+| 840s–900s | Claude writes a handover: what it finished, what is unfinished, how to resume. |
+| 900s | Hard abort, unconditionally — a wrap-up that hangs cannot push the run past your Timeout. |
+
+Set it to `0` to kill the process at the Timeout instead. You then get the session ID, the tool
+timeline and the last thing Claude said, but **no tokens and no cost** — the SDK never reports them
+for a killed process, and this node will not invent them.
+
+The grace is clamped to half the Timeout, so a large grace on a short Timeout cannot swallow the run.
+
+> **On timing:** the interrupt and the abort both fire exactly on schedule, but after an abort the
+> SDK spends about two seconds killing the subprocess. So a hard-aborted node returns up to ~3s after
+> its Timeout, while the graceful path returns *under* it. Claude stops working on time either way.
+
+### Node version 1 vs 1.1
+
+The grace changes when a run stops, so it is gated behind the node version rather than switched on
+by a package upgrade:
+
+| | Version 1 (existing nodes) | Version 1.1 (new nodes) |
+|---|---|---|
+| Timeout Wrap-Up Grace default | `0` — process killed at the Timeout, as before | `60` |
+| Failure items on the error output | stay on the main output | routed to the error output |
+
+Existing nodes keep behaving exactly as they did. To opt in, either set the grace explicitly or add
+a fresh Claude Code node. Both versions get the diagnostics, the session ID and the self-describing
+error message.
+
+### Reading the timeout data in the next node
+
+Set the node's **On Error** to *Continue (using error output)* and the timeout item arrives on the
+error branch with everything on it:
+
+```javascript
+{{ $json.total_cost_usd }}   // 4.812  — cumulative across the whole run
+{{ $json.num_turns }}        // 47
+{{ $json.usage.outputTokens }}
+{{ $json.session_id }}       // feed to the Continue operation to resume
+{{ $json.result }}           // the handover summary
+{{ $json.timedOut }}         // true
+```
+
+Full payload:
+
+| Field | Meaning |
+|---|---|
+| `error` | Self-describing message string, same convention as every other n8n node |
+| `errorType` / `timedOut` | `'timeout'` / `true` — a timeout is never mistakable for a generic failure |
+| `terminationReason` | `'timeout_graceful'` or `'timeout_hard_abort'` |
+| `timeoutSeconds`, `wrapUpGraceSeconds`, `wrapUpSucceeded` | What was configured, and whether the handover made it |
+| `result`, `resultSource` | The handover text, and whether it came from the wrap-up or from the last thing Claude said |
+| `total_cost_usd`, `num_turns`, `usage`, `modelUsage` | Cumulative spend. `null` when the process was killed |
+| `usageReliable` | `false` when the numbers are unavailable, so you can branch on it |
+| `session_id` | Resume the run with the Continue operation |
+| `toolTimeline`, `toolUseCount`, `toolTimelineTruncated` | The last 100 tool calls, and the true total |
+| `duration_ms`, `assistantTurns`, `messageCount`, `diagnostics` | Everything else about the run |
+
+With **On Error** left at its default the execution still fails, as it should — the same data is on
+the error's `context`, and the message and description are shown in the execution panel. An **Error
+Workflow** only ever receives `execution.error.message`, which is why that message carries the turns,
+cost and session ID inline.
 
 ## 📋 Configuration Examples
 
