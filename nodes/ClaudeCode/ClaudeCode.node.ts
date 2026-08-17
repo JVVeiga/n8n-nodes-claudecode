@@ -7,6 +7,7 @@ import type {
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { resolveGraceWindow } from './timeout';
 
 /**
  * Built-in Claude Code tools (v2). The exact set varies by CLI version and
@@ -333,6 +334,15 @@ export class ClaudeCode implements INodeType {
 							'Whether to embed the full message transcript in the output. It carries every tool result verbatim — file contents, command output — and n8n stores it with the execution. Turn off to keep only the summary, result and metrics.',
 					},
 					{
+						displayName: 'Timeout Wrap-Up Grace (Seconds)',
+						name: 'wrapUpGraceSeconds',
+						type: 'number',
+						default: 60,
+						typeOptions: { minValue: 0, maxValue: 600 },
+						description:
+							'Seconds reserved at the end of the Timeout for Claude to stop and summarise what it did. Taken out of the Timeout, not added to it, so a run never exceeds the Timeout. Interrupting this way is what makes the SDK report the tokens, cost and session ID of a timed-out run — a plain kill reports none of it. Set to 0 to kill the process at the Timeout instead. Defaults to 60 on node version 1.1 and to 0 on version 1.',
+					},
+					{
 						displayName: 'Max Budget (USD)',
 						name: 'maxBudgetUsd',
 						type: 'number',
@@ -515,7 +525,18 @@ export class ClaudeCode implements INodeType {
 					allowPlanExecution?: boolean;
 					pathToClaudeCodeExecutable?: string;
 					thinking?: string;
+					wrapUpGraceSeconds?: number;
 				};
+
+				// The declarative schema cannot vary a default by typeVersion, and the field lives
+				// inside a collection — so an unset field arrives as undefined and the version-aware
+				// fallback is applied here. v1 keeps the 0.7.2 behaviour of a plain kill at the
+				// timeout, with no wrap-up and therefore no spend reporting.
+				const nodeVersion = this.getNode().typeVersion;
+				const graceWindow = resolveGraceWindow(
+					timeout,
+					additionalOptions.wrapUpGraceSeconds ?? (nodeVersion >= 1.1 ? 60 : 0),
+				);
 
 				// Validate required parameters before arming the timer, so a rejected
 				// prompt cannot leak a pending timeout handle.
@@ -553,6 +574,10 @@ export class ClaudeCode implements INodeType {
 						model,
 						maxTurns,
 						timeout: `${timeout}s`,
+						nodeVersion,
+						wrapUpGraceSeconds: graceWindow.graceSeconds,
+						wrapUpAtMs: graceWindow.wrapUpAtMs,
+						hardAbortAtMs: graceWindow.hardAbortAtMs,
 						allowedTools,
 						disallowedTools,
 						fallbackModel: additionalOptions.fallbackModel || 'none',
