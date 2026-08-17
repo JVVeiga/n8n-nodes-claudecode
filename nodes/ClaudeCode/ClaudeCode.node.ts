@@ -1,4 +1,5 @@
 import type {
+	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
@@ -6,7 +7,29 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { createPromptStream } from './promptStream';
+import {
+	buildTimeoutPayload,
+	collectRunMetrics,
+	formatTimeoutDescription,
+	formatTimeoutMessage,
+	resolveGraceWindow,
+	shapeFailureJson,
+	type TerminationReason,
+} from './timeout';
+
+/** Sent as a normal user turn after the interrupt, to get a handover rather than more work. */
+const WRAP_UP_PROMPT = [
+	'Your time budget for this task is exhausted. Stop all work now.',
+	'Do not start new tasks, do not call tools, do not edit files.',
+	'Reply with, in this order:',
+	'1. What you completed.',
+	'2. What is incomplete or in progress.',
+	'3. The exact next steps to resume.',
+	'4. Any file paths, IDs, or state a follow-up run needs.',
+	'Be concise and factual. Do not apologise.',
+].join('\n');
 
 /**
  * Built-in Claude Code tools (v2). The exact set varies by CLI version and
@@ -67,7 +90,11 @@ export class ClaudeCode implements INodeType {
 		name: 'claudeCode',
 		icon: 'file:claudecode.svg',
 		group: ['transform'],
-		version: 1,
+		// 1.1 changes two observable behaviours, so existing nodes stay on 1 until their author opts
+		// in: Timeout Wrap-Up Grace defaults to 60s instead of 0, and failure items are reshaped so
+		// they reach the error output branch.
+		version: [1, 1.1],
+		defaultVersion: 1.1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 		description:
 			'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',
@@ -328,6 +355,15 @@ export class ClaudeCode implements INodeType {
 							'Whether to embed the full message transcript in the output. It carries every tool result verbatim — file contents, command output — and n8n stores it with the execution. Turn off to keep only the summary, result and metrics.',
 					},
 					{
+						displayName: 'Timeout Wrap-Up Grace (Seconds)',
+						name: 'wrapUpGraceSeconds',
+						type: 'number',
+						default: 60,
+						typeOptions: { minValue: 0, maxValue: 600 },
+						description:
+							'Seconds reserved at the end of the Timeout for Claude to stop and summarise what it did. Taken out of the Timeout, not added to it, so a run never exceeds the Timeout. Interrupting this way is what makes the SDK report the tokens, cost and session ID of a timed-out run — a plain kill reports none of it. Set to 0 to kill the process at the Timeout instead. Defaults to 60 on node version 1.1 and to 0 on version 1.',
+					},
+					{
 						displayName: 'Max Budget (USD)',
 						name: 'maxBudgetUsd',
 						type: 'number',
@@ -470,10 +506,18 @@ export class ClaudeCode implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
+		const nodeVersion = this.getNode().typeVersion;
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			let timeout = 300; // Default timeout
 			let timedOut = false;
+			let terminationReason: TerminationReason | null = null;
+			// A graceful stop asks Claude to summarise. That turn can itself run out of time, in
+			// which case the metrics still survive but the summary does not.
+			let wrapUpSucceeded = false;
+
+			const failureJson = (message: string, description: string | null, report: IDataObject) =>
+				shapeFailureJson(nodeVersion, message, description, report) as IDataObject;
 			// Declared per item and outside the try blocks so every error path can
 			// still report what ran and what it cost.
 			const messages: SDKMessage[] = [];
@@ -510,9 +554,17 @@ export class ClaudeCode implements INodeType {
 					allowPlanExecution?: boolean;
 					pathToClaudeCodeExecutable?: string;
 					thinking?: string;
+					wrapUpGraceSeconds?: number;
 				};
 
-				// Validate required parameters before arming the timer, so a rejected
+				// The declarative schema cannot vary a default by typeVersion, and an unset collection
+				// field arrives as undefined — so the version-aware fallback is applied here.
+				const graceWindow = resolveGraceWindow(
+					timeout,
+					additionalOptions.wrapUpGraceSeconds ?? (nodeVersion >= 1.1 ? 60 : 0),
+				);
+
+				// Validate required parameters before arming the timers, so a rejected
 				// prompt cannot leak a pending timeout handle.
 				if (!rawPrompt || rawPrompt.trim() === '') {
 					throw new NodeOperationError(this.getNode(), 'Prompt is required and cannot be empty', {
@@ -520,19 +572,19 @@ export class ClaudeCode implements INodeType {
 					});
 				}
 
-				// Create abort controller for timeout
+				// The timers are armed further down, once the query exists — the soft one calls
+				// interrupt() on it.
 				const abortController = new AbortController();
-				const timeoutMs = timeout * 1000;
-				const timeoutId = setTimeout(() => {
-					timedOut = true;
-					abortController.abort();
-				}, timeoutMs);
 
 				// Stopping the n8n execution must also stop the agent. Without this the
 				// spawned Claude Code process keeps running — and keeps spending — until
 				// its own timeout, with its output discarded.
 				this.onExecutionCancellation(() => abortController.abort());
 
+				// Delivered as a stream, not a string: control requests such as interrupt() are only
+				// available in streaming input mode. The stream must be closed once the run is done
+				// or the SDK keeps the session open and the query never ends.
+				const promptStream = createPromptStream(rawPrompt);
 				const prompt = rawPrompt;
 
 				// Ultracode maps to xHigh effort (its defined level) plus the
@@ -548,6 +600,10 @@ export class ClaudeCode implements INodeType {
 						model,
 						maxTurns,
 						timeout: `${timeout}s`,
+						nodeVersion,
+						wrapUpGraceSeconds: graceWindow.graceSeconds,
+						wrapUpAtMs: graceWindow.wrapUpAtMs,
+						hardAbortAtMs: graceWindow.hardAbortAtMs,
 						allowedTools,
 						disallowedTools,
 						fallbackModel: additionalOptions.fallbackModel || 'none',
@@ -556,7 +612,7 @@ export class ClaudeCode implements INodeType {
 
 				// Build query options
 				interface QueryOptions {
-					prompt: string;
+					prompt: AsyncIterable<SDKUserMessage>;
 					options: {
 						abortController: AbortController;
 						maxTurns: number;
@@ -592,7 +648,7 @@ export class ClaudeCode implements INodeType {
 				}
 
 				const queryOptions: QueryOptions = {
-					prompt,
+					prompt: promptStream.stream,
 					options: {
 						abortController,
 						maxTurns,
@@ -817,9 +873,111 @@ export class ClaudeCode implements INodeType {
 					};
 				};
 
+				// One place builds the timeout report, so the thrown error, the continueOnFail item and
+				// the text-format item cannot drift apart.
+				const buildTimeoutError = (): NodeOperationError => {
+					diagnostics = diagnostics ?? buildDiagnostics();
+					const report = {
+						metrics: collectRunMetrics(messages),
+						terminationReason: terminationReason ?? ('timeout_hard_abort' as TerminationReason),
+						timeoutSeconds: timeout,
+						graceSeconds: graceWindow.graceSeconds,
+						wrapUpSucceeded,
+						durationMs: Date.now() - startTime,
+						messageCount: messages.length,
+						diagnostics,
+					};
+
+					const timeoutError = new NodeOperationError(
+						this.getNode(),
+						formatTimeoutMessage(report),
+						{
+							itemIndex,
+							// The machine-readable tag n8n core nodes branch on — HttpRequestV3 reads
+							// `error.type === 'invalid_url'` the same way.
+							type: 'timeout',
+							description: formatTimeoutDescription(report),
+						},
+					);
+
+					// Saved with the execution and readable by an Error Workflow via
+					// `execution.error.context`. The UI panel does not render it — hence the message
+					// and description above carrying the numbers themselves.
+					timeoutError.context = buildTimeoutPayload(report) as IDataObject;
+					return timeoutError;
+				};
+
+				// Held in a variable rather than iterated inline so control requests can reach it.
+				const runningQuery = query(queryOptions);
+
+				// Whether the wrap-up turn has been requested. Until it has, a result message means
+				// the run is over; after it, the FIRST result is the interrupt's own and the stream
+				// has to stay open for the summary that follows.
+				let wrapUpRequested = false;
+				let resultsSinceInterrupt = 0;
+				let streamClosed = false;
+
+				const closeStream = () => {
+					streamClosed = true;
+					promptStream.close();
+				};
+
+				// Interrupting is what makes the SDK account for the run: it emits a result message
+				// within ~100ms carrying the cumulative cost, tokens and session id. A plain abort()
+				// emits nothing at all, which is why a timed-out run used to report zeroes.
+				const wrapUpTimer =
+					graceWindow.wrapUpAtMs === null
+						? undefined
+						: setTimeout(() => {
+								// The run may have finished in the meantime. The SDK emits no result message
+								// until a turn ends, so one already present means there is nothing left to
+								// interrupt — bail out rather than bill a wrap-up turn and report a completed
+								// run as a timeout.
+								if (streamClosed || messages.some((m) => m.type === 'result')) return;
+
+								timedOut = true;
+								terminationReason = 'timeout_graceful';
+								wrapUpRequested = true;
+
+								void (async () => {
+									try {
+										await runningQuery.interrupt();
+									} catch (interruptError) {
+										// Best effort — the hard timer is the backstop.
+										if (additionalOptions.debug) {
+											this.logger.debug('Interrupt failed', {
+												error: interruptError instanceof Error ? interruptError.message : 'unknown',
+											});
+										}
+									}
+									promptStream.push(WRAP_UP_PROMPT);
+								})();
+							}, graceWindow.wrapUpAtMs);
+
+				// Always armed, whatever the grace: a wrap-up turn that hangs must not push the run
+				// past the timeout the workflow author configured.
+				const timeoutId = setTimeout(() => {
+					timedOut = true;
+					if (terminationReason === null) terminationReason = 'timeout_hard_abort';
+					abortController.abort();
+				}, graceWindow.hardAbortAtMs);
+
 				try {
-					for await (const message of query(queryOptions)) {
+					for await (const message of runningQuery) {
 						messages.push(message);
+
+						// In streaming input mode the session stays open while the input stream is
+						// open, so the result message is the signal to close it. Without this the
+						// query would never end.
+						if (message.type === 'result') {
+							if (!wrapUpRequested) {
+								closeStream();
+							} else if (++resultsSinceInterrupt >= 2) {
+								// First result was the interrupt's; this one is the summary.
+								wrapUpSucceeded = true;
+								closeStream();
+							}
+						}
 
 						if (additionalOptions.debug) {
 							// Log detailed message content based on type
@@ -887,6 +1045,20 @@ export class ClaudeCode implements INodeType {
 								}
 							}
 						}
+					}
+
+					// A graceful timeout ends the generator normally, so without this the run falls
+					// through to the success path and reports green with the wrap-up as the answer.
+					if (timedOut) {
+						if (additionalOptions.debug) {
+							this.logger.debug('Run timed out', {
+								terminationReason,
+								wrapUpSucceeded,
+								wrapUpGraceSeconds: graceWindow.graceSeconds,
+								resultMessages: messages.filter((m) => m.type === 'result').length,
+							});
+						}
+						throw buildTimeoutError();
 					}
 
 					const duration = Date.now() - startTime;
@@ -1116,6 +1288,12 @@ export class ClaudeCode implements INodeType {
 					const failedResult = messages.find((m) => m.type === 'result') as any;
 					diagnostics = buildDiagnostics();
 
+					// Report every timeout through the outer catch, so the shape is identical whether
+					// the generator threw or ended cleanly after a wrap-up.
+					if (timedOut) {
+						throw queryError instanceof NodeOperationError ? queryError : buildTimeoutError();
+					}
+
 					// Only soften the failure when the workflow asked for it. Returning a
 					// normal item unconditionally hid every failure behind a green
 					// execution and bypassed n8n's error output.
@@ -1123,7 +1301,7 @@ export class ClaudeCode implements INodeType {
 						const errorMessage =
 							queryError instanceof Error ? queryError.message : String(queryError);
 						returnData.push({
-							json: {
+							json: failureJson(errorMessage, null, {
 								result: `Error during execution: ${errorMessage}`,
 								success: false,
 								errorType: timedOut ? 'timeout' : 'execution_error',
@@ -1134,7 +1312,7 @@ export class ClaudeCode implements INodeType {
 								session_id: failedResult?.session_id ?? null,
 								usage: failedResult?.usage ?? null,
 								diagnostics,
-							},
+							}),
 							pairedItem: { item: itemIndex },
 						});
 					} else {
@@ -1142,17 +1320,37 @@ export class ClaudeCode implements INodeType {
 					}
 				} finally {
 					clearTimeout(timeoutId);
+					if (wrapUpTimer !== undefined) clearTimeout(wrapUpTimer);
+					// On an error path the loop stops consuming while the input generator is still
+					// suspended waiting for a follow-up turn. Closing releases it.
+					promptStream.close();
 				}
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
 				// The SDK's AbortError does not override `name`, so it reports as 'Error'.
 				// Track the timeout ourselves instead of sniffing the error.
 				const isTimeout = timedOut;
+				// Built by buildTimeoutError, so it already carries the self-describing message, the
+				// description and the full payload on `context`.
+				const timeoutError =
+					error instanceof NodeOperationError && error.type === 'timeout' ? error : null;
 
 				if (this.continueOnFail()) {
+					if (timeoutError) {
+						returnData.push({
+							json: failureJson(
+								timeoutError.message,
+								timeoutError.description ?? null,
+								timeoutError.context as IDataObject,
+							),
+							pairedItem: { item: itemIndex },
+						});
+						continue;
+					}
+
 					const failedResult = messages.find((m) => m.type === 'result') as any;
 					returnData.push({
-						json: {
+						json: failureJson(errorMessage, null, {
 							error: errorMessage,
 							errorType: isTimeout ? 'timeout' : 'execution_error',
 							errorDetails: error instanceof Error ? error.stack : undefined,
@@ -1163,11 +1361,13 @@ export class ClaudeCode implements INodeType {
 							session_id: failedResult?.session_id ?? null,
 							usage: failedResult?.usage ?? null,
 							diagnostics,
-						},
+						}),
 						pairedItem: { item: itemIndex },
 					});
 					continue;
 				}
+
+				if (timeoutError) throw timeoutError;
 
 				// Provide more specific error messages
 				const userFriendlyMessage = isTimeout
