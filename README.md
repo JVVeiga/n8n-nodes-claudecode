@@ -23,6 +23,7 @@ Everything below this section is the upstream node's documentation. This fork ad
 - **Max Budget (USD)** — a hard spend cap. Max Turns and Timeout bound length, not cost.
 - **Diagnostics** — every run reports the resolved model, the effort actually applied, the models billed, the session id and whether Ultracode orchestration was available.
 - **Cancellation and failure handling** — stopping the n8n execution now stops the agent; failed runs report their real cost instead of `$0`; Text output no longer swallows errors into a green execution.
+- **Graceful timeouts** ([details](#-timeouts)) — a run that overruns its Timeout is interrupted rather than killed, so it reports the tokens, cost and session it actually used and hands over what it finished. Killing the process makes the SDK report none of that, which is why a timed-out run used to return only an error string. Failure items also reach the **error output branch** now. Both behaviours are gated behind node version 1.1, so existing nodes are untouched.
 - **Session ID** on Continue, so concurrent executions stop sharing one conversation.
 
 ## 🌟 What Can You Build?
