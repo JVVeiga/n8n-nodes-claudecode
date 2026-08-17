@@ -1,4 +1,5 @@
 import type {
+	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
@@ -8,7 +9,14 @@ import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
 import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createPromptStream } from './promptStream';
-import { resolveGraceWindow, type TerminationReason } from './timeout';
+import {
+	buildTimeoutPayload,
+	collectRunMetrics,
+	formatTimeoutDescription,
+	formatTimeoutMessage,
+	resolveGraceWindow,
+	type TerminationReason,
+} from './timeout';
 
 /**
  * Sent as a normal user turn after the interrupt. The run is already over as far as its own work
@@ -867,6 +875,39 @@ export class ClaudeCode implements INodeType {
 					};
 				};
 
+				// One place builds the timeout report, so the thrown error, the continueOnFail item and
+				// the text-format item cannot drift apart.
+				const buildTimeoutError = (): NodeOperationError => {
+					diagnostics = diagnostics ?? buildDiagnostics();
+					const report = {
+						metrics: collectRunMetrics(messages),
+						terminationReason: terminationReason ?? ('timeout_hard_abort' as TerminationReason),
+						timeoutSeconds: timeout,
+						graceSeconds: graceWindow.graceSeconds,
+						wrapUpSucceeded,
+						durationMs: Date.now() - startTime,
+						messageCount: messages.length,
+						diagnostics,
+					};
+
+					const timeoutError = new NodeOperationError(
+						this.getNode(),
+						formatTimeoutMessage(report),
+						{
+							itemIndex,
+							// The machine-readable tag n8n core nodes branch on — HttpRequestV3 reads
+							// `error.type === 'invalid_url'` the same way.
+							type: 'timeout',
+							description: formatTimeoutDescription(report),
+						},
+					);
+
+					// `context` is public on ExecutionBaseError and serialised by its toJSON(), so the
+					// payload still reaches the execution panel on the path that throws.
+					timeoutError.context = buildTimeoutPayload(report) as IDataObject;
+					return timeoutError;
+				};
+
 				// Held in a variable rather than iterated inline so control requests can reach it.
 				const runningQuery = query(queryOptions);
 
@@ -1007,8 +1048,8 @@ export class ClaudeCode implements INodeType {
 
 					// A graceful timeout ends the generator normally — the wrap-up turn completed, so
 					// nothing threw. Without this the run would fall through to the success path and a
-					// timed-out execution would report as green. The payload this error carries is
-					// filled in by the timeout reporting that follows in a later change.
+					// timed-out execution would report as green, with the wrap-up summary presented as
+					// though it were the answer.
 					if (timedOut) {
 						if (additionalOptions.debug) {
 							this.logger.debug('Run timed out', {
@@ -1018,11 +1059,7 @@ export class ClaudeCode implements INodeType {
 								resultMessages: messages.filter((m) => m.type === 'result').length,
 							});
 						}
-						throw new NodeOperationError(
-							this.getNode(),
-							`Operation timed out after ${timeout} seconds. Consider increasing the timeout in Additional Options.`,
-							{ itemIndex, type: 'timeout' },
-						);
+						throw buildTimeoutError();
 					}
 
 					const duration = Date.now() - startTime;
@@ -1252,6 +1289,13 @@ export class ClaudeCode implements INodeType {
 					const failedResult = messages.find((m) => m.type === 'result') as any;
 					diagnostics = buildDiagnostics();
 
+					// Every timeout is reported through a single path in the outer catch, so the shape
+					// is identical whether the generator threw or ended cleanly after a wrap-up. An
+					// error built above already carries its payload; a raw SDK abort does not.
+					if (timedOut) {
+						throw queryError instanceof NodeOperationError ? queryError : buildTimeoutError();
+					}
+
 					// Only soften the failure when the workflow asked for it. Returning a
 					// normal item unconditionally hid every failure behind a green
 					// execution and bypassed n8n's error output.
@@ -1288,8 +1332,20 @@ export class ClaudeCode implements INodeType {
 				// The SDK's AbortError does not override `name`, so it reports as 'Error'.
 				// Track the timeout ourselves instead of sniffing the error.
 				const isTimeout = timedOut;
+				// Built by buildTimeoutError, so it already carries the self-describing message, the
+				// description and the full payload on `context`.
+				const timeoutError =
+					error instanceof NodeOperationError && error.type === 'timeout' ? error : null;
 
 				if (this.continueOnFail()) {
+					if (timeoutError) {
+						returnData.push({
+							json: timeoutError.context as IDataObject,
+							pairedItem: { item: itemIndex },
+						});
+						continue;
+					}
+
 					const failedResult = messages.find((m) => m.type === 'result') as any;
 					returnData.push({
 						json: {
@@ -1308,6 +1364,8 @@ export class ClaudeCode implements INodeType {
 					});
 					continue;
 				}
+
+				if (timeoutError) throw timeoutError;
 
 				// Provide more specific error messages
 				const userFriendlyMessage = isTimeout
