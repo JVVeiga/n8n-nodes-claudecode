@@ -197,6 +197,7 @@ export class ClaudeCodeUsage implements INodeType {
 				probeIfUnavailable,
 			]);
 			let pending = readsByPath.get(cacheKey);
+			const reusedRead = pending !== undefined;
 			if (!pending) {
 				const readOptions = {
 					timeoutMs: Math.max(1, timeout) * 1000,
@@ -250,7 +251,9 @@ export class ClaudeCodeUsage implements INodeType {
 						description:
 							error.stage === 'initialize'
 								? 'The CLI started but never answered. A slow SessionStart hook in the working directory is the usual cause; raise the Timeout or point Project Path elsewhere.'
-								: 'The session answered but the usage request did not. Raise the Timeout and retry.',
+								: error.stage === 'probe'
+									? 'The probe turn never finished, so there were no rate-limit headers to read. Raise the Timeout, or turn the probe off and accept the account data alone.'
+									: 'The session answered but the usage request did not. Raise the Timeout and retry.',
 					});
 				}
 				throw new NodeOperationError(
@@ -289,7 +292,7 @@ export class ClaudeCodeUsage implements INodeType {
 					scopeRetried: read.scopeRetried,
 					probeCostUsd: read.raw.probeCostUsd,
 					unsupported: report.unsupported,
-					reusedRead: readsByPath.size < itemIndex + 1,
+					reusedRead,
 				});
 			}
 

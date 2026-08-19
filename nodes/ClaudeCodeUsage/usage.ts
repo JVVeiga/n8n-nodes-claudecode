@@ -93,7 +93,6 @@ const DECLARED_BUCKET_KEYS = new Set([
 	'seven_day_oauth_apps',
 	'seven_day_opus',
 	'seven_day_sonnet',
-	'model_scoped',
 ]);
 
 export const unknownBucketKeys = (windows: UsageWindow[]): string[] =>
@@ -150,7 +149,10 @@ export type UsageReport = {
 	nextResetAt: string | null;
 	nextResetInSeconds: number | null;
 	extraUsage: UsageExtraCredits | null;
-	/** This node's own session, opened to ask the question. Always ~zero — never account spend. */
+	/**
+	 * This node's own session, opened to ask the question — never account spend. Zero on a plain read;
+	 * the probe's turn is the one thing that puts a number here.
+	 */
 	session: { totalCostUsd: number | null; totalDurationMs: number | null };
 	limitsRaw?: unknown[];
 	unsupported: boolean;

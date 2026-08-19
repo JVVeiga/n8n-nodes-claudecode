@@ -9,7 +9,7 @@ import { createPromptStream } from '../ClaudeCode/promptStream';
 const USAGE_METHOD = 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET';
 
 /** Which control request was in flight when the deadline hit — the useful half of a timeout. */
-export type UsageStage = 'spawn' | 'initialize' | 'probe' | 'usage';
+export type UsageStage = 'initialize' | 'probe' | 'usage';
 
 export class UsageReadTimeoutError extends Error {
 	constructor(
@@ -46,8 +46,6 @@ export type UsageReadOptions = {
 	 * response headers to seed from. Costs a real (tiny) inference — see {@link PROBE_PROMPT}.
 	 */
 	probePrompt?: string;
-	/** Model for the probe. Cheapest available by default. */
-	probeModel?: string;
 };
 
 /**
@@ -58,12 +56,15 @@ export type UsageReadOptions = {
 export const PROBE_PROMPT = 'Reply with the single word: ok';
 
 /** Cheapest model that can answer the probe. */
-export const PROBE_MODEL = 'haiku';
+const PROBE_MODEL = 'haiku';
 
 export type UsageReadResult = {
 	init: Record<string, unknown> | null;
 	usage: Record<string, unknown> | null;
-	/** Only ever set if the CLI happens to emit a system init message; no turn means it usually does not. */
+	/**
+	 * Comes from the session's system init message, which the CLI only emits once a turn runs. Measured:
+	 * a probe read reports it (`2.1.233` in a container), a free read leaves it null.
+	 */
 	claudeCodeVersion: string | null;
 	initMs: number | null;
 	usageMs: number | null;
@@ -81,9 +82,10 @@ const elapsedMsSince = (startedAt: bigint): number =>
 	Number(process.hrtime.bigint() - startedAt) / 1e6;
 
 /**
- * Opens a session, asks it who it is and how much of the plan is left, and closes it. No user turn
- * is ever pushed, so the read costs nothing: measured on 0.3.202 the session reports
- * `total_cost_usd: 0` and no assistant message.
+ * Opens a session, asks it who it is and how much of the plan is left, and closes it. Without
+ * `probePrompt` no user turn is ever pushed, so the read is free: measured on 0.3.202 the session
+ * reports `total_cost_usd: 0` and no assistant message. With one, it costs that turn — around $0.001
+ * on Haiku — and `probeCostUsd` reports what it was.
  *
  * The session is closed and aborted in `finally`, and this function never returns from inside the
  * `try`. n8n is long-lived — a CLI process leaked once per execution compounds until the container
@@ -104,7 +106,7 @@ export async function readUsage(options: UsageReadOptions): Promise<UsageReadRes
 	// control requests without ever yielding a turn to answer, so the read is free.
 	const promptStream = createPromptStream(options.probePrompt);
 	const abortController = new AbortController();
-	let stage: UsageStage = 'spawn';
+	let stage: UsageStage = 'initialize';
 	let timer: NodeJS.Timeout | undefined;
 	let onProbeResult: ((cost: number | null) => void) | undefined;
 	const probeFinished = options.probePrompt
@@ -124,7 +126,7 @@ export async function readUsage(options: UsageReadOptions): Promise<UsageReadRes
 			...(options.oauthScopes
 				? { env: { ...process.env, CLAUDE_CODE_OAUTH_SCOPES: options.oauthScopes } }
 				: {}),
-			...(options.probePrompt ? { model: options.probeModel ?? PROBE_MODEL, tools: [] } : {}),
+			...(options.probePrompt ? { model: PROBE_MODEL, tools: [] } : {}),
 		},
 	});
 
@@ -158,7 +160,6 @@ export async function readUsage(options: UsageReadOptions): Promise<UsageReadRes
 			}, options.timeoutMs);
 		});
 
-		stage = 'initialize';
 		const initStartedAt = process.hrtime.bigint();
 		const init = await Promise.race([runningQuery.initializationResult(), deadline]);
 		result.initMs = Math.round(elapsedMsSince(initStartedAt));

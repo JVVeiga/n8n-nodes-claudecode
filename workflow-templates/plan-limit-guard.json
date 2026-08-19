@@ -16,7 +16,10 @@
       "name": "Every 30 Minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -29,7 +32,10 @@
       "name": "Read Plan Usage",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCodeUsage",
       "typeVersion": 1,
-      "position": [470, 300]
+      "position": [
+        470,
+        300
+      ]
     },
     {
       "parameters": {
@@ -61,7 +67,10 @@
       "name": "No Numbers?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [690, 300]
+      "position": [
+        690,
+        300
+      ]
     },
     {
       "parameters": {
@@ -92,19 +101,25 @@
       "name": "Near The Wall?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [910, 420]
+      "position": [
+        910,
+        420
+      ]
     },
     {
       "parameters": {
         "channel": "#engineering-alerts",
-        "text": "=⚠️ Claude plan capacity low\\n\\n*Window:* {{ $json.maxUtilizationKey }} at {{ $json.maxUtilization }}%\\n*Resets:* {{ $json.nextResetAt }} (in {{ Math.round($json.nextResetInSeconds / 60) }} min)\\n*Account:* {{ $json.account.organization }} — {{ $json.account.subscriptionType }}\\n\\nAgent workflows are paused until the window resets.",
+        "text": "=\u26a0\ufe0f Claude plan capacity low\\n\\n*Window:* {{ $json.maxUtilizationKey }} at {{ $json.maxUtilization }}%\\n*Resets:* {{ $json.nextResetAt }} (in {{ Math.round($json.nextResetInSeconds / 60) }} min)\\n*Account:* {{ $json.account.organization }} \u2014 {{ $json.account.subscriptionType }}\\n\\nAgent workflows are paused until the window resets.",
         "authentication": "webhook"
       },
       "id": "alert-low-capacity",
       "name": "Alert: Capacity Low",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2,
-      "position": [1130, 320]
+      "position": [
+        1130,
+        320
+      ]
     },
     {
       "parameters": {
@@ -121,19 +136,25 @@
       "name": "Run Agent Work",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
       "typeVersion": 1.1,
-      "position": [1130, 520]
+      "position": [
+        1130,
+        520
+      ]
     },
     {
       "parameters": {
         "channel": "#engineering-alerts",
-        "text": "=🔌 Could not read Claude plan limits\\n\\n*Plan limits apply to this login:* {{ $json.planLimitsApply }}\\n*Payload missing:* {{ $json.diagnostics.limitsPayloadMissing }}\\n*Account:* {{ $json.account.organization }} — {{ $json.account.subscriptionType }}\\n\\nIf `planLimitsApply` is true this read came back empty — retry rather than treating the plan as unlimited. If it is false, this login is billed per token and has no plan windows.",
+        "text": "=\ud83d\udd0c Could not read Claude plan limits\\n\\n*Plan limits apply to this login:* {{ $json.planLimitsApply }}\\n*Authenticated:* {{ $json.authenticated }}\\n*Token source:* {{ $json.account.tokenSource }}\\n*Payload missing:* {{ $json.diagnostics.limitsPayloadMissing }}\\n\\nIf `tokenSource` is CLAUDE_CODE_OAUTH_TOKEN, that credential is inference-only and cannot read the usage endpoint: turn on *Probe With a Minimal Prompt If Unavailable* on the usage node to read the 5-hour and 7-day windows off inference headers instead (~$0.001 per read). If `planLimitsApply` is true with a stored login, the read came back empty \u2014 retry rather than treating the plan as unlimited.",
         "authentication": "webhook"
       },
       "id": "alert-no-numbers",
       "name": "Alert: No Numbers",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2,
-      "position": [910, 180]
+      "position": [
+        910,
+        180
+      ]
     }
   ],
   "connections": {

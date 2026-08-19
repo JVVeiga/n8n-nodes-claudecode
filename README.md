@@ -9,7 +9,8 @@
 Imagine having an AI coding assistant that can analyze your codebase, fix bugs, write new features, manage databases, interact with APIs, and automate your entire development workflow - all within n8n. That's exactly what this node enables.
 
 The package installs two nodes: **Claude Code**, which runs the agent, and **Claude Code Usage**,
-which reads the account's remaining plan capacity and reset times without spending anything.
+which reads the account's remaining plan capacity and reset times — free, unless you opt into the
+one paid fallback it offers for credentials that cannot read the usage endpoint.
 
 [![n8n](https://img.shields.io/badge/n8n-community_node-orange.svg)](https://n8n.io/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Powered-blue.svg)](https://claude.ai/code)
@@ -30,8 +31,10 @@ Everything below this section is the upstream node's documentation. This fork ad
 - **Session ID** on Continue, so concurrent executions stop sharing one conversation.
 - **A second node, Claude Code Usage** ([details](#-usage--plan-limits)) — reads the logged-in
   account and how much of its plan is left, including when each window resets. It is the data behind
-  the CLI's `/usage`, and it costs nothing: no prompt is sent, so no turn is billed. Gate a workflow
-  on remaining capacity, wait for a reset, or alert before hitting the wall.
+  the CLI's `/usage`, and it sends no prompt, so nothing is billed. Gate a workflow on remaining
+  capacity, wait for a reset, or alert before hitting the wall. A `CLAUDE_CODE_OAUTH_TOKEN` session —
+  the usual Docker setup — cannot read that endpoint at all, so the node offers an opt-in fallback
+  that reads the two main windows off inference response headers for about $0.001.
 
 ## 🌟 What Can You Build?
 
@@ -148,9 +151,10 @@ Set a project path and Claude Code understands your entire codebase context:
 - Respects your dependencies
 
 ### **Plan Capacity Awareness**
-The **Claude Code Usage** node reads how much of the plan is left and when each window resets, for
-free — so a workflow can throttle itself, wait for a reset, or downgrade the model instead of
-failing at the wall. See [Usage & Plan Limits](#-usage--plan-limits).
+The **Claude Code Usage** node reads how much of the plan is left and when each window resets — so a
+workflow can throttle itself, wait for a reset, or downgrade the model instead of failing at the
+wall. Free on a stored login; about $0.001 per read on a token-only session, where the numbers have
+to come off inference headers. See [Usage & Plan Limits](#-usage--plan-limits).
 
 ### **Tool Arsenal**
 Claude Code comes equipped with powerful tools:
@@ -307,10 +311,11 @@ The package ships a second node, **Claude Code Usage**, for the question the que
 answer: how much of the plan is left, and when it comes back. It is the data behind the CLI's
 `/usage`, as workflow items.
 
-It costs **nothing** by default. The node opens a session, asks two control requests, and closes — no
-prompt is sent, no tool runs, no turn is billed. (One opt-in fallback does pay for a turn; it is called
-out below.) Measured on the Claude Agent SDK 0.3.202: `1–3s` per read,
-`$0.00`, no assistant message.
+It costs **nothing** by default: the node opens a session, asks two control requests, and closes. No
+prompt is sent, no tool runs, no turn is billed — measured on the Claude Agent SDK 0.3.202 at `1–3s`
+per read, `$0.00`, no assistant message. One fallback, off by default, does pay for a single turn; it
+is the last of the notes below and it exists because some credentials cannot read the usage endpoint
+at all.
 
 Search the nodes panel for `usage`, `limits`, `cota` or `consumo` to find it.
 
@@ -324,14 +329,14 @@ Schedule Trigger → Claude Code Usage → IF maxUtilization > 85 → Slack aler
 | Parameter | Default | What it does |
 |---|---|---|
 | **Project Path** | current dir | Directory the read runs in. Auth is account-wide, but settings, env and **hooks** resolve per directory — a path with slow `SessionStart` hooks makes the read slower. |
-| **Timeout** | `60` | Seconds for the whole read: CLI startup, hooks and both control requests. |
+| **Timeout** | `60` | Seconds for the whole read: CLI startup, hooks, both control requests, and the probe turn when one runs. |
 | **Error If Limits Unavailable** | `false` | Fail the item when no plan windows come back. Turn on when the workflow gates on capacity and running blind is worse than failing. |
 | **Declare Profile Scope for Token Sessions** | `true` | Retry the read declaring `CLAUDE_CODE_OAUTH_SCOPES` when auth comes from `CLAUDE_CODE_OAUTH_TOKEN`. Without it such a session reports no plan limits even on a Max or Team account — see below. |
 | **Probe With a Minimal Prompt If Unavailable** | `false` | Last resort when no windows come back: send one trivial Haiku turn so its response headers carry the utilisation. **Costs about $0.001 per read** — the only paid path in this node. |
 | **Include Account Email** | `false` | Adds `account.email`. Off by default — the organisation and plan already identify the account, and n8n saves node output with every execution. |
 | **Include Raw Limits** | `false` | Adds `limitsRaw`, the server's own `limits[]` with `kind`, `group`, `severity`, `scope` and `is_active`. |
 | **Path to Claude Code Executable** | bundled | Same as on the query node. |
-| **Debug Mode** | `false` | Logs the two request timings, the window count and any undeclared bucket names. |
+| **Debug Mode** | `false` | Logs the request timings, the window count, undeclared bucket names, whether the read was reused from the batch, and whether the scope retry or the probe ran. |
 
 One item in, one item out. With several input items the node reads **once per distinct Project
 Path** and gives every item served by that read the same `fetchedAt` — plan capacity is
@@ -361,7 +366,8 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 | `maxUtilization`, `maxUtilizationKey` | The binding constraint, so an IF node needs no array walking |
 | `nextResetAt`, `nextResetInSeconds` | The soonest reset **among windows actually consuming quota** |
 | `extraUsage` | Extra-usage credits: `isEnabled`, `monthlyLimit`, `usedCredits`, `utilization`, `currency`, plus `disabledReason` and `spendLimitReached` — the actionable half of `isEnabled: false` |
-| `session` | The node's **own** session, opened to ask the question. Always ~zero — see below |
+| `claudeCodeVersion` | The CLI version, from the session's init message. Only present on a probe read — a session with no turn never emits one |
+| `session` | The node's **own** session, opened to ask the question. Zero unless the probe ran, in which case it is what the probe cost |
 | `limitsRaw` | Only when Include Raw Limits is on |
 | `unsupported` | `true` when the SDK no longer exposes the usage request at all |
 | `diagnostics` | `initMs`, `usageMs`, `unknownBucketKeys`, `limitsPayloadMissing`, plus `scopeRetried` when a token session needed a second read and `probed` / `probeCostUsd` when the paid fallback ran |
@@ -371,11 +377,11 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 walks the payload instead of reading a fixed field list, so a bucket added server-side shows up as
 data rather than vanishing. Undeclared keys are listed in `diagnostics.unknownBucketKeys`.
 
-### Five things to know
+### What to know
 
-**`session` is not account spend.** It describes the session this node just opened, which did no
-work. There is no API for month-to-date account spend; for per-run cost use the query node's
-`total_cost_usd`.
+**`session` is not account spend.** It describes the session this node just opened, which does no work
+unless the probe runs — then it is the probe's own cost. There is no API for month-to-date account
+spend; for per-run cost use the query node's `total_cost_usd`.
 
 **An empty read is not an empty plan.** `planLimitsApply: true` with `rateLimitsAvailable: false`
 means the account *has* limits and this read came back without them — observed lasting several
