@@ -91,6 +91,30 @@ describe('createPromptStream', () => {
 		assert.deepEqual(await drain(ctrl.stream), ['initial']);
 	});
 
+	it('yields nothing when opened without an initial prompt', async () => {
+		const ctrl = createPromptStream();
+		ctrl.close();
+
+		assert.deepEqual(await drain(ctrl.stream), []);
+	});
+
+	it('still delivers pushes when opened without an initial prompt', async () => {
+		const ctrl = createPromptStream();
+		ctrl.push('later turn');
+		ctrl.close();
+
+		assert.deepEqual(await drain(ctrl.stream), ['later turn']);
+	});
+
+	// An empty prompt is a turn the caller asked for; only a missing argument means "no turn". Guards
+	// against the generator gate being rewritten as a truthiness check.
+	it('treats an empty initial prompt as a real turn', async () => {
+		const ctrl = createPromptStream('');
+		ctrl.close();
+
+		assert.deepEqual(await drain(ctrl.stream), ['']);
+	});
+
 	it('sends a shape the SDK accepts as a user turn', async () => {
 		const ctrl = createPromptStream('initial');
 		const iterator = ctrl.stream[Symbol.asyncIterator]();

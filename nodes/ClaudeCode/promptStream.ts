@@ -19,7 +19,12 @@ const toUserMessage = (text: string): SDKUserMessage => ({
 	parent_tool_use_id: null,
 });
 
-export function createPromptStream(initialPrompt: string): PromptStream {
+/**
+ * With no initial prompt the stream opens a session without a user turn: the control requests
+ * (usage, initialize) answer on an idle session, so reading account and plan data costs nothing.
+ * The caller still has to close it, otherwise the query never ends.
+ */
+export function createPromptStream(initialPrompt?: string): PromptStream {
 	const queued: string[] = [];
 	let closed = false;
 	let wake: (() => void) | null = null;
@@ -31,7 +36,7 @@ export function createPromptStream(initialPrompt: string): PromptStream {
 	};
 
 	async function* generate(): AsyncGenerator<SDKUserMessage> {
-		yield toUserMessage(initialPrompt);
+		if (initialPrompt !== undefined) yield toUserMessage(initialPrompt);
 
 		// Drain before honouring the close, so a message pushed in the same tick as the close is
 		// still delivered rather than silently dropped.
