@@ -360,6 +360,31 @@ describe('normalizeUsage', () => {
 		assert.equal(report.maxUtilization, null);
 	});
 
+	/**
+	 * Measured inside n8n with an empty HOME: an unauthenticated CLI answers both control requests
+	 * without failing, reporting `tokenSource: 'none'` and no plan data — which is otherwise
+	 * indistinguishable from a healthy API-key session.
+	 */
+	it('flags an unauthenticated CLI, which otherwise looks like an API-key session', () => {
+		const report = normalizeUsage({
+			init: { account: { tokenSource: 'none', apiProvider: 'firstParty' } },
+			usage: { rate_limits_available: false, rate_limits: null },
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(report.authenticated, false);
+		assert.equal(report.planLimitsApply, false);
+		assert.deepEqual(report.windows, []);
+	});
+
+	it('treats an absent tokenSource as authenticated, since a real login omits it', () => {
+		assert.equal(
+			normalizeUsage({ init: TEAM_INIT, usage: TEAM_USAGE, fetchedAtMs: FETCHED_AT_MS })
+				.authenticated,
+			true,
+		);
+	});
+
 	it('degrades to a report instead of throwing when the control request is gone', () => {
 		const report = normalizeUsage({
 			init: TEAM_INIT,

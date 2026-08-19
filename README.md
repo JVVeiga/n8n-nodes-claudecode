@@ -350,6 +350,7 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 |---|---|
 | `fetchedAt` | When the read happened. Every countdown in the item derives from it |
 | `account` | `organization`, `subscriptionType`, `apiProvider`, `tokenSource`, `apiKeySource`, plus `email` when enabled |
+| `authenticated` | `false` when the CLI has no login at all. An unauthenticated CLI **does not fail** — it answers with `tokenSource: "none"` and no plan data, which otherwise looks exactly like a healthy API-key session |
 | `subscriptionType` | `'pro'`, `'max'`, `'team'`, `'enterprise'`, or `null` |
 | `rateLimitsAvailable` | **True only when at least one window came back.** Branch on this |
 | `planLimitsApply` | Whether plan limits apply to this login at all — `false` for API key, Bedrock, Vertex |
@@ -367,7 +368,7 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 walks the payload instead of reading a fixed field list, so a bucket added server-side shows up as
 data rather than vanishing. Undeclared keys are listed in `diagnostics.unknownBucketKeys`.
 
-### Three things to know
+### Four things to know
 
 **`session` is not account spend.** It describes the session this node just opened, which did no
 work. There is no API for month-to-date account spend; for per-run cost use the query node's
@@ -382,6 +383,13 @@ server's own `rate_limits_available` flag, which stayed `true` throughout.
 **API key, Bedrock and Vertex sessions have no plan limits.** They are billed per token, so
 `planLimitsApply` is `false`, `windows` is empty, and the account fields still tell you which login
 n8n is using. Leave **Error If Limits Unavailable** off in that case.
+
+**Not being logged in looks like success.** An unauthenticated CLI answers both control requests
+without an error — it just reports `tokenSource: "none"` and no plan data, which is otherwise
+identical to an API-key session. Branch on `authenticated`, and note that this is the most likely
+outcome when n8n runs in Docker: the container has its own `HOME`, so `~/.claude` has to be mounted
+into it. With **Error If Limits Unavailable** on, the node names this case in the error and tells you
+to run `claude login` as the user n8n runs as.
 
 ## 📋 Configuration Examples
 

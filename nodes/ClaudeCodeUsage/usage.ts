@@ -124,6 +124,12 @@ export type UsageReport = {
 	fetchedAt: string;
 	claudeCodeVersion: string | null;
 	account: UsageAccount;
+	/**
+	 * False when the CLI has no login at all. Measured: an unauthenticated CLI does not fail the
+	 * control requests — it answers with `tokenSource: 'none'` and no plan data, which otherwise looks
+	 * exactly like a healthy API-key session. This is the field that tells the two apart.
+	 */
+	authenticated: boolean;
 	subscriptionType: string | null;
 	/**
 	 * True only when there is at least one window to read. Deliberately not the server's own
@@ -247,11 +253,15 @@ export function normalizeUsage(input: NormalizeUsageInput): UsageReport {
 	const rawLimits = asRecord(rateLimits)?.limits;
 
 	const planLimitsApply = input.usage?.rate_limits_available === true;
+	const account = normalizeAccount(input.init, input.includeEmail);
 
 	const report: UsageReport = {
 		fetchedAt: new Date(input.fetchedAtMs).toISOString(),
 		claudeCodeVersion: input.claudeCodeVersion ?? null,
-		account: normalizeAccount(input.init, input.includeEmail),
+		account,
+		// 'none' is the CLI's own word for "no login". An authenticated session reports a real source,
+		// or omits the field entirely — so only the explicit 'none' counts as unauthenticated.
+		authenticated: account.tokenSource !== 'none',
 		subscriptionType: stringOrNull(input.usage?.subscription_type),
 		rateLimitsAvailable: windows.length > 0,
 		planLimitsApply,

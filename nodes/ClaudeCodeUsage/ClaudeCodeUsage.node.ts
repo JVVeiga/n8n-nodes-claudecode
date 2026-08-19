@@ -207,6 +207,7 @@ export class ClaudeCodeUsage implements INodeType {
 					projectPath: projectPath || '(default)',
 					initMs: report.diagnostics.initMs,
 					usageMs: report.diagnostics.usageMs,
+					authenticated: report.authenticated,
 					planLimitsApply: report.planLimitsApply,
 					windowCount: report.windows.length,
 					unknownBucketKeys: report.diagnostics.unknownBucketKeys,
@@ -217,11 +218,17 @@ export class ClaudeCodeUsage implements INodeType {
 			}
 
 			if (options.errorIfLimitsUnavailable && !report.rateLimitsAvailable) {
+				// Three different causes, three different fixes. An unauthenticated CLI is the one that
+				// looks like success — it answers the control requests and simply reports no login.
+				const description = !report.authenticated
+					? 'The Claude CLI has no login (tokenSource "none"), so there is no account to read limits for. Run `claude login` as the user n8n runs as, or make its ~/.claude visible to the n8n process — in Docker that means mounting it.'
+					: report.planLimitsApply
+						? 'This account has plan limits, but the read came back without them — the usage endpoint answered empty. Retry rather than treating it as unlimited.'
+						: 'This session has no plan limits: API key, Bedrock and Vertex logins are billed per token instead. Turn this option off to accept that.';
+
 				throw new NodeOperationError(this.getNode(), 'No plan limit windows were returned', {
 					itemIndex,
-					description: report.planLimitsApply
-						? 'This account has plan limits, but the read came back without them — the usage endpoint answered empty. Retry rather than treating it as unlimited.'
-						: 'This session has no plan limits: API key, Bedrock and Vertex logins are billed per token instead. Turn this option off to accept that.',
+					description,
 				});
 			}
 
