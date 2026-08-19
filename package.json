@@ -1,6 +1,6 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Fork of @johnlindquist/n8n-nodes-claudecode: two n8n nodes for Claude Code v2 via the Claude Agent SDK — the agent, with effort, thinking, Ultracode, tool restriction, a spend cap and run diagnostics; plus a free usage read for plan limits and reset windows",
   "keywords": [
     "n8n-community-node-package",
