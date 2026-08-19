@@ -1,7 +1,7 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
-  "version": "0.8.1",
-  "description": "Fork of @johnlindquist/n8n-nodes-claudecode: n8n node for Claude Code v2 via the Claude Agent SDK, with effort, thinking, Ultracode, tool restriction, a spend cap and run diagnostics",
+  "version": "0.9.0",
+  "description": "Fork of @johnlindquist/n8n-nodes-claudecode: two n8n nodes for Claude Code v2 via the Claude Agent SDK — the agent, with effort, thinking, Ultracode, tool restriction, a spend cap and run diagnostics; plus a free usage read for plan limits and reset windows",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -10,7 +10,9 @@
     "ai",
     "anthropic",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "rate-limits",
+    "usage"
   ],
   "license": "MIT",
   "homepage": "https://github.com/JVVeiga/n8n-nodes-claudecode#readme",
