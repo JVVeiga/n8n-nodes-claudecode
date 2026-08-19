@@ -11,7 +11,10 @@
       "name": "Support Ticket Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "support-ticket-handler"
     },
     {
@@ -40,9 +43,12 @@
       },
       "id": "analyze-and-fix",
       "name": "Analyze & Fix Issue",
-      "type": "@johnlindquist/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1,
-      "position": [450, 300]
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
+      "typeVersion": 1.1,
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -60,9 +66,12 @@
       },
       "id": "run-tests",
       "name": "Run Tests",
-      "type": "@johnlindquist/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1,
-      "position": [650, 300]
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        300
+      ]
     },
     {
       "parameters": {
@@ -79,7 +88,10 @@
       "name": "Tests Passed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [850, 300]
+      "position": [
+        850,
+        300
+      ]
     },
     {
       "parameters": {
@@ -96,7 +108,10 @@
       "name": "Create Pull Request",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [1050, 250]
+      "position": [
+        1050,
+        250
+      ]
     },
     {
       "parameters": {
@@ -110,7 +125,10 @@
       "name": "Email Customer",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2,
-      "position": [1050, 350]
+      "position": [
+        1050,
+        350
+      ]
     },
     {
       "parameters": {
@@ -120,7 +138,10 @@
         "updateFields": {
           "status": "in_progress",
           "priority": "high",
-          "tags": ["auto-fixed", "claude-code"],
+          "tags": [
+            "auto-fixed",
+            "claude-code"
+          ],
           "internal_notes": "=Automated fix generated:\\n\\nPR: {{ $node['Create Pull Request'].json.html_url }}\\n\\nRoot cause: {{ $node['Analyze & Fix Issue'].json.summary.root_cause }}\\n\\nWorkaround provided to customer."
         }
       },
@@ -128,7 +149,10 @@
       "name": "Update Support Ticket",
       "type": "n8n-nodes-base.zendesk",
       "typeVersion": 1,
-      "position": [1250, 300]
+      "position": [
+        1250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -140,38 +164,101 @@
       "name": "Notify Engineering Team",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2,
-      "position": [1450, 300]
+      "position": [
+        1450,
+        300
+      ]
     }
   ],
   "connections": {
     "Support Ticket Webhook": {
-      "main": [[{"node": "Analyze & Fix Issue", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Analyze & Fix Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Analyze & Fix Issue": {
-      "main": [[{"node": "Run Tests", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Run Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Run Tests": {
-      "main": [[{"node": "Tests Passed?", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Tests Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Tests Passed?": {
       "main": [
         [
-          {"node": "Create Pull Request", "type": "main", "index": 0},
-          {"node": "Email Customer", "type": "main", "index": 0}
+          {
+            "node": "Create Pull Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Customer",
+            "type": "main",
+            "index": 0
+          }
         ],
         [
-          {"node": "Notify Engineering Team", "type": "main", "index": 0}
+          {
+            "node": "Notify Engineering Team",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
     "Create Pull Request": {
-      "main": [[{"node": "Update Support Ticket", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Update Support Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Email Customer": {
-      "main": [[{"node": "Update Support Ticket", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Update Support Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Support Ticket": {
-      "main": [[{"node": "Notify Engineering Team", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Notify Engineering Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {

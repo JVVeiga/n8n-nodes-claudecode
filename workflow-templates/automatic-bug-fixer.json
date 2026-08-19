@@ -11,7 +11,10 @@
       "name": "GitHub Issue Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -35,9 +38,12 @@
       },
       "id": "claude-analyzer",
       "name": "Analyze & Fix Bug",
-      "type": "@johnlindquist/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1,
-      "position": [450, 300]
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
+      "typeVersion": 1.1,
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -54,7 +60,10 @@
       "name": "Push Fix to GitHub",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     },
     {
       "parameters": {
@@ -69,18 +78,45 @@
       "name": "Comment on Issue",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [850, 300]
+      "position": [
+        850,
+        300
+      ]
     }
   ],
   "connections": {
     "GitHub Issue Webhook": {
-      "main": [[{"node": "Analyze & Fix Bug", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Analyze & Fix Bug",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Analyze & Fix Bug": {
-      "main": [[{"node": "Push Fix to GitHub", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Push Fix to GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Push Fix to GitHub": {
-      "main": [[{"node": "Comment on Issue", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Comment on Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {

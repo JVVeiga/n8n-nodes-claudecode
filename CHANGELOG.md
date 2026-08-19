@@ -1,3 +1,20 @@
+## [0.9.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.8.1...v0.9.0) (2026-08-19)
+
+### Features
+
+* **usage:** add a Claude Code Usage node that reads the logged-in account and how much of its Claude plan is left, including when each window resets. The read opens a session without sending a prompt, so it costs nothing: measured $0.00 and 1-3s per read on the Claude Agent SDK 0.3.202.
+* **usage:** report `authenticated`, `planLimitsApply` and `rateLimitsAvailable` separately, because an unauthenticated CLI answers normally and the server can report limits as available while sending none.
+* **usage:** one read per distinct Project Path per execution, with a shared `fetchedAt`, so a batch of items does not open a session each.
+
+### Bug Fixes
+
+* **templates:** the three shipped workflow templates declared the upstream `@johnlindquist` node type, so importing them with only this fork installed failed with "Unrecognized node type". They now declare `@joaoveiga` and node version 1.1.
+
+### Notes
+
+This file was dormant from 0.3.2 (the last semantic-release entry upstream) through 0.8.1, all of
+which were manual releases. It resumes here; the missing entries are in the git log.
+
 ## [0.3.2](https://github.com/johnlindquist/n8n-nodes-claudecode/compare/v0.3.1...v0.3.2) (2025-08-01)
 
 ### Bug Fixes
