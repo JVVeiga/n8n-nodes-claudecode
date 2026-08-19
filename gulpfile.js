@@ -1,10 +1,12 @@
 const path = require('path');
 const { task, src, dest } = require('gulp');
 
-task('build:icons', copyIcons);
+task('build:icons', copyAssets);
 
-function copyIcons() {
-	const nodeSource = path.resolve('nodes', '**', '*.{png,svg}');
+// Icons and codex files: tsc emits neither, and a codex left behind means the node loads without
+// its search aliases or its docs link.
+function copyAssets() {
+	const nodeSource = path.resolve('nodes', '**', '*.{png,svg,json}');
 	const nodeDestination = path.resolve('dist', 'nodes');
 
 	return src(nodeSource).pipe(dest(nodeDestination));

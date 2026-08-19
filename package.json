@@ -47,7 +47,8 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "nodes": [
-      "dist/nodes/ClaudeCode/ClaudeCode.node.js"
+      "dist/nodes/ClaudeCode/ClaudeCode.node.js",
+      "dist/nodes/ClaudeCodeUsage/ClaudeCodeUsage.node.js"
     ]
   },
   "dependencies": {

@@ -1,0 +1,27 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.claudeCodeUsage",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Development", "Utility"],
+	"alias": [
+		"usage",
+		"limits",
+		"rate limit",
+		"quota",
+		"reset",
+		"plan",
+		"capacity",
+		"claude",
+		"consumo",
+		"cota",
+		"limite",
+		"plano"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#-usage--plan-limits"
+			}
+		]
+	}
+}
