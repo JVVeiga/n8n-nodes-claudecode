@@ -21,10 +21,26 @@ export class UsageReadTimeoutError extends Error {
 	}
 }
 
+/**
+ * Scopes to declare for a `CLAUDE_CODE_OAUTH_TOKEN` session so the CLI will look up plan limits.
+ *
+ * Measured against CLI 2.1.219: the payload's `rate_limits_available` is
+ * `hasScope('user:inference') && hasScope('user:profile')`, and for an env-token session the scope
+ * list is synthesised from `CLAUDE_CODE_OAUTH_SCOPES`, defaulting to `['user:inference']` alone. So a
+ * token session never even attempts the lookup — the CLI censors itself before asking.
+ *
+ * Declaring the scope grants nothing: the token still has whatever the server issued it. With a token
+ * that lacks the scope the request is simply made and refused, which surfaces as
+ * `rateLimitsAvailable: false` with `diagnostics.limitsPayloadMissing: true`.
+ */
+export const PROFILE_SCOPES = 'user:inference user:profile';
+
 export type UsageReadOptions = {
 	cwd?: string;
 	timeoutMs: number;
 	pathToClaudeCodeExecutable?: string;
+	/** Value for `CLAUDE_CODE_OAUTH_SCOPES` in the spawned CLI's environment. */
+	oauthScopes?: string;
 };
 
 export type UsageReadResult = {
@@ -78,6 +94,9 @@ export async function readUsage(options: UsageReadOptions): Promise<UsageReadRes
 			...(options.cwd ? { cwd: options.cwd } : {}),
 			...(options.pathToClaudeCodeExecutable
 				? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
+				: {}),
+			...(options.oauthScopes
+				? { env: { ...process.env, CLAUDE_CODE_OAUTH_SCOPES: options.oauthScopes } }
 				: {}),
 		},
 	});

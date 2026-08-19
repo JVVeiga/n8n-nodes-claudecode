@@ -7,13 +7,19 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
-import { readUsage, UsageReadTimeoutError, type UsageReadResult } from './readUsage';
-import { normalizeUsage, type UsageReport } from './usage';
+import {
+	PROFILE_SCOPES,
+	readUsage,
+	UsageReadTimeoutError,
+	type UsageReadResult,
+} from './readUsage';
+import { normalizeUsage, shouldRetryWithProfileScope, type UsageReport } from './usage';
 
 type UsageOptions = {
 	includeRawLimits?: boolean;
 	includeAccountEmail?: boolean;
 	errorIfLimitsUnavailable?: boolean;
+	declareProfileScope?: boolean;
 	debug?: boolean;
 	pathToClaudeCodeExecutable?: string;
 };
@@ -83,6 +89,14 @@ export class ClaudeCodeUsage implements INodeType {
 						description: 'Whether to enable debug logging',
 					},
 					{
+						displayName: 'Declare Profile Scope for Token Sessions',
+						name: 'declareProfileScope',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether to retry the read declaring CLAUDE_CODE_OAUTH_SCOPES when the session authenticates with CLAUDE_CODE_OAUTH_TOKEN. Such a session gets a synthesised scope list of user:inference alone, and the CLI requires user:profile before it will look up plan limits at all — so without this the numbers are never even requested. Declaring the scope grants nothing the token does not already have: if the server refuses, the read simply reports no windows.',
+					},
+					{
 						displayName: 'Error If Limits Unavailable',
 						name: 'errorIfLimitsUnavailable',
 						type: 'boolean',
@@ -130,7 +144,8 @@ export class ClaudeCodeUsage implements INodeType {
 		//
 		// The timestamp is cached with the read rather than taken per item: items served by the same
 		// read must report the same `fetchedAt`, and every countdown in them is derived from it.
-		const readsByPath = new Map<string, Promise<{ raw: UsageReadResult; fetchedAtMs: number }>>();
+		type CachedRead = { raw: UsageReadResult; fetchedAtMs: number; scopeRetried: boolean };
+		const readsByPath = new Map<string, Promise<CachedRead>>();
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			const projectPath = (this.getNodeParameter('projectPath', itemIndex) as string).trim();
@@ -160,19 +175,39 @@ export class ClaudeCodeUsage implements INodeType {
 				}
 			}
 
+			const declareProfileScope = options.declareProfileScope !== false;
+
 			// Serialised rather than concatenated: a separator character could appear inside a path.
-			const cacheKey = JSON.stringify([projectPath, executable, timeout]);
+			const cacheKey = JSON.stringify([projectPath, executable, timeout, declareProfileScope]);
 			let pending = readsByPath.get(cacheKey);
 			if (!pending) {
-				pending = readUsage({
+				const readOptions = {
 					timeoutMs: Math.max(1, timeout) * 1000,
 					...(projectPath ? { cwd: projectPath } : {}),
 					...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
-				}).then((raw) => ({ raw, fetchedAtMs: Date.now() }));
+				};
+
+				// The retry lives inside the cached promise so a batch pays for it once, and every item
+				// reports the same numbers and the same fetchedAt.
+				pending = (async (): Promise<CachedRead> => {
+					const raw = await readUsage(readOptions);
+					if (!declareProfileScope) return { raw, fetchedAtMs: Date.now(), scopeRetried: false };
+
+					const firstLook = normalizeUsage({ ...raw, fetchedAtMs: Date.now() });
+					if (!shouldRetryWithProfileScope(firstLook)) {
+						return { raw, fetchedAtMs: Date.now(), scopeRetried: false };
+					}
+
+					// A token session is told it may only infer, so the CLI never asks about plan limits.
+					// Ask again with the scope declared; if the token really cannot read the profile the
+					// second read returns no windows and nothing is lost but ~0.5s.
+					const retried = await readUsage({ ...readOptions, oauthScopes: PROFILE_SCOPES });
+					return { raw: retried, fetchedAtMs: Date.now(), scopeRetried: true };
+				})();
 				readsByPath.set(cacheKey, pending);
 			}
 
-			let read: { raw: UsageReadResult; fetchedAtMs: number };
+			let read: CachedRead;
 			try {
 				read = await pending;
 			} catch (error) {
@@ -202,6 +237,7 @@ export class ClaudeCodeUsage implements INodeType {
 				includeEmail: options.includeAccountEmail === true,
 				includeRawLimits: options.includeRawLimits === true,
 			});
+			if (read.scopeRetried) report.diagnostics.scopeRetried = true;
 
 			if (options.debug) {
 				this.logger.debug('Claude Code usage read', {
@@ -213,6 +249,7 @@ export class ClaudeCodeUsage implements INodeType {
 					windowCount: report.windows.length,
 					unknownBucketKeys: report.diagnostics.unknownBucketKeys,
 					limitsPayloadMissing: report.diagnostics.limitsPayloadMissing,
+					scopeRetried: read.scopeRetried,
 					unsupported: report.unsupported,
 					reusedRead: readsByPath.size < itemIndex + 1,
 				});
@@ -225,7 +262,9 @@ export class ClaudeCodeUsage implements INodeType {
 					? 'The Claude CLI has no login (tokenSource "none"), so there is no account to read limits for. Run `claude login` as the user n8n runs as, or make its ~/.claude visible to the n8n process — in Docker that means mounting it.'
 					: report.planLimitsApply
 						? 'This account has plan limits, but the read came back without them — the usage endpoint answered empty. Retry rather than treating it as unlimited.'
-						: 'This session has no plan limits: API key, Bedrock and Vertex logins are billed per token instead. Turn this option off to accept that.';
+						: report.account.tokenSource === 'CLAUDE_CODE_OAUTH_TOKEN'
+							? 'This session authenticates with CLAUDE_CODE_OAUTH_TOKEN, and the token cannot read the account profile, so plan limits stay out of reach. Mint the token with the user:profile scope, or authenticate the container with an interactive login instead.'
+							: 'This session has no plan limits: API key, Bedrock and Vertex logins are billed per token instead. Turn this option off to accept that.';
 
 				throw new NodeOperationError(this.getNode(), 'No plan limit windows were returned', {
 					itemIndex,

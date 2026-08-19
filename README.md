@@ -325,6 +325,7 @@ Schedule Trigger → Claude Code Usage → IF maxUtilization > 85 → Slack aler
 | **Project Path** | current dir | Directory the read runs in. Auth is account-wide, but settings, env and **hooks** resolve per directory — a path with slow `SessionStart` hooks makes the read slower. |
 | **Timeout** | `60` | Seconds for the whole read: CLI startup, hooks and both control requests. |
 | **Error If Limits Unavailable** | `false` | Fail the item when no plan windows come back. Turn on when the workflow gates on capacity and running blind is worse than failing. |
+| **Declare Profile Scope for Token Sessions** | `true` | Retry the read declaring `CLAUDE_CODE_OAUTH_SCOPES` when auth comes from `CLAUDE_CODE_OAUTH_TOKEN`. Without it such a session reports no plan limits even on a Max or Team account — see below. |
 | **Include Account Email** | `false` | Adds `account.email`. Off by default — the organisation and plan already identify the account, and n8n saves node output with every execution. |
 | **Include Raw Limits** | `false` | Adds `limitsRaw`, the server's own `limits[]` with `kind`, `group`, `severity`, `scope` and `is_active`. |
 | **Path to Claude Code Executable** | bundled | Same as on the query node. |
@@ -361,14 +362,14 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 | `session` | The node's **own** session, opened to ask the question. Always ~zero — see below |
 | `limitsRaw` | Only when Include Raw Limits is on |
 | `unsupported` | `true` when the SDK no longer exposes the usage request at all |
-| `diagnostics` | `initMs`, `usageMs`, `unknownBucketKeys`, `limitsPayloadMissing` |
+| `diagnostics` | `initMs`, `usageMs`, `unknownBucketKeys`, `limitsPayloadMissing`, and `scopeRetried` when a token session needed a second read |
 
 `windows[].key` is whatever the server called the bucket — `five_hour`, `seven_day`,
 `seven_day_opus`, and codenames like `nimbus_quill` or `spend` that no SDK type declares. The node
 walks the payload instead of reading a fixed field list, so a bucket added server-side shows up as
 data rather than vanishing. Undeclared keys are listed in `diagnostics.unknownBucketKeys`.
 
-### Four things to know
+### Five things to know
 
 **`session` is not account spend.** It describes the session this node just opened, which did no
 work. There is no API for month-to-date account spend; for per-run cost use the query node's
@@ -383,6 +384,32 @@ server's own `rate_limits_available` flag, which stayed `true` throughout.
 **API key, Bedrock and Vertex sessions have no plan limits.** They are billed per token, so
 `planLimitsApply` is `false`, `windows` is empty, and the account fields still tell you which login
 n8n is using. Leave **Error If Limits Unavailable** off in that case.
+
+**A `CLAUDE_CODE_OAUTH_TOKEN` session hides its own limits.** This is the usual headless and Docker
+setup, and out of the box it reports `planLimitsApply: false` with no windows — on a Max or Team
+account that has them. Measured against Claude Code CLI 2.1.219, the payload's own flag is
+
+```
+rate_limits_available = scopes.includes('user:inference') && scopes.includes('user:profile')
+```
+
+and for a token session the CLI *synthesises* the scope list from `CLAUDE_CODE_OAUTH_SCOPES`,
+defaulting to `['user:inference']` alone. So it never asks the usage endpoint — it censors itself
+before the request.
+
+**Declare Profile Scope for Token Sessions** (on by default) handles it: the node retries the read
+with `CLAUDE_CODE_OAUTH_SCOPES="user:inference user:profile"` in the CLI's environment, and
+`diagnostics.scopeRetried` marks the items that needed it. Declaring the scope grants nothing — the
+token still has exactly what the server issued it — so read the result to know where you stand:
+
+| Result | Meaning |
+|---|---|
+| `windows` populated | the token can read the profile; you have the numbers |
+| `planLimitsApply: true`, `rateLimitsAvailable: false`, `diagnostics.limitsPayloadMissing: true` | the request was made and refused — mint the token with the `user:profile` scope, or authenticate the container with an interactive login |
+
+`subscriptionType` stays `null` on token sessions regardless: the CLI reads it from
+`CLAUDE_CODE_SUBSCRIPTION_TYPE`, which the node deliberately does not invent. Set it in the container
+if you want the field filled; the windows do not depend on it.
 
 **Not being logged in looks like success.** An unauthenticated CLI answers both control requests
 without an error — it just reports `tokenSource: "none"` and no plan data, which is otherwise

@@ -7,6 +7,7 @@ import {
 	normalizeWindows,
 	numberOrNull,
 	secondsUntil,
+	shouldRetryWithProfileScope,
 	unknownBucketKeys,
 } from '../nodes/ClaudeCodeUsage/usage';
 
@@ -385,6 +386,16 @@ describe('normalizeUsage', () => {
 		);
 	});
 
+	it('leaves scopeRetried out of diagnostics unless a retry happened', () => {
+		const report = normalizeUsage({
+			init: TEAM_INIT,
+			usage: TEAM_USAGE,
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal('scopeRetried' in report.diagnostics, false);
+	});
+
 	it('degrades to a report instead of throwing when the control request is gone', () => {
 		const report = normalizeUsage({
 			init: TEAM_INIT,
@@ -404,5 +415,63 @@ describe('normalizeUsage', () => {
 
 		assert.equal('limitsRaw' in normalizeUsage(base), false);
 		assert.equal(normalizeUsage({ ...base, includeRawLimits: true }).limitsRaw?.length, 2);
+	});
+});
+
+/**
+ * The CLI gates plan limits behind the credential record carrying the user:profile scope, and for a
+ * CLAUDE_CODE_OAUTH_TOKEN session it synthesises that record with user:inference alone — so the first
+ * read reports "no plan limits" for a subscription account that has them. Measured against CLI
+ * 2.1.219: declaring CLAUDE_CODE_OAUTH_SCOPES flips rate_limits_available from false to true.
+ */
+describe('shouldRetryWithProfileScope', () => {
+	it('retries a token session that came back without plan limits', () => {
+		const tokenSession = normalizeUsage({
+			init: { account: { tokenSource: 'CLAUDE_CODE_OAUTH_TOKEN' } },
+			usage: { rate_limits_available: false, rate_limits: null },
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(shouldRetryWithProfileScope(tokenSession), true);
+	});
+
+	it('does not retry once the limits are there', () => {
+		const withLimits = normalizeUsage({
+			init: { account: { tokenSource: 'CLAUDE_CODE_OAUTH_TOKEN' } },
+			usage: { rate_limits_available: true, rate_limits: TEAM_RATE_LIMITS },
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(shouldRetryWithProfileScope(withLimits), false);
+	});
+
+	it('does not retry an API-key session, which has no plan limits to find', () => {
+		const apiKey = normalizeUsage({
+			init: { account: { apiKeySource: 'ANTHROPIC_API_KEY' } },
+			usage: { rate_limits_available: false, rate_limits: null },
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(shouldRetryWithProfileScope(apiKey), false);
+	});
+
+	it('does not retry a stored interactive login, which already carries its real scopes', () => {
+		const stored = normalizeUsage({
+			init: TEAM_INIT,
+			usage: { rate_limits_available: false, rate_limits: null },
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(shouldRetryWithProfileScope(stored), false);
+	});
+
+	it('does not retry when there is no login at all', () => {
+		const anonymous = normalizeUsage({
+			init: { account: { tokenSource: 'none' } },
+			usage: { rate_limits_available: false, rate_limits: null },
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(shouldRetryWithProfileScope(anonymous), false);
 	});
 });

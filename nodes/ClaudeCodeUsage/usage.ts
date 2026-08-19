@@ -160,8 +160,26 @@ export type UsageReport = {
 		unknownBucketKeys: string[];
 		/** Plan limits apply to this login, but this read came back without them. Retry, don't conclude. */
 		limitsPayloadMissing: boolean;
+		/** True when the read was retried declaring the profile scope for a token session. */
+		scopeRetried?: boolean;
 	};
 };
+
+/**
+ * Whether a second read declaring `user:profile` is worth trying.
+ *
+ * A `CLAUDE_CODE_OAUTH_TOKEN` session — the usual headless and Docker setup — gets a synthesised
+ * scope list of `['user:inference']`, and the CLI's own gate for plan limits requires `user:profile`.
+ * So the first read comes back with `planLimitsApply: false` not because the account lacks plan
+ * limits, but because the CLI never asked. Declaring the scope makes it ask.
+ *
+ * Only worth it for that one credential type: an API key, Bedrock or Vertex session genuinely has no
+ * plan limits, and a stored interactive login already carries its real scopes.
+ */
+export const shouldRetryWithProfileScope = (report: UsageReport): boolean =>
+	report.authenticated &&
+	!report.planLimitsApply &&
+	report.account.tokenSource === 'CLAUDE_CODE_OAUTH_TOKEN';
 
 export type NormalizeUsageInput = {
 	/** `initializationResult()` payload, or null when it failed. */
