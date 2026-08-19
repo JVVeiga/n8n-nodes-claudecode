@@ -25,7 +25,8 @@ export class ClaudeCodeUsage implements INodeType {
 		icon: 'file:claudecodeusage.svg',
 		group: ['transform'],
 		version: 1,
-		subtitle: '={{$parameter["operation"]}}',
+		// No subtitle: with a single operation it renders the raw value ("getUsage") under the node
+		// name on the canvas, which says nothing the name has not already said.
 		description:
 			'Read the logged-in account and how much of its Claude plan is left, including when each window resets',
 		usableAsTool: true,
