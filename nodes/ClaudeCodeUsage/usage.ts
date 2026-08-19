@@ -125,7 +125,19 @@ export type UsageReport = {
 	claudeCodeVersion: string | null;
 	account: UsageAccount;
 	subscriptionType: string | null;
+	/**
+	 * True only when there is at least one window to read. Deliberately not the server's own
+	 * `rate_limits_available`: measured on 0.3.202, that flag came back `true` with `rate_limits`
+	 * null on consecutive reads of a subscription session. A workflow gating on capacity must not
+	 * read "available" and then find no numbers — it would run blind at 92% utilisation.
+	 */
 	rateLimitsAvailable: boolean;
+	/**
+	 * The server's flag verbatim: whether plan limits apply to this login at all. False for API key,
+	 * Bedrock, Vertex and other 3P sessions. True with an empty `windows` means the limits exist but
+	 * this read did not get them.
+	 */
+	planLimitsApply: boolean;
 	windows: UsageWindow[];
 	maxUtilization: number | null;
 	maxUtilizationKey: string | null;
@@ -140,6 +152,8 @@ export type UsageReport = {
 		initMs: number | null;
 		usageMs: number | null;
 		unknownBucketKeys: string[];
+		/** Plan limits apply to this login, but this read came back without them. Retry, don't conclude. */
+		limitsPayloadMissing: boolean;
 	};
 };
 
@@ -232,12 +246,15 @@ export function normalizeUsage(input: NormalizeUsageInput): UsageReport {
 	const session = asRecord(input.usage?.session);
 	const rawLimits = asRecord(rateLimits)?.limits;
 
+	const planLimitsApply = input.usage?.rate_limits_available === true;
+
 	const report: UsageReport = {
 		fetchedAt: new Date(input.fetchedAtMs).toISOString(),
 		claudeCodeVersion: input.claudeCodeVersion ?? null,
 		account: normalizeAccount(input.init, input.includeEmail),
 		subscriptionType: stringOrNull(input.usage?.subscription_type),
-		rateLimitsAvailable: input.usage?.rate_limits_available === true,
+		rateLimitsAvailable: windows.length > 0,
+		planLimitsApply,
 		windows,
 		maxUtilization: peak?.utilization ?? null,
 		maxUtilizationKey: peak?.key ?? null,
@@ -253,6 +270,7 @@ export function normalizeUsage(input: NormalizeUsageInput): UsageReport {
 			initMs: input.initMs ?? null,
 			usageMs: input.usageMs ?? null,
 			unknownBucketKeys: unknownBucketKeys(windows),
+			limitsPayloadMissing: planLimitsApply && windows.length === 0,
 		},
 	};
 

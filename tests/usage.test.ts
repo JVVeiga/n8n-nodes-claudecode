@@ -269,6 +269,8 @@ describe('normalizeUsage', () => {
 		assert.equal(report.claudeCodeVersion, '2.1.0');
 		assert.equal(report.subscriptionType, 'team');
 		assert.equal(report.rateLimitsAvailable, true);
+		assert.equal(report.planLimitsApply, true);
+		assert.equal(report.diagnostics.limitsPayloadMissing, false);
 		assert.equal(report.maxUtilization, 72);
 		assert.equal(report.maxUtilizationKey, 'five_hour');
 		assert.equal(report.nextResetAt, '2026-08-19T06:10:00.394384+00:00');
@@ -278,6 +280,7 @@ describe('normalizeUsage', () => {
 			initMs: 1886,
 			usageMs: 819,
 			unknownBucketKeys: ['nimbus_quill'],
+			limitsPayloadMissing: false,
 		});
 	});
 
@@ -322,12 +325,39 @@ describe('normalizeUsage', () => {
 		});
 
 		assert.equal(report.rateLimitsAvailable, false);
+		assert.equal(report.planLimitsApply, false);
 		assert.deepEqual(report.windows, []);
 		assert.equal(report.maxUtilization, null);
 		assert.equal(report.maxUtilizationKey, null);
 		assert.equal(report.nextResetAt, null);
 		assert.equal(report.extraUsage, null);
 		assert.equal(report.account.apiKeySource, 'ANTHROPIC_API_KEY');
+		// Nothing to retry for: this login has no plan limits at all.
+		assert.equal(report.diagnostics.limitsPayloadMissing, false);
+	});
+
+	/**
+	 * Measured on 0.3.202: consecutive reads of the same Team session returned
+	 * `rate_limits_available: true` with `rate_limits: null`, contradicting the SDK's own docs. A
+	 * workflow gating on capacity must not read "available" and find no numbers, so the reported flag
+	 * follows the numbers and the contradiction surfaces as a diagnostic.
+	 */
+	it('does not claim limits are available when the payload arrived without them', () => {
+		const report = normalizeUsage({
+			init: TEAM_INIT,
+			usage: {
+				session: { total_cost_usd: 0 },
+				subscription_type: 'team',
+				rate_limits_available: true,
+				rate_limits: null,
+			},
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(report.rateLimitsAvailable, false);
+		assert.equal(report.planLimitsApply, true);
+		assert.equal(report.diagnostics.limitsPayloadMissing, true);
+		assert.equal(report.maxUtilization, null);
 	});
 
 	it('degrades to a report instead of throwing when the control request is gone', () => {
