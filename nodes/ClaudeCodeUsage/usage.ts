@@ -162,6 +162,10 @@ export type UsageReport = {
 		limitsPayloadMissing: boolean;
 		/** True when the read was retried declaring the profile scope for a token session. */
 		scopeRetried?: boolean;
+		/** True when a minimal prompt was sent to harvest the rate-limit response headers. */
+		probed?: boolean;
+		/** What that prompt cost. The one part of this node that is not free. */
+		probeCostUsd?: number | null;
 	};
 };
 

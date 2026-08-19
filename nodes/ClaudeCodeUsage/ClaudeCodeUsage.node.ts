@@ -8,6 +8,7 @@ import type {
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
 import {
+	PROBE_PROMPT,
 	PROFILE_SCOPES,
 	readUsage,
 	UsageReadTimeoutError,
@@ -20,6 +21,7 @@ type UsageOptions = {
 	includeAccountEmail?: boolean;
 	errorIfLimitsUnavailable?: boolean;
 	declareProfileScope?: boolean;
+	probeIfUnavailable?: boolean;
 	debug?: boolean;
 	pathToClaudeCodeExecutable?: string;
 };
@@ -129,6 +131,14 @@ export class ClaudeCodeUsage implements INodeType {
 							'Absolute path to the Claude Code CLI. Leave empty to use the one bundled with the SDK.',
 						placeholder: '/usr/local/bin/claude',
 					},
+					{
+						displayName: 'Probe With a Minimal Prompt If Unavailable',
+						name: 'probeIfUnavailable',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether to fall back to sending one trivial turn when no plan windows come back. Every API response carries anthropic-ratelimit-unified headers, and the CLI reports those as utilisation when the usage endpoint is closed to the credential — which is the only route to the numbers for an inference-only CLAUDE_CODE_OAUTH_TOKEN. Off by default because it is the one thing here that costs money: measured around $0.001 per read on Haiku, and the exact amount shows up in the item under session.totalCostUsd and diagnostics.probeCostUsd. Only the 5-hour and 7-day windows arrive this way; extra usage and per-model buckets come from the endpoint alone.',
+					},
 				],
 			},
 		],
@@ -176,9 +186,16 @@ export class ClaudeCodeUsage implements INodeType {
 			}
 
 			const declareProfileScope = options.declareProfileScope !== false;
+			const probeIfUnavailable = options.probeIfUnavailable === true;
 
 			// Serialised rather than concatenated: a separator character could appear inside a path.
-			const cacheKey = JSON.stringify([projectPath, executable, timeout, declareProfileScope]);
+			const cacheKey = JSON.stringify([
+				projectPath,
+				executable,
+				timeout,
+				declareProfileScope,
+				probeIfUnavailable,
+			]);
 			let pending = readsByPath.get(cacheKey);
 			if (!pending) {
 				const readOptions = {
@@ -187,22 +204,38 @@ export class ClaudeCodeUsage implements INodeType {
 					...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
 				};
 
-				// The retry lives inside the cached promise so a batch pays for it once, and every item
-				// reports the same numbers and the same fetchedAt.
+				// The escalation lives inside the cached promise so a batch pays for it once, and every
+				// item reports the same numbers and the same fetchedAt.
 				pending = (async (): Promise<CachedRead> => {
 					const raw = await readUsage(readOptions);
-					if (!declareProfileScope) return { raw, fetchedAtMs: Date.now(), scopeRetried: false };
+					const done = (r: UsageReadResult, scopeRetried: boolean): CachedRead => ({
+						raw: r,
+						fetchedAtMs: Date.now(),
+						scopeRetried,
+					});
 
-					const firstLook = normalizeUsage({ ...raw, fetchedAtMs: Date.now() });
-					if (!shouldRetryWithProfileScope(firstLook)) {
-						return { raw, fetchedAtMs: Date.now(), scopeRetried: false };
+					if (!declareProfileScope) return done(raw, false);
+					if (!shouldRetryWithProfileScope(normalizeUsage({ ...raw, fetchedAtMs: Date.now() }))) {
+						return done(raw, false);
 					}
 
 					// A token session is told it may only infer, so the CLI never asks about plan limits.
 					// Ask again with the scope declared; if the token really cannot read the profile the
 					// second read returns no windows and nothing is lost but ~0.5s.
 					const retried = await readUsage({ ...readOptions, oauthScopes: PROFILE_SCOPES });
-					return { raw: retried, fetchedAtMs: Date.now(), scopeRetried: true };
+					const afterRetry = normalizeUsage({ ...retried, fetchedAtMs: Date.now() });
+					if (!probeIfUnavailable || afterRetry.rateLimitsAvailable) return done(retried, true);
+
+					// Last resort, and the only route left for an inference-only token: send one trivial
+					// turn so the API response carries the rate-limit headers, which the CLI reports as
+					// seeded utilisation. This one costs money — a fraction of a cent — which is why it is
+					// opt-in and why the cost lands in the item's own session total.
+					const probed = await readUsage({
+						...readOptions,
+						oauthScopes: PROFILE_SCOPES,
+						probePrompt: PROBE_PROMPT,
+					});
+					return done(probed, true);
 				})();
 				readsByPath.set(cacheKey, pending);
 			}
@@ -238,6 +271,10 @@ export class ClaudeCodeUsage implements INodeType {
 				includeRawLimits: options.includeRawLimits === true,
 			});
 			if (read.scopeRetried) report.diagnostics.scopeRetried = true;
+			if (read.raw.probeCostUsd !== null) {
+				report.diagnostics.probed = true;
+				report.diagnostics.probeCostUsd = read.raw.probeCostUsd;
+			}
 
 			if (options.debug) {
 				this.logger.debug('Claude Code usage read', {
@@ -250,6 +287,7 @@ export class ClaudeCodeUsage implements INodeType {
 					unknownBucketKeys: report.diagnostics.unknownBucketKeys,
 					limitsPayloadMissing: report.diagnostics.limitsPayloadMissing,
 					scopeRetried: read.scopeRetried,
+					probeCostUsd: read.raw.probeCostUsd,
 					unsupported: report.unsupported,
 					reusedRead: readsByPath.size < itemIndex + 1,
 				});
@@ -263,7 +301,7 @@ export class ClaudeCodeUsage implements INodeType {
 					: report.planLimitsApply
 						? 'This account has plan limits, but the read came back without them — the usage endpoint answered empty. Retry rather than treating it as unlimited.'
 						: report.account.tokenSource === 'CLAUDE_CODE_OAUTH_TOKEN'
-							? 'This session authenticates with CLAUDE_CODE_OAUTH_TOKEN. Tokens from `claude setup-token` are inference-only by design, so they cannot read the account profile and plan limits stay out of reach — no client-side setting changes that. Use an interactive `claude auth login` in the container with ~/.claude on a volume, or a CLAUDE_CODE_OAUTH_REFRESH_TOKEN login.'
+							? 'This session authenticates with CLAUDE_CODE_OAUTH_TOKEN. Tokens from `claude setup-token` are inference-only by design, so the usage endpoint refuses them. Turn on "Probe With a Minimal Prompt If Unavailable" to read the 5-hour and 7-day windows off the rate-limit response headers instead — that costs about $0.001 per read. For the full payload, authenticate with an interactive `claude auth login` (keep ~/.claude on a volume) or a CLAUDE_CODE_OAUTH_REFRESH_TOKEN login.'
 							: 'This session has no plan limits: API key, Bedrock and Vertex logins are billed per token instead. Turn this option off to accept that.';
 
 				throw new NodeOperationError(this.getNode(), 'No plan limit windows were returned', {

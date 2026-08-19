@@ -1,3 +1,9 @@
+## [0.11.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.10.0...v0.11.0) (2026-08-19)
+
+### Features
+
+* **usage:** optional probe that reads the 5-hour and 7-day windows off inference response headers. A `claude setup-token` credential is inference-only, so the usage endpoint refuses it — but every inference response carries `anthropic-ratelimit-unified-5h/7d-utilization` and `-reset`, and the CLI reports those as utilisation when the endpoint is closed. **Probe With a Minimal Prompt If Unavailable** (off by default) sends one trivial Haiku turn to make those headers exist. Measured in a container whose only credential is `CLAUDE_CODE_OAUTH_TOKEN`: two windows returned, $0.001136 per read, reported in `session.totalCostUsd` and `diagnostics.probeCostUsd`. A batch pays once.
+
 ## [0.10.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.9.0...v0.10.0) (2026-08-19)
 
 ### Features

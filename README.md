@@ -307,8 +307,9 @@ The package ships a second node, **Claude Code Usage**, for the question the que
 answer: how much of the plan is left, and when it comes back. It is the data behind the CLI's
 `/usage`, as workflow items.
 
-It costs **nothing**. The node opens a session, asks two control requests, and closes — no prompt is
-sent, no tool runs, no turn is billed. Measured on the Claude Agent SDK 0.3.202: `1–3s` per read,
+It costs **nothing** by default. The node opens a session, asks two control requests, and closes — no
+prompt is sent, no tool runs, no turn is billed. (One opt-in fallback does pay for a turn; it is called
+out below.) Measured on the Claude Agent SDK 0.3.202: `1–3s` per read,
 `$0.00`, no assistant message.
 
 Search the nodes panel for `usage`, `limits`, `cota` or `consumo` to find it.
@@ -326,6 +327,7 @@ Schedule Trigger → Claude Code Usage → IF maxUtilization > 85 → Slack aler
 | **Timeout** | `60` | Seconds for the whole read: CLI startup, hooks and both control requests. |
 | **Error If Limits Unavailable** | `false` | Fail the item when no plan windows come back. Turn on when the workflow gates on capacity and running blind is worse than failing. |
 | **Declare Profile Scope for Token Sessions** | `true` | Retry the read declaring `CLAUDE_CODE_OAUTH_SCOPES` when auth comes from `CLAUDE_CODE_OAUTH_TOKEN`. Without it such a session reports no plan limits even on a Max or Team account — see below. |
+| **Probe With a Minimal Prompt If Unavailable** | `false` | Last resort when no windows come back: send one trivial Haiku turn so its response headers carry the utilisation. **Costs about $0.001 per read** — the only paid path in this node. |
 | **Include Account Email** | `false` | Adds `account.email`. Off by default — the organisation and plan already identify the account, and n8n saves node output with every execution. |
 | **Include Raw Limits** | `false` | Adds `limitsRaw`, the server's own `limits[]` with `kind`, `group`, `severity`, `scope` and `is_active`. |
 | **Path to Claude Code Executable** | bundled | Same as on the query node. |
@@ -362,7 +364,7 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 | `session` | The node's **own** session, opened to ask the question. Always ~zero — see below |
 | `limitsRaw` | Only when Include Raw Limits is on |
 | `unsupported` | `true` when the SDK no longer exposes the usage request at all |
-| `diagnostics` | `initMs`, `usageMs`, `unknownBucketKeys`, `limitsPayloadMissing`, and `scopeRetried` when a token session needed a second read |
+| `diagnostics` | `initMs`, `usageMs`, `unknownBucketKeys`, `limitsPayloadMissing`, plus `scopeRetried` when a token session needed a second read and `probed` / `probeCostUsd` when the paid fallback ran |
 
 `windows[].key` is whatever the server called the bucket — `five_hour`, `seven_day`,
 `seven_day_opus`, and codenames like `nimbus_quill` or `spend` that no SDK type declares. The node
@@ -407,10 +409,29 @@ token still has exactly what the server issued it — so read the result to know
 | `windows` populated | the credential can read the profile; you have the numbers |
 | `planLimitsApply: true`, `rateLimitsAvailable: false`, `diagnostics.limitsPayloadMissing: true` | the request was made and refused — the token cannot read the account profile |
 
-**A `claude setup-token` token can never read plan limits.** The CLI says so itself: tokens from
+**A `claude setup-token` token cannot read the usage endpoint.** The CLI says so itself: tokens from
 `setup-token` or `CLAUDE_CODE_OAUTH_TOKEN` *"are limited to inference-only for security reasons"*. The
-retry makes the CLI ask; the server declines, and that is the end of it. No client-side setting
-changes it. Two credentials do work:
+retry makes the CLI ask; the server declines. There is still a way to the two main windows, and two
+credentials that open the full payload.
+
+**The probe: buy the numbers for a tenth of a cent.** Every inference response carries
+`anthropic-ratelimit-unified-5h-utilization` / `-reset` and the `7d` pair, and the CLI reports those as
+utilisation when the endpoint is closed to the credential. **Probe With a Minimal Prompt If
+Unavailable** (off by default) sends one trivial turn to Haiku so those headers exist, then reads them:
+
+```javascript
+// with the probe on, from a container whose only credential is CLAUDE_CODE_OAUTH_TOKEN
+{{ $json.windows }}              // [ seven_day 20%, five_hour 11% ]
+{{ $json.nextResetInSeconds }}   // 14491
+{{ $json.session.totalCostUsd }} // 0.001136  ← what this read cost
+{{ $json.diagnostics.probed }}   // true
+```
+
+It is the one part of this node that is not free, which is why it is opt-in and why the amount lands
+in the item. A batch pays once. Only `five_hour` and `seven_day` arrive this way — `extra_usage`,
+`limits` and the per-model buckets exist only in the endpoint payload.
+
+For those, two credentials work:
 
 - **Interactive login inside the container** — `claude auth login` there (device flow), with
   `~/.claude` on a volume so the record survives restarts. The stored record carries the real scopes.
@@ -419,8 +440,8 @@ changes it. Two credentials do work:
   user:sessions:claude_code user:mcp_servers"` (the CLI refuses the refresh-token login without it).
   This route is documented by the CLI but not verified here.
 
-If neither is possible, treat the node as an account-identity and liveness check on that instance and
-gate on `rateLimitsAvailable` instead of on utilisation.
+If none of the three fits, treat the node as an account-identity and liveness check on that instance
+and gate on `rateLimitsAvailable` instead of on utilisation.
 
 `subscriptionType` stays `null` on token sessions regardless: the CLI reads it from
 `CLAUDE_CODE_SUBSCRIPTION_TYPE`, which the node deliberately does not invent. Set it in the container
