@@ -8,6 +8,9 @@
 
 Imagine having an AI coding assistant that can analyze your codebase, fix bugs, write new features, manage databases, interact with APIs, and automate your entire development workflow - all within n8n. That's exactly what this node enables.
 
+The package installs two nodes: **Claude Code**, which runs the agent, and **Claude Code Usage**,
+which reads the account's remaining plan capacity and reset times without spending anything.
+
 [![n8n](https://img.shields.io/badge/n8n-community_node-orange.svg)](https://n8n.io/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Powered-blue.svg)](https://claude.ai/code)
 [![npm](https://img.shields.io/npm/v/@joaoveiga/n8n-nodes-claudecode.svg)](https://www.npmjs.com/package/@joaoveiga/n8n-nodes-claudecode)
@@ -25,6 +28,10 @@ Everything below this section is the upstream node's documentation. This fork ad
 - **Cancellation and failure handling** — stopping the n8n execution now stops the agent; failed runs report their real cost instead of `$0`; Text output no longer swallows errors into a green execution.
 - **Graceful timeouts** ([details](#-timeouts)) — a run that overruns its Timeout is interrupted rather than killed, so it reports the tokens, cost and session it actually used and hands over what it finished. Killing the process makes the SDK report none of that, which is why a timed-out run used to return only an error string. Failure items also reach the **error output branch** now. Both behaviours are gated behind node version 1.1, so existing nodes are untouched.
 - **Session ID** on Continue, so concurrent executions stop sharing one conversation.
+- **A second node, Claude Code Usage** ([details](#-usage--plan-limits)) — reads the logged-in
+  account and how much of its plan is left, including when each window resets. It is the data behind
+  the CLI's `/usage`, and it costs nothing: no prompt is sent, so no turn is billed. Gate a workflow
+  on remaining capacity, wait for a reset, or alert before hitting the wall.
 
 ## 🌟 What Can You Build?
 
@@ -139,6 +146,11 @@ Set a project path and Claude Code understands your entire codebase context:
 - Follows your coding standards
 - Understands your architecture
 - Respects your dependencies
+
+### **Plan Capacity Awareness**
+The **Claude Code Usage** node reads how much of the plan is left and when each window resets, for
+free — so a workflow can throttle itself, wait for a reset, or downgrade the model instead of
+failing at the wall. See [Usage & Plan Limits](#-usage--plan-limits).
 
 ### **Tool Arsenal**
 Claude Code comes equipped with powerful tools:
@@ -289,6 +301,88 @@ An **Error Workflow** gets more than the panel does. The `Error Trigger` receive
 So an alerting workflow can report what a timed-out run cost without any extra wiring. The message
 still carries the headline numbers inline, because that is the line a human reads in a Slack alert.
 
+## 📊 Usage & Plan Limits
+
+The package ships a second node, **Claude Code Usage**, for the question the query node cannot
+answer: how much of the plan is left, and when it comes back. It is the data behind the CLI's
+`/usage`, as workflow items.
+
+It costs **nothing**. The node opens a session, asks two control requests, and closes — no prompt is
+sent, no tool runs, no turn is billed. Measured on the Claude Agent SDK 0.3.202: `1–3s` per read,
+`$0.00`, no assistant message.
+
+Search the nodes panel for `usage`, `limits`, `cota` or `consumo` to find it.
+
+```
+Schedule Trigger → Claude Code Usage → IF maxUtilization > 85 → Slack alert
+                                                             → else → Claude Code
+```
+
+### Parameters
+
+| Parameter | Default | What it does |
+|---|---|---|
+| **Project Path** | current dir | Directory the read runs in. Auth is account-wide, but settings, env and **hooks** resolve per directory — a path with slow `SessionStart` hooks makes the read slower. |
+| **Timeout** | `60` | Seconds for the whole read: CLI startup, hooks and both control requests. |
+| **Error If Limits Unavailable** | `false` | Fail the item when no plan windows come back. Turn on when the workflow gates on capacity and running blind is worse than failing. |
+| **Include Account Email** | `false` | Adds `account.email`. Off by default — the organisation and plan already identify the account, and n8n saves node output with every execution. |
+| **Include Raw Limits** | `false` | Adds `limitsRaw`, the server's own `limits[]` with `kind`, `group`, `severity`, `scope` and `is_active`. |
+| **Path to Claude Code Executable** | bundled | Same as on the query node. |
+| **Debug Mode** | `false` | Logs the two request timings, the window count and any undeclared bucket names. |
+
+One item in, one item out. With several input items the node reads **once per distinct Project
+Path** and gives every item served by that read the same `fetchedAt` — plan capacity is
+account-wide, so a 3-item batch has no reason to open three sessions.
+
+### Output
+
+```javascript
+{{ $json.maxUtilization }}          // 72 — the fullest window, 0-100
+{{ $json.maxUtilizationKey }}       // 'five_hour'
+{{ $json.nextResetInSeconds }}      // 3477 — feed straight into a Wait node
+{{ $json.nextResetAt }}             // '2026-08-19T06:10:00.394384+00:00'
+{{ $json.rateLimitsAvailable }}     // true — there are numbers to read
+{{ $json.windows[0].utilization }}  // windows are sorted fullest-first
+{{ $json.account.organization }}    // 'Gaudium'
+```
+
+| Field | Meaning |
+|---|---|
+| `fetchedAt` | When the read happened. Every countdown in the item derives from it |
+| `account` | `organization`, `subscriptionType`, `apiProvider`, `tokenSource`, `apiKeySource`, plus `email` when enabled |
+| `subscriptionType` | `'pro'`, `'max'`, `'team'`, `'enterprise'`, or `null` |
+| `rateLimitsAvailable` | **True only when at least one window came back.** Branch on this |
+| `planLimitsApply` | Whether plan limits apply to this login at all — `false` for API key, Bedrock, Vertex |
+| `windows[]` | One entry per window: `key`, `utilization`, `resetsAt`, `resetsInSeconds`, `limitDollars`, `usedDollars`, `remainingDollars`. Sorted by utilization descending |
+| `maxUtilization`, `maxUtilizationKey` | The binding constraint, so an IF node needs no array walking |
+| `nextResetAt`, `nextResetInSeconds` | The soonest reset **among windows actually consuming quota** |
+| `extraUsage` | Extra-usage credits: `isEnabled`, `monthlyLimit`, `usedCredits`, `utilization`, `currency`, plus `disabledReason` and `spendLimitReached` — the actionable half of `isEnabled: false` |
+| `session` | The node's **own** session, opened to ask the question. Always ~zero — see below |
+| `limitsRaw` | Only when Include Raw Limits is on |
+| `unsupported` | `true` when the SDK no longer exposes the usage request at all |
+| `diagnostics` | `initMs`, `usageMs`, `unknownBucketKeys`, `limitsPayloadMissing` |
+
+`windows[].key` is whatever the server called the bucket — `five_hour`, `seven_day`,
+`seven_day_opus`, and codenames like `nimbus_quill` or `spend` that no SDK type declares. The node
+walks the payload instead of reading a fixed field list, so a bucket added server-side shows up as
+data rather than vanishing. Undeclared keys are listed in `diagnostics.unknownBucketKeys`.
+
+### Three things to know
+
+**`session` is not account spend.** It describes the session this node just opened, which did no
+work. There is no API for month-to-date account spend; for per-run cost use the query node's
+`total_cost_usd`.
+
+**An empty read is not an empty plan.** `planLimitsApply: true` with `rateLimitsAvailable: false`
+means the account *has* limits and this read came back without them — observed lasting several
+minutes on a live Team account. `diagnostics.limitsPayloadMissing` marks exactly that case. Retry;
+never treat it as unlimited. This is why `rateLimitsAvailable` follows the numbers rather than the
+server's own `rate_limits_available` flag, which stayed `true` throughout.
+
+**API key, Bedrock and Vertex sessions have no plan limits.** They are billed per token, so
+`planLimitsApply` is `false`, `windows` is empty, and the account fields still tell you which login
+n8n is using. Leave **Error If Limits Unavailable** off in that case.
+
 ## 📋 Configuration Examples
 
 ### Simple Code Analysis
@@ -415,7 +509,9 @@ If not installed, see the [Quick Start](#-quick-start) section above.
 6. Watch Claude Code analyze your project!
 
 ### 3. **Explore Advanced Features**
-- Check out the [workflow templates](./workflow-templates/) for ready-to-use examples
+- Check out the [workflow templates](./workflow-templates/) for ready-to-use examples, including the
+  [Plan Limit Guard](./workflow-templates/plan-limit-guard.json) that gates agent work on remaining
+  plan capacity
 - See the [examples directory](./examples/) for configuration options
 - Read about [MCP servers](#model-context-protocol-mcp) for database and API access
 
@@ -442,9 +538,16 @@ Control what Claude Code can do in `.claude/settings.json`:
 Use "Continue" operation to build complex multi-step workflows while maintaining context.
 
 ### 📊 **Output Formats**
+The Claude Code node offers three (the Usage node has one fixed shape — see
+[Usage & Plan Limits](#-usage--plan-limits)):
 - **Structured**: Full details with metrics
 - **Messages**: For debugging
 - **Text**: Simple results for chaining
+
+### ⛽ **Check Capacity Before a Fan-Out**
+Put a **Claude Code Usage** node ahead of a batch and branch on `maxUtilization`. Ten Claude Code
+nodes that all fail at 100% cost more than one read that says "not now" — and
+`nextResetInSeconds` feeds a Wait node directly.
 
 ## 🤝 Community & Support
 

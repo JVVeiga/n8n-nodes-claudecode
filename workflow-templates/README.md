@@ -42,6 +42,23 @@ Ready-to-use workflow templates that showcase the power of Claude Code in n8n au
 
 **Perfect for**: Reducing support response time from days to minutes
 
+---
+
+### 4. ⛽ [Plan Limit Guard](./plan-limit-guard.json)
+**Trigger**: Schedule, every 30 minutes  
+**What it does**:
+- Reads the account's remaining Claude plan capacity with the **Claude Code Usage** node — free, no
+  tokens spent
+- Alerts when the read comes back with no numbers, instead of mistaking that for an unlimited plan
+- Alerts Slack with the window, the percentage and the reset time when utilisation reaches 85%
+- Runs the agent work only while there is capacity left
+
+**Perfect for**: Keeping scheduled agent workflows from piling into a rate limit, and knowing when
+capacity comes back
+
+> This is the only template that does not need a webhook. It is also the one to copy the *shape* of:
+> put a usage read in front of anything that fans out into several Claude Code nodes.
+
 ## 🛠️ How to Use These Templates
 
 ### Method 1: Import via n8n UI
@@ -78,6 +95,14 @@ Ready-to-use workflow templates that showcase the power of Claude Code in n8n au
    - Slack: Channel names and authentication
    - Email: SMTP settings or service credentials
    - Databases: Connection strings
+
+4. **Plan Limit Guard only**: the 85% threshold and the schedule interval
+   ```javascript
+   "rightValue": 85              // Alert threshold, 0-100
+   "minutesInterval": 30         // How often to check
+   ```
+   Both Slack nodes post to `#engineering-alerts` — change the channel, and note that the guard
+   needs no webhook or Project Path of its own (the gated Claude Code node still does).
 
 ### Required Credentials
 

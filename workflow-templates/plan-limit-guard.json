@@ -1,0 +1,209 @@
+{
+  "name": "Plan Limit Guard",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "schedule-guard",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getUsage",
+        "projectPath": "",
+        "timeout": 60,
+        "usageOptions": {}
+      },
+      "id": "read-plan-usage",
+      "name": "Read Plan Usage",
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCodeUsage",
+      "typeVersion": 1,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "no-numbers",
+              "leftValue": "={{ $json.rateLimitsAvailable }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "no-numbers-check",
+      "name": "No Numbers?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "near-the-wall",
+              "leftValue": "={{ $json.maxUtilization }}",
+              "rightValue": 85,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "capacity-check",
+      "name": "Near The Wall?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [910, 420]
+    },
+    {
+      "parameters": {
+        "channel": "#engineering-alerts",
+        "text": "=⚠️ Claude plan capacity low\\n\\n*Window:* {{ $json.maxUtilizationKey }} at {{ $json.maxUtilization }}%\\n*Resets:* {{ $json.nextResetAt }} (in {{ Math.round($json.nextResetInSeconds / 60) }} min)\\n*Account:* {{ $json.account.organization }} — {{ $json.account.subscriptionType }}\\n\\nAgent workflows are paused until the window resets.",
+        "authentication": "webhook"
+      },
+      "id": "alert-low-capacity",
+      "name": "Alert: Capacity Low",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1130, 320]
+    },
+    {
+      "parameters": {
+        "operation": "query",
+        "prompt": "Review the open TODO comments in this repository and report the three most urgent, with file and line references.",
+        "model": "sonnet",
+        "projectPath": "/data/repos/my-project",
+        "maxTurns": 20,
+        "timeout": 600,
+        "outputFormat": "structured",
+        "additionalOptions": {}
+      },
+      "id": "gated-agent-work",
+      "name": "Run Agent Work",
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
+      "typeVersion": 1.1,
+      "position": [1130, 520]
+    },
+    {
+      "parameters": {
+        "channel": "#engineering-alerts",
+        "text": "=🔌 Could not read Claude plan limits\\n\\n*Plan limits apply to this login:* {{ $json.planLimitsApply }}\\n*Payload missing:* {{ $json.diagnostics.limitsPayloadMissing }}\\n*Account:* {{ $json.account.organization }} — {{ $json.account.subscriptionType }}\\n\\nIf `planLimitsApply` is true this read came back empty — retry rather than treating the plan as unlimited. If it is false, this login is billed per token and has no plan windows.",
+        "authentication": "webhook"
+      },
+      "id": "alert-no-numbers",
+      "name": "Alert: No Numbers",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [910, 180]
+    }
+  ],
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Read Plan Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Plan Usage": {
+      "main": [
+        [
+          {
+            "node": "No Numbers?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Numbers?": {
+      "main": [
+        [
+          {
+            "node": "Alert: No Numbers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Near The Wall?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Near The Wall?": {
+      "main": [
+        [
+          {
+            "node": "Alert: Capacity Low",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Agent Work",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {},
+  "versionId": "plan-limit-guard-v1",
+  "triggerCount": 1
+}
