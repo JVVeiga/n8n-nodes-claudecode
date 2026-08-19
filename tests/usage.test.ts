@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+	normalizeAccount,
+	normalizeExtraUsage,
+	normalizeUsage,
 	normalizeWindows,
 	numberOrNull,
 	secondsUntil,
@@ -176,5 +179,175 @@ describe('normalizeWindows', () => {
 		assert.equal(windows[0].limitDollars, 100);
 		assert.equal(windows[0].usedDollars, 40);
 		assert.equal(windows[0].remainingDollars, 60);
+	});
+});
+
+const TEAM_INIT = {
+	account: {
+		email: 'someone@example.com',
+		organization: 'Gaudium',
+		subscriptionType: 'Claude Team',
+		apiProvider: 'firstParty',
+	},
+	models: [{ id: 'claude-opus-5' }],
+};
+
+const TEAM_USAGE = {
+	session: { total_cost_usd: 0, total_duration_ms: 2111, model_usage: {} },
+	subscription_type: 'team',
+	rate_limits_available: true,
+	rate_limits: TEAM_RATE_LIMITS,
+};
+
+describe('normalizeAccount', () => {
+	it('withholds the email unless it was asked for', () => {
+		const account = normalizeAccount(TEAM_INIT);
+
+		assert.equal('email' in account, false);
+		assert.equal(account.organization, 'Gaudium');
+		assert.equal(account.apiProvider, 'firstParty');
+	});
+
+	it('includes the email when the toggle is on', () => {
+		assert.equal(normalizeAccount(TEAM_INIT, true).email, 'someone@example.com');
+	});
+
+	it('reports nulls rather than throwing when initialize failed', () => {
+		assert.deepEqual(normalizeAccount(null), {
+			organization: null,
+			subscriptionType: null,
+			tokenSource: null,
+			apiKeySource: null,
+			apiProvider: null,
+		});
+	});
+});
+
+describe('normalizeExtraUsage', () => {
+	it('maps the credit pool, including why it is unusable', () => {
+		const extra = normalizeExtraUsage({
+			extra_usage: {
+				is_enabled: false,
+				monthly_limit: 50,
+				used_credits: 12.5,
+				utilization: 25,
+				currency: 'BRL',
+				disabled_reason: 'out_of_credits',
+				spend_limit_reached: true,
+			},
+		});
+
+		assert.deepEqual(extra, {
+			isEnabled: false,
+			monthlyLimit: 50,
+			usedCredits: 12.5,
+			utilization: 25,
+			currency: 'BRL',
+			disabledReason: 'out_of_credits',
+			spendLimitReached: true,
+		});
+	});
+
+	it('is null when the payload has no credit pool at all', () => {
+		assert.equal(normalizeExtraUsage({}), null);
+		assert.equal(normalizeExtraUsage(null), null);
+	});
+});
+
+describe('normalizeUsage', () => {
+	it('assembles the live Team payload', () => {
+		const report = normalizeUsage({
+			init: TEAM_INIT,
+			usage: TEAM_USAGE,
+			claudeCodeVersion: '2.1.0',
+			fetchedAtMs: FETCHED_AT_MS,
+			initMs: 1886,
+			usageMs: 819,
+		});
+
+		assert.equal(report.fetchedAt, '2026-08-19T05:12:03.114Z');
+		assert.equal(report.claudeCodeVersion, '2.1.0');
+		assert.equal(report.subscriptionType, 'team');
+		assert.equal(report.rateLimitsAvailable, true);
+		assert.equal(report.maxUtilization, 72);
+		assert.equal(report.maxUtilizationKey, 'five_hour');
+		assert.equal(report.nextResetAt, '2026-08-19T06:10:00.394384+00:00');
+		assert.equal(report.nextResetInSeconds, 3477);
+		assert.equal(report.unsupported, false);
+		assert.deepEqual(report.diagnostics, {
+			initMs: 1886,
+			usageMs: 819,
+			unknownBucketKeys: ['nimbus_quill'],
+		});
+	});
+
+	it('reports its own session cost, which is the read and not account spend', () => {
+		const report = normalizeUsage({
+			init: TEAM_INIT,
+			usage: TEAM_USAGE,
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.deepEqual(report.session, { totalCostUsd: 0, totalDurationMs: 2111 });
+	});
+
+	// A window at 0% can hold an earlier reset; waiting for it would resume into a still-full window.
+	it('picks the next reset among windows actually consuming quota', () => {
+		const report = normalizeUsage({
+			init: TEAM_INIT,
+			usage: {
+				rate_limits_available: true,
+				rate_limits: {
+					idle_soon: { utilization: 0, resets_at: '2026-08-19T05:20:00+00:00' },
+					busy_later: { utilization: 90, resets_at: '2026-08-19T07:00:00+00:00' },
+				},
+			},
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(report.nextResetAt, '2026-08-19T07:00:00+00:00');
+		assert.equal(report.maxUtilizationKey, 'busy_later');
+	});
+
+	it('holds up on an API-key session, where plan limits do not apply', () => {
+		const report = normalizeUsage({
+			init: { account: { apiProvider: 'firstParty', apiKeySource: 'ANTHROPIC_API_KEY' } },
+			usage: {
+				session: { total_cost_usd: 0 },
+				subscription_type: null,
+				rate_limits_available: false,
+				rate_limits: null,
+			},
+			fetchedAtMs: FETCHED_AT_MS,
+		});
+
+		assert.equal(report.rateLimitsAvailable, false);
+		assert.deepEqual(report.windows, []);
+		assert.equal(report.maxUtilization, null);
+		assert.equal(report.maxUtilizationKey, null);
+		assert.equal(report.nextResetAt, null);
+		assert.equal(report.extraUsage, null);
+		assert.equal(report.account.apiKeySource, 'ANTHROPIC_API_KEY');
+	});
+
+	it('degrades to a report instead of throwing when the control request is gone', () => {
+		const report = normalizeUsage({
+			init: TEAM_INIT,
+			usage: null,
+			fetchedAtMs: FETCHED_AT_MS,
+			unsupported: true,
+		});
+
+		assert.equal(report.unsupported, true);
+		assert.equal(report.rateLimitsAvailable, false);
+		assert.deepEqual(report.windows, []);
+		assert.equal(report.account.organization, 'Gaudium');
+	});
+
+	it('omits limitsRaw unless it was asked for', () => {
+		const base = { init: TEAM_INIT, usage: TEAM_USAGE, fetchedAtMs: FETCHED_AT_MS };
+
+		assert.equal('limitsRaw' in normalizeUsage(base), false);
+		assert.equal(normalizeUsage({ ...base, includeRawLimits: true }).limitsRaw?.length, 2);
 	});
 });

@@ -98,3 +98,167 @@ const DECLARED_BUCKET_KEYS = new Set([
 
 export const unknownBucketKeys = (windows: UsageWindow[]): string[] =>
 	windows.map((w) => w.key).filter((key) => !DECLARED_BUCKET_KEYS.has(key));
+
+/** Who the CLI is logged in as. Absent fields mean a 3P provider, where auth is external. */
+export type UsageAccount = {
+	email?: string;
+	organization: string | null;
+	subscriptionType: string | null;
+	tokenSource: string | null;
+	apiKeySource: string | null;
+	apiProvider: string | null;
+};
+
+export type UsageExtraCredits = {
+	isEnabled: boolean;
+	monthlyLimit: number | null;
+	usedCredits: number | null;
+	utilization: number | null;
+	currency: string | null;
+	/** Why extra usage cannot absorb the overflow — the actionable half of `isEnabled: false`. */
+	disabledReason: string | null;
+	spendLimitReached: boolean;
+};
+
+export type UsageReport = {
+	fetchedAt: string;
+	claudeCodeVersion: string | null;
+	account: UsageAccount;
+	subscriptionType: string | null;
+	rateLimitsAvailable: boolean;
+	windows: UsageWindow[];
+	maxUtilization: number | null;
+	maxUtilizationKey: string | null;
+	nextResetAt: string | null;
+	nextResetInSeconds: number | null;
+	extraUsage: UsageExtraCredits | null;
+	/** This node's own session, opened to ask the question. Always ~zero — never account spend. */
+	session: { totalCostUsd: number | null; totalDurationMs: number | null };
+	limitsRaw?: unknown[];
+	unsupported: boolean;
+	diagnostics: {
+		initMs: number | null;
+		usageMs: number | null;
+		unknownBucketKeys: string[];
+	};
+};
+
+export type NormalizeUsageInput = {
+	/** `initializationResult()` payload, or null when it failed. */
+	init: Record<string, unknown> | null;
+	/** The experimental usage payload, or null when unsupported or failed. */
+	usage: Record<string, unknown> | null;
+	claudeCodeVersion?: string | null;
+	fetchedAtMs: number;
+	includeEmail?: boolean;
+	includeRawLimits?: boolean;
+	/** True when the SDK no longer exposes the usage control request at all. */
+	unsupported?: boolean;
+	initMs?: number | null;
+	usageMs?: number | null;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+	typeof value === 'object' && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+
+export function normalizeAccount(
+	init: Record<string, unknown> | null,
+	includeEmail = false,
+): UsageAccount {
+	const account = asRecord(init?.account) ?? {};
+	const normalized: UsageAccount = {
+		organization: stringOrNull(account.organization),
+		subscriptionType: stringOrNull(account.subscriptionType),
+		tokenSource: stringOrNull(account.tokenSource),
+		apiKeySource: stringOrNull(account.apiKeySource),
+		apiProvider: stringOrNull(account.apiProvider),
+	};
+
+	// Opt-in: the organisation and plan already identify the account for routing decisions, and the
+	// email would otherwise end up in every execution's saved data.
+	if (includeEmail) {
+		const email = stringOrNull(account.email);
+		if (email !== null) normalized.email = email;
+	}
+
+	return normalized;
+}
+
+export function normalizeExtraUsage(rateLimits: unknown): UsageExtraCredits | null {
+	const extra = asRecord(asRecord(rateLimits)?.extra_usage);
+	if (extra === null) return null;
+
+	return {
+		isEnabled: extra.is_enabled === true,
+		monthlyLimit: numberOrNull(extra.monthly_limit),
+		usedCredits: numberOrNull(extra.used_credits),
+		utilization: numberOrNull(extra.utilization),
+		currency: stringOrNull(extra.currency),
+		disabledReason: stringOrNull(extra.disabled_reason),
+		spendLimitReached: extra.spend_limit_reached === true,
+	};
+}
+
+/**
+ * The window that will free up first, among those actually consuming quota. A window at 0% may hold
+ * an earlier `resets_at`, and pointing a Wait node at that reset would resume just as early into a
+ * window that is still full.
+ */
+function nextReset(windows: UsageWindow[]): UsageWindow | null {
+	const pending = windows
+		.filter((w) => (w.utilization ?? 0) > 0 && w.resetsInSeconds !== null)
+		.sort((a, b) => (a.resetsInSeconds as number) - (b.resetsInSeconds as number));
+
+	return pending[0] ?? null;
+}
+
+/** The binding constraint: `windows` is already sorted, so the first numeric utilization wins. */
+function peakWindow(windows: UsageWindow[]): UsageWindow | null {
+	return windows.find((w) => w.utilization !== null) ?? null;
+}
+
+/**
+ * Assembles the item the node emits. Tolerates a null `usage` payload — an API key, Bedrock or
+ * Vertex session has no plan limits, and a removed control request leaves the same hole — and still
+ * reports the account, because knowing which login n8n is using is useful on its own.
+ */
+export function normalizeUsage(input: NormalizeUsageInput): UsageReport {
+	const rateLimits = asRecord(input.usage?.rate_limits);
+	const windows = normalizeWindows(rateLimits, input.fetchedAtMs);
+	const peak = peakWindow(windows);
+	const upcoming = nextReset(windows);
+	const session = asRecord(input.usage?.session);
+	const rawLimits = asRecord(rateLimits)?.limits;
+
+	const report: UsageReport = {
+		fetchedAt: new Date(input.fetchedAtMs).toISOString(),
+		claudeCodeVersion: input.claudeCodeVersion ?? null,
+		account: normalizeAccount(input.init, input.includeEmail),
+		subscriptionType: stringOrNull(input.usage?.subscription_type),
+		rateLimitsAvailable: input.usage?.rate_limits_available === true,
+		windows,
+		maxUtilization: peak?.utilization ?? null,
+		maxUtilizationKey: peak?.key ?? null,
+		nextResetAt: upcoming?.resetsAt ?? null,
+		nextResetInSeconds: upcoming?.resetsInSeconds ?? null,
+		extraUsage: normalizeExtraUsage(rateLimits),
+		session: {
+			totalCostUsd: numberOrNull(session?.total_cost_usd),
+			totalDurationMs: numberOrNull(session?.total_duration_ms),
+		},
+		unsupported: input.unsupported === true,
+		diagnostics: {
+			initMs: input.initMs ?? null,
+			usageMs: input.usageMs ?? null,
+			unknownBucketKeys: unknownBucketKeys(windows),
+		},
+	};
+
+	if (input.includeRawLimits && Array.isArray(rawLimits)) {
+		report.limitsRaw = rawLimits;
+	}
+
+	return report;
+}
