@@ -404,8 +404,23 @@ token still has exactly what the server issued it — so read the result to know
 
 | Result | Meaning |
 |---|---|
-| `windows` populated | the token can read the profile; you have the numbers |
-| `planLimitsApply: true`, `rateLimitsAvailable: false`, `diagnostics.limitsPayloadMissing: true` | the request was made and refused — mint the token with the `user:profile` scope, or authenticate the container with an interactive login |
+| `windows` populated | the credential can read the profile; you have the numbers |
+| `planLimitsApply: true`, `rateLimitsAvailable: false`, `diagnostics.limitsPayloadMissing: true` | the request was made and refused — the token cannot read the account profile |
+
+**A `claude setup-token` token can never read plan limits.** The CLI says so itself: tokens from
+`setup-token` or `CLAUDE_CODE_OAUTH_TOKEN` *"are limited to inference-only for security reasons"*. The
+retry makes the CLI ask; the server declines, and that is the end of it. No client-side setting
+changes it. Two credentials do work:
+
+- **Interactive login inside the container** — `claude auth login` there (device flow), with
+  `~/.claude` on a volume so the record survives restarts. The stored record carries the real scopes.
+- **Refresh-token login** — set `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` to the refresh token from an
+  interactive login's credentials, plus `CLAUDE_CODE_OAUTH_SCOPES="user:profile user:inference
+  user:sessions:claude_code user:mcp_servers"` (the CLI refuses the refresh-token login without it).
+  This route is documented by the CLI but not verified here.
+
+If neither is possible, treat the node as an account-identity and liveness check on that instance and
+gate on `rateLimitsAvailable` instead of on utilisation.
 
 `subscriptionType` stays `null` on token sessions regardless: the CLI reads it from
 `CLAUDE_CODE_SUBSCRIPTION_TYPE`, which the node deliberately does not invent. Set it in the container

@@ -94,7 +94,7 @@ export class ClaudeCodeUsage implements INodeType {
 						type: 'boolean',
 						default: true,
 						description:
-							'Whether to retry the read declaring CLAUDE_CODE_OAUTH_SCOPES when the session authenticates with CLAUDE_CODE_OAUTH_TOKEN. Such a session gets a synthesised scope list of user:inference alone, and the CLI requires user:profile before it will look up plan limits at all — so without this the numbers are never even requested. Declaring the scope grants nothing the token does not already have: if the server refuses, the read simply reports no windows.',
+							'Whether to retry the read declaring CLAUDE_CODE_OAUTH_SCOPES when the session authenticates with CLAUDE_CODE_OAUTH_TOKEN. Such a session gets a synthesised scope list of user:inference alone, and the CLI requires user:profile before it will look up plan limits at all. Declaring the scope grants nothing the token does not already have — a setup-token is inference-only by design and the server will refuse, which shows up as limitsPayloadMissing. Worth leaving on: it costs one extra read only on token sessions, and it does recover the numbers when a stored login is also present.',
 					},
 					{
 						displayName: 'Error If Limits Unavailable',
@@ -263,7 +263,7 @@ export class ClaudeCodeUsage implements INodeType {
 					: report.planLimitsApply
 						? 'This account has plan limits, but the read came back without them — the usage endpoint answered empty. Retry rather than treating it as unlimited.'
 						: report.account.tokenSource === 'CLAUDE_CODE_OAUTH_TOKEN'
-							? 'This session authenticates with CLAUDE_CODE_OAUTH_TOKEN, and the token cannot read the account profile, so plan limits stay out of reach. Mint the token with the user:profile scope, or authenticate the container with an interactive login instead.'
+							? 'This session authenticates with CLAUDE_CODE_OAUTH_TOKEN. Tokens from `claude setup-token` are inference-only by design, so they cannot read the account profile and plan limits stay out of reach — no client-side setting changes that. Use an interactive `claude auth login` in the container with ~/.claude on a volume, or a CLAUDE_CODE_OAUTH_REFRESH_TOKEN login.'
 							: 'This session has no plan limits: API key, Bedrock and Vertex logins are billed per token instead. Turn this option off to accept that.';
 
 				throw new NodeOperationError(this.getNode(), 'No plan limit windows were returned', {

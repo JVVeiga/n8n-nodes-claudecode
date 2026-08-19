@@ -2,7 +2,7 @@
 
 ### Features
 
-* **usage:** read plan limits on `CLAUDE_CODE_OAUTH_TOKEN` sessions. Such a session — the usual headless and Docker setup — reported no plan limits even on accounts that have them, because the CLI synthesises its scope record from `CLAUDE_CODE_OAUTH_SCOPES` and defaults to `user:inference` alone, while plan limits require `user:profile`. The node now retries the read with the scope declared, and `diagnostics.scopeRetried` marks the items that needed it. Off via **Declare Profile Scope for Token Sessions**.
+* **usage:** read plan limits on `CLAUDE_CODE_OAUTH_TOKEN` sessions. Such a session — the usual headless and Docker setup — reported no plan limits even on accounts that have them, because the CLI synthesises its scope record from `CLAUDE_CODE_OAUTH_SCOPES` and defaults to `user:inference` alone, while plan limits require `user:profile`. The node now retries the read with the scope declared, and `diagnostics.scopeRetried` marks the items that needed it. Off via **Declare Profile Scope for Token Sessions**. Note: a `claude setup-token` credential is inference-only by design, so the server refuses the lookup — the retry helps only when a stored login is also present, and the error text now names the two credentials that do work.
 
 ## [0.9.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.8.1...v0.9.0) (2026-08-19)
 
