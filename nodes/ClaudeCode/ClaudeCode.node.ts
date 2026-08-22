@@ -20,6 +20,13 @@ import {
 	type TerminationReason,
 } from './timeout';
 
+/**
+ * Indirection over the SDK's `query`, so a test can drive the message stream without spawning a
+ * CLI. Temporary: runner.ts takes `query` as a parameter once the run loop is extracted (T13),
+ * and this goes away with it.
+ */
+export const queryImpl = { query };
+
 /** Sent as a normal user turn after the interrupt, to get a handover rather than more work. */
 const WRAP_UP_PROMPT = [
 	'Your time budget for this task is exhausted. Stop all work now.',
@@ -859,7 +866,7 @@ export class ClaudeCode implements INodeType {
 				};
 
 				// Held in a variable rather than iterated inline so control requests can reach it.
-				const runningQuery = query(queryOptions);
+				const runningQuery = queryImpl.query(queryOptions);
 
 				// Whether the wrap-up turn has been requested. Until it has, a result message means
 				// the run is over; after it, the FIRST result is the interrupt's own and the stream

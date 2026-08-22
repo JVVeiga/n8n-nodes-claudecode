@@ -1,0 +1,32 @@
+[
+  {
+    "json": {
+      "result": "Error: [sdk] error_max_budget_usd",
+      "success": false,
+      "duration_ms": 31204,
+      "total_cost_usd": 0.0917,
+      "diagnostics": {
+        "requestedModel": "claude-sonnet-5",
+        "resolvedModel": "claude-sonnet-5",
+        "modelsUsed": [
+          "claude-sonnet-5"
+        ],
+        "fallbackModelRequested": null,
+        "requestedEffort": "high",
+        "effectiveEffort": "high",
+        "appliedEffort": null,
+        "permissionMode": "bypassPermissions",
+        "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+        "ultracodeRequested": false,
+        "workflowToolAvailable": false,
+        "workflowToolUses": 0,
+        "subagentToolUses": 0,
+        "thinkingRequested": "default",
+        "thinkingBlocks": 0
+      }
+    },
+    "pairedItem": {
+      "item": 0
+    }
+  }
+]

@@ -1,0 +1,5 @@
+# Golden output fixtures are byte-exact records of what the node emits, produced by
+# JSON.stringify and compared with assert.equal. Letting prettier reformat them makes
+# `npm run format` break the test suite every time, and defeats the point of the fixture:
+# it is meant to be the node's output, not a prettified rendering of it.
+tests/fixtures/
