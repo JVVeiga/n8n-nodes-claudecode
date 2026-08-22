@@ -6,9 +6,9 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
-import { statSync } from 'fs';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createPromptStream } from './promptStream';
+import { checkProjectPath } from '../shared/projectPath';
 import type { AdditionalOptions, EffortSelection, QueryOptions } from './types';
 import {
 	buildTimeoutPayload,
@@ -668,29 +668,17 @@ export class ClaudeCode implements INodeType {
 						additionalOptions.pathToClaudeCodeExecutable.trim();
 				}
 
-				// Add project path (cwd) if specified. Validate it first: the SDK's
-				// spawn-error handler blames a libc/architecture mismatch for the ENOENT
-				// a missing cwd produces, which sends users chasing a phantom problem.
+				// Add project path (cwd) if specified. Validated first — see checkProjectPath for why
+				// a bad path must not be left for the SDK's spawn-error handler to misdiagnose.
 				if (projectPath && projectPath.trim() !== '') {
-					const cwd = projectPath.trim();
-					let isDirectory = false;
-					try {
-						isDirectory = statSync(cwd).isDirectory();
-					} catch {
-						isDirectory = false;
+					const problem = checkProjectPath(projectPath);
+					if (problem) {
+						throw new NodeOperationError(this.getNode(), problem.message, {
+							itemIndex,
+							description: problem.description,
+						});
 					}
-					if (!isDirectory) {
-						throw new NodeOperationError(
-							this.getNode(),
-							`Project Path is not an existing directory: ${cwd}`,
-							{
-								itemIndex,
-								description:
-									'The path must exist inside the n8n container. If n8n runs in Docker, make sure the directory is mounted into it.',
-							},
-						);
-					}
-					queryOptions.options.cwd = cwd;
+					queryOptions.options.cwd = projectPath.trim();
 					if (additionalOptions.debug) {
 						this.logger.debug('Working directory set', { cwd: queryOptions.options.cwd });
 					}

@@ -6,7 +6,6 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
-import { statSync } from 'fs';
 import {
 	PROBE_PROMPT,
 	PROFILE_SCOPES,
@@ -15,6 +14,7 @@ import {
 	type UsageReadResult,
 } from './readUsage';
 import { normalizeUsage, shouldRetryWithProfileScope, type UsageReport } from './usage';
+import { checkProjectPath } from '../shared/projectPath';
 
 type UsageOptions = {
 	includeRawLimits?: boolean;
@@ -163,26 +163,14 @@ export class ClaudeCodeUsage implements INodeType {
 			const options = this.getNodeParameter('usageOptions', itemIndex, {}) as UsageOptions;
 			const executable = (options.pathToClaudeCodeExecutable ?? '').trim();
 
-			// Validate before spawning: the SDK's spawn-error handler blames a libc/architecture
-			// mismatch for the ENOENT a missing cwd produces, which sends users chasing a phantom.
-			if (projectPath !== '') {
-				let isDirectory = false;
-				try {
-					isDirectory = statSync(projectPath).isDirectory();
-				} catch {
-					isDirectory = false;
-				}
-				if (!isDirectory) {
-					throw new NodeOperationError(
-						this.getNode(),
-						`Project Path is not an existing directory: ${projectPath}`,
-						{
-							itemIndex,
-							description:
-								'The path must exist inside the n8n container. If n8n runs in Docker, make sure the directory is mounted into it.',
-						},
-					);
-				}
+			// Validated before spawning — see checkProjectPath for why a bad path must not be left
+			// for the SDK's spawn-error handler to misdiagnose.
+			const pathProblem = checkProjectPath(projectPath);
+			if (pathProblem) {
+				throw new NodeOperationError(this.getNode(), pathProblem.message, {
+					itemIndex,
+					description: pathProblem.description,
+				});
 			}
 
 			const declareProfileScope = options.declareProfileScope !== false;
