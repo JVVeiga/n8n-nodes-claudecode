@@ -12,6 +12,8 @@ import { checkProjectPath } from '../shared/projectPath';
 import { claudeCodeDescription } from './description/properties';
 import { checkPrompt, effectiveEffort as resolveEffort, isUltracode, readParams } from './params';
 import { buildDiagnostics as collectDiagnostics } from './diagnostics';
+import { resolveResultText } from './output/resultText';
+import { findResult } from '../shared/sdkMessage';
 import type { QueryOptions } from './types';
 import {
 	buildTimeoutPayload,
@@ -526,100 +528,22 @@ export class ClaudeCode implements INodeType {
 
 					// Format output based on selected format
 					if (outputFormat === 'text') {
-						// Find the result message
-						const resultMessage = messages.find((m) => m.type === 'result') as any;
+						const resultMessage = findResult(messages) as
+							| ({ subtype?: string; duration_ms?: number; total_cost_usd?: number } & SDKMessage)
+							| undefined;
+
+						// The 140-line if/else ladder this replaces now lives in output/resultText.ts,
+						// where its load-bearing branch order is held by tests rather than a comment.
+						const resolved = resolveResultText(messages);
+						const finalText = resolved.text;
+						const errorText = resolved.errorText;
 
 						if (additionalOptions.debug) {
 							this.logger.debug('Processing text output format', {
 								foundResultMessage: !!resultMessage,
 								messageCount: messages.length,
+								resultTextSource: resolved.source,
 							});
-						}
-
-						// Extract the final assistant message if no result message
-						let finalText = '';
-						let errorText = '';
-
-						if (resultMessage) {
-							// Subtype must be checked before the generic errors branch:
-							// SDKResultError always carries a non-empty `errors` array, so a
-							// generic-first order makes the recovery branches below dead code.
-							if (resultMessage.result) {
-								finalText = resultMessage.result;
-							} else if (resultMessage.subtype === 'error_max_turns') {
-								errorText = resultMessage.errors?.join('; ') || 'Maximum turns reached';
-								// Try to get the last assistant message before max turns
-								const assistantMessages = messages.filter(
-									(m) => m.type === 'assistant' && m.message?.content,
-								);
-								if (assistantMessages.length > 0) {
-									const lastMessage = assistantMessages[assistantMessages.length - 1] as any;
-									const textContent = lastMessage.message?.content?.find(
-										(c: any) => c.type === 'text',
-									);
-									if (textContent?.text) {
-										finalText = `[PARTIAL - Max turns reached]\n\n${textContent.text}\n\n[Note: Task incomplete. Increase maxTurns parameter to complete.]`;
-									} else {
-										finalText =
-											'Error: Maximum conversation turns reached. Consider increasing maxTurns parameter.';
-									}
-								} else {
-									finalText =
-										'Error: Maximum conversation turns reached. Consider increasing maxTurns parameter.';
-								}
-							} else if (resultMessage.subtype === 'error_during_execution') {
-								errorText = resultMessage.errors?.join('; ') || 'Error during execution';
-								// Try to get the last assistant message before the error
-								const assistantMessages = messages.filter(
-									(m) => m.type === 'assistant' && m.message?.content,
-								);
-								if (assistantMessages.length > 0) {
-									const lastMessage = assistantMessages[assistantMessages.length - 1] as any;
-									const textContent = lastMessage.message?.content?.find(
-										(c: any) => c.type === 'text',
-									);
-									if (textContent?.text) {
-										finalText = `[ERROR - Execution failed]\n\n${textContent.text}\n\n[Note: An error occurred during execution. Check logs for details.]`;
-									} else {
-										finalText = 'Error: Execution failed. Check debug logs for details.';
-									}
-								} else {
-									finalText = 'Error: Execution failed. No output available.';
-								}
-							} else if (resultMessage.errors?.length) {
-								// Remaining error subtypes (error_max_budget_usd,
-								// error_max_structured_output_retries).
-								errorText = resultMessage.errors.join('; ');
-								finalText = `Error: ${errorText}`;
-							}
-
-							// Debug log the result message
-							if (additionalOptions.debug) {
-								this.logger.debug('Result message details', {
-									type: resultMessage.type,
-									subtype: resultMessage.subtype,
-									hasResult: !!resultMessage.result,
-									hasError: !!resultMessage.errors?.length,
-									resultLength: resultMessage.result ? String(resultMessage.result).length : 0,
-									errorMessage: resultMessage.errors?.join('; ') || 'none',
-								});
-							}
-						} else {
-							// Find the last assistant message with text content
-							const assistantMessages = messages.filter(
-								(m) => m.type === 'assistant' && m.message?.content,
-							);
-							if (assistantMessages.length > 0) {
-								const lastMessage = assistantMessages[assistantMessages.length - 1] as any;
-								const textContent = lastMessage.message?.content?.find(
-									(c: any) => c.type === 'text',
-								);
-								finalText = textContent?.text || '';
-							}
-
-							if (!finalText) {
-								finalText = 'No response generated - check debug logs for details';
-							}
 						}
 
 						// Ensure all values are JSON-safe
