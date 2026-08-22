@@ -11,6 +11,7 @@ import { createPromptStream } from './promptStream';
 import { checkProjectPath } from '../shared/projectPath';
 import { claudeCodeDescription } from './description/properties';
 import { checkPrompt, effectiveEffort as resolveEffort, isUltracode, readParams } from './params';
+import { buildDiagnostics as collectDiagnostics } from './diagnostics';
 import type { QueryOptions } from './types';
 import {
 	buildTimeoutPayload,
@@ -79,7 +80,6 @@ export class ClaudeCode implements INodeType {
 					additional: additionalOptions,
 				} = params;
 				const rawPrompt = params.prompt;
-				const effort = params.effort;
 				const ultracode = isUltracode(params);
 				timeout = params.timeoutSeconds;
 
@@ -305,47 +305,16 @@ export class ClaudeCode implements INodeType {
 				const includeTranscript = additionalOptions.includeTranscript !== false;
 				const startTime = Date.now();
 
-				// Diagnostics — verifiable proof of what actually ran. Lets callers
-				// confirm the resolved model, the effort Claude Code applied, and
-				// whether Ultracode orchestration (Workflow/subagent tools) fired.
-				// Built from whatever arrived, so it is also usable from the catch.
-				const buildDiagnostics = (): Record<string, unknown> => {
-					const systemInitMsg = messages.find(
-						(m) => m.type === 'system' && (m as any).subtype === 'init',
-					) as any;
-					const resultMsg = messages.find((m) => m.type === 'result') as any;
-					const countContent = (predicate: (c: any) => boolean): number =>
-						messages
-							.filter((m) => m.type === 'assistant')
-							.reduce(
-								(acc, m) => acc + ((m as any).message?.content || []).filter(predicate).length,
-								0,
-							);
-					return {
-						requestedModel: model,
-						resolvedModel: systemInitMsg?.model ?? null,
-						// Per-model spend, the only post-hoc record of which models ran.
-						// The init message reports the model chosen at session start, so
-						// it does not reflect a mid-run switch to the fallback.
-						modelsUsed: Object.keys(resultMsg?.modelUsage ?? {}),
-						fallbackModelRequested: additionalOptions.fallbackModel || null,
-						requestedEffort: effort,
-						effectiveEffort,
+				// Diagnostics — verifiable proof of what actually ran. See diagnostics.ts.
+				// A thunk, not a value: it is called on the success path and again from each catch,
+				// against whatever messages had arrived by then.
+				const buildDiagnostics = (): Record<string, unknown> =>
+					collectDiagnostics({
+						messages,
+						params,
+						permissionMode: queryOptions.options.permissionMode as string,
 						appliedEffort: appliedEffort ?? null,
-						permissionMode: queryOptions.options.permissionMode,
-						sessionId: resultMsg?.session_id ?? systemInitMsg?.session_id ?? null,
-						ultracodeRequested: ultracode,
-						// Whether the CLI loaded the Workflow tool for this run. Allowed
-						// Tools cannot gate this: it is the SDK's auto-approve list, not a
-						// restriction. Disallowed Tools does remove tools from the model's
-						// context, so the init list already accounts for it.
-						workflowToolAvailable: (systemInitMsg?.tools ?? []).includes('Workflow'),
-						workflowToolUses: countContent((c) => c.type === 'tool_use' && c.name === 'Workflow'),
-						subagentToolUses: countContent((c) => c.type === 'tool_use' && c.name === 'Task'),
-						thinkingRequested: additionalOptions.thinking || 'default',
-						thinkingBlocks: countContent((c) => c.type === 'thinking'),
-					};
-				};
+					}) as unknown as Record<string, unknown>;
 
 				// One place builds the timeout report, so the thrown error, the continueOnFail item and
 				// the text-format item cannot drift apart.
