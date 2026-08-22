@@ -7,8 +7,9 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { statSync } from 'fs';
-import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createPromptStream } from './promptStream';
+import type { AdditionalOptions, EffortSelection, QueryOptions } from './types';
 import {
 	buildTimeoutPayload,
 	collectRunMetrics,
@@ -526,13 +527,7 @@ export class ClaudeCode implements INodeType {
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 				const rawPrompt = this.getNodeParameter('prompt', itemIndex) as string;
 				const model = this.getNodeParameter('model', itemIndex) as string;
-				const effort = this.getNodeParameter('effort', itemIndex, 'high') as
-					| 'low'
-					| 'medium'
-					| 'high'
-					| 'xhigh'
-					| 'max'
-					| 'ultracode';
+				const effort = this.getNodeParameter('effort', itemIndex, 'high') as EffortSelection;
 				// Ultracode is the top of the effort selector (matches Claude Code's own UI):
 				// it means xHigh effort plus standing dynamic-workflow orchestration.
 				const ultracode = effort === 'ultracode';
@@ -543,19 +538,10 @@ export class ClaudeCode implements INodeType {
 				const allowedTools = this.getNodeParameter('allowedTools', itemIndex, []) as string[];
 				const disallowedTools = this.getNodeParameter('disallowedTools', itemIndex, []) as string[];
 				const restrictTools = this.getNodeParameter('restrictTools', itemIndex, []) as string[];
-				const additionalOptions = this.getNodeParameter('additionalOptions', itemIndex) as {
-					systemPrompt?: string;
-					permissionMode?: string;
-					debug?: boolean;
-					fallbackModel?: string;
-					maxThinkingTokens?: number;
-					maxBudgetUsd?: number;
-					includeTranscript?: boolean;
-					allowPlanExecution?: boolean;
-					pathToClaudeCodeExecutable?: string;
-					thinking?: string;
-					wrapUpGraceSeconds?: number;
-				};
+				const additionalOptions = this.getNodeParameter(
+					'additionalOptions',
+					itemIndex,
+				) as AdditionalOptions;
 
 				// The declarative schema cannot vary a default by typeVersion, and an unset collection
 				// field arrives as undefined — so the version-aware fallback is applied here.
@@ -610,49 +596,14 @@ export class ClaudeCode implements INodeType {
 					});
 				}
 
-				// Build query options
-				interface QueryOptions {
-					prompt: AsyncIterable<SDKUserMessage>;
-					options: {
-						abortController: AbortController;
-						maxTurns: number;
-						permissionMode:
-							| 'default'
-							| 'acceptEdits'
-							| 'bypassPermissions'
-							| 'plan'
-							| 'dontAsk'
-							| 'auto';
-						canUseTool?: (
-							toolName: string,
-							input: Record<string, unknown>,
-						) => Promise<{ behavior: 'allow'; updatedInput: Record<string, unknown> }>;
-						model: string;
-						effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-						systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
-						mcpServers?: Record<string, any>;
-						tools?: string[];
-						allowedTools?: string[];
-						disallowedTools?: string[];
-						fallbackModel?: string;
-						maxThinkingTokens?: number;
-						maxBudgetUsd?: number;
-						continue?: boolean;
-						resume?: string;
-						cwd?: string;
-						pathToClaudeCodeExecutable?: string;
-						thinking?: { type: 'adaptive' | 'disabled'; display?: 'summarized' };
-						settings?: { ultracode?: boolean };
-						hooks?: any;
-					};
-				}
-
+				// Build query options. The type comes from the SDK (see types.ts) rather than being
+				// restated here, so a renamed option fails to compile instead of being dropped.
 				const queryOptions: QueryOptions = {
 					prompt: promptStream.stream,
 					options: {
 						abortController,
 						maxTurns,
-						permissionMode: (additionalOptions.permissionMode || 'bypassPermissions') as any,
+						permissionMode: additionalOptions.permissionMode || 'bypassPermissions',
 						model,
 						effort: effectiveEffort,
 					},
