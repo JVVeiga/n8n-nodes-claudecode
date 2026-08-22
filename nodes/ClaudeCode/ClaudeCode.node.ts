@@ -10,7 +10,8 @@ import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createPromptStream } from './promptStream';
 import { checkProjectPath } from '../shared/projectPath';
 import { claudeCodeDescription } from './description/properties';
-import type { AdditionalOptions, EffortSelection, QueryOptions } from './types';
+import { checkPrompt, effectiveEffort as resolveEffort, isUltracode, readParams } from './params';
+import type { QueryOptions } from './types';
 import {
 	buildTimeoutPayload,
 	collectRunMetrics,
@@ -63,38 +64,35 @@ export class ClaudeCode implements INodeType {
 			const messages: SDKMessage[] = [];
 			let diagnostics: Record<string, unknown> | null = null;
 			try {
-				const operation = this.getNodeParameter('operation', itemIndex) as string;
-				const rawPrompt = this.getNodeParameter('prompt', itemIndex) as string;
-				const model = this.getNodeParameter('model', itemIndex) as string;
-				const effort = this.getNodeParameter('effort', itemIndex, 'high') as EffortSelection;
-				// Ultracode is the top of the effort selector (matches Claude Code's own UI):
-				// it means xHigh effort plus standing dynamic-workflow orchestration.
-				const ultracode = effort === 'ultracode';
-				const maxTurns = this.getNodeParameter('maxTurns', itemIndex) as number;
-				timeout = this.getNodeParameter('timeout', itemIndex) as number;
-				const projectPath = this.getNodeParameter('projectPath', itemIndex) as string;
-				const outputFormat = this.getNodeParameter('outputFormat', itemIndex) as string;
-				const allowedTools = this.getNodeParameter('allowedTools', itemIndex, []) as string[];
-				const disallowedTools = this.getNodeParameter('disallowedTools', itemIndex, []) as string[];
-				const restrictTools = this.getNodeParameter('restrictTools', itemIndex, []) as string[];
-				const additionalOptions = this.getNodeParameter(
-					'additionalOptions',
-					itemIndex,
-				) as AdditionalOptions;
+				// One read of the node's parameters, into one typed object. Everything after this line
+				// works on plain data — see params.ts.
+				const params = readParams(this, itemIndex);
+				const {
+					operation,
+					model,
+					maxTurns,
+					projectPath,
+					outputFormat,
+					allowedTools,
+					disallowedTools,
+					restrictTools,
+					additional: additionalOptions,
+				} = params;
+				const rawPrompt = params.prompt;
+				const effort = params.effort;
+				const ultracode = isUltracode(params);
+				timeout = params.timeoutSeconds;
 
-				// The declarative schema cannot vary a default by typeVersion, and an unset collection
-				// field arrives as undefined — so the version-aware fallback is applied here.
 				const graceWindow = resolveGraceWindow(
 					timeout,
-					additionalOptions.wrapUpGraceSeconds ?? (nodeVersion >= 1.1 ? 60 : 0),
+					additionalOptions.wrapUpGraceSeconds as number,
 				);
 
 				// Validate required parameters before arming the timers, so a rejected
 				// prompt cannot leak a pending timeout handle.
-				if (!rawPrompt || rawPrompt.trim() === '') {
-					throw new NodeOperationError(this.getNode(), 'Prompt is required and cannot be empty', {
-						itemIndex,
-					});
+				const promptProblem = checkPrompt(rawPrompt);
+				if (promptProblem) {
+					throw new NodeOperationError(this.getNode(), promptProblem.message, { itemIndex });
 				}
 
 				// The timers are armed further down, once the query exists — the soft one calls
@@ -112,10 +110,9 @@ export class ClaudeCode implements INodeType {
 				const promptStream = createPromptStream(rawPrompt);
 				const prompt = rawPrompt;
 
-				// Ultracode maps to xHigh effort (its defined level) plus the
-				// settings.ultracode session flag applied below. All other selections
-				// pass through unchanged.
-				const effectiveEffort = effort === 'ultracode' ? 'xhigh' : effort;
+				// Ultracode maps to xHigh effort (its defined level) plus the settings.ultracode
+				// session flag applied below. All other selections pass through unchanged.
+				const effectiveEffort = resolveEffort(params);
 
 				// Log start
 				if (additionalOptions.debug) {
@@ -297,9 +294,8 @@ export class ClaudeCode implements INodeType {
 				// `continue`, which resolves "the most recent conversation in this
 				// directory" — shared by every execution on the instance.
 				if (operation === 'continue') {
-					const sessionId = (this.getNodeParameter('sessionId', itemIndex, '') as string).trim();
-					if (sessionId) {
-						queryOptions.options.resume = sessionId;
+					if (params.sessionId) {
+						queryOptions.options.resume = params.sessionId;
 					} else {
 						queryOptions.options.continue = true;
 					}

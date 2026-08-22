@@ -7,6 +7,11 @@
  */
 export type Problem = {
 	message: string;
-	/** The fix, not a restatement of the message — this is what n8n shows under the error. */
-	description: string;
+	/**
+	 * The fix, not a restatement of the message — this is what n8n shows under the error.
+	 *
+	 * Optional because some pre-existing errors carry none, and inventing one for them would change
+	 * what n8n displays. Add descriptions to those deliberately, behind a version, not in passing.
+	 */
+	description?: string;
 };
