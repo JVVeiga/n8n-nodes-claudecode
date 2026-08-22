@@ -7,3 +7,6 @@ npm-debug.log*
 *.tgz
 yarn.lock
 .vscode/launch.json
+/.playwright-mcp
+.specs
+scripts/e2e
