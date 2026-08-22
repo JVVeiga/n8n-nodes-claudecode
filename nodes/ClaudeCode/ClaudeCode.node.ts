@@ -11,9 +11,8 @@ import { createPromptStream } from './promptStream';
 import { claudeCodeDescription } from './description/properties';
 import { checkPrompt, readParams } from './params';
 import { buildDiagnostics as collectDiagnostics } from './diagnostics';
-import { resolveResultText } from './output/resultText';
+import { buildOutputItem } from './output';
 import { buildQueryOptions } from './config';
-import { findResult } from '../shared/sdkMessage';
 import {
 	buildTimeoutPayload,
 	collectRunMetrics,
@@ -359,127 +358,44 @@ export class ClaudeCode implements INodeType {
 					}
 
 					// Format output based on selected format
-					if (outputFormat === 'text') {
-						const resultMessage = findResult(messages) as
-							| ({ subtype?: string; duration_ms?: number; total_cost_usd?: number } & SDKMessage)
-							| undefined;
-
-						// The 140-line if/else ladder this replaces now lives in output/resultText.ts,
-						// where its load-bearing branch order is held by tests rather than a comment.
-						const resolved = resolveResultText(messages);
-						const finalText = resolved.text;
-						const errorText = resolved.errorText;
-
-						if (additionalOptions.debug) {
-							this.logger.debug('Processing text output format', {
-								foundResultMessage: !!resultMessage,
-								messageCount: messages.length,
-								resultTextSource: resolved.source,
-							});
-						}
-
-						// Ensure all values are JSON-safe
-						const outputData = {
-							result: String(finalText || 'No response generated'),
-							success: resultMessage?.subtype === 'success' ? true : false,
-							duration_ms: Number(resultMessage?.duration_ms || 0),
-							total_cost_usd: Number(resultMessage?.total_cost_usd || 0),
-							diagnostics,
-						};
-
-						// Debug logging
-						if (additionalOptions.debug) {
-							this.logger.debug('Text output format data', {
-								outputData,
-								resultPreview:
-									outputData.result.substring(0, 200) +
-									(outputData.result.length > 200 ? '...' : ''),
-								outputDataTypes: {
-									result: typeof outputData.result,
-									success: typeof outputData.success,
-									duration_ms: typeof outputData.duration_ms,
-									total_cost_usd: typeof outputData.total_cost_usd,
-								},
-							});
-
-							// Log all message types for debugging
-							const messageSummary = messages.reduce(
-								(acc, msg) => {
-									acc[msg.type] = (acc[msg.type] || 0) + 1;
-									return acc;
-								},
-								{} as Record<string, number>,
-							);
-
-							this.logger.debug('Message summary', {
-								messageSummary,
-								totalMessages: messages.length,
-								hasResultMessage: !!resultMessage,
-								resultError: errorText || 'none',
-							});
-
-							try {
-								JSON.stringify(outputData);
-							} catch (e) {
-								this.logger.error('Output data is not JSON-compatible', { error: e });
-							}
-						}
-
-						returnData.push({
-							json: outputData,
-							pairedItem: { item: itemIndex },
-						});
-					} else if (outputFormat === 'messages') {
-						// Return raw messages
-						returnData.push({
-							json: {
-								...(includeTranscript ? { messages } : {}),
-								messageCount: messages.length,
-								diagnostics,
+					// The three output shapes live in output/ now. Versions 1 and 1.1 go to the frozen
+					// legacy builders; 1.2 gets the unified envelope.
+					const debug = additionalOptions.debug === true;
+					if (debug) {
+						const messageSummary = messages.reduce(
+							(acc, msg) => {
+								acc[msg.type] = (acc[msg.type] || 0) + 1;
+								return acc;
 							},
-							pairedItem: { item: itemIndex },
-						});
-					} else if (outputFormat === 'structured') {
-						// Parse into structured format
-						const userMessages = messages.filter((m) => m.type === 'user');
-						const assistantMessages = messages.filter((m) => m.type === 'assistant');
-						const toolUses = messages.filter(
-							(m) =>
-								m.type === 'assistant' && (m as any).message?.content?.[0]?.type === 'tool_use',
+							{} as Record<string, number>,
 						);
-						const systemInit = messages.find(
-							(m) => m.type === 'system' && (m as any).subtype === 'init',
-						) as any;
-						const resultMessage = messages.find((m) => m.type === 'result') as any;
-
-						returnData.push({
-							json: {
-								...(includeTranscript ? { messages } : {}),
-								summary: {
-									userMessageCount: userMessages.length,
-									assistantMessageCount: assistantMessages.length,
-									toolUseCount: toolUses.length,
-									hasResult: !!resultMessage,
-									toolsAvailable: systemInit?.tools || [],
-								},
-								result:
-									resultMessage?.result ||
-									(resultMessage?.errors?.length ? resultMessage.errors.join('; ') : null),
-								metrics: resultMessage
-									? {
-											duration_ms: resultMessage.duration_ms,
-											num_turns: resultMessage.num_turns,
-											total_cost_usd: resultMessage.total_cost_usd,
-											usage: resultMessage.usage,
-											modelUsage: resultMessage.modelUsage,
-										}
-									: null,
-								success: resultMessage?.subtype === 'success',
-								diagnostics,
-							},
-							pairedItem: { item: itemIndex },
+						this.logger.debug('Message summary', {
+							messageSummary,
+							totalMessages: messages.length,
+							outputFormat,
 						});
 					}
+
+					const outputData = buildOutputItem({
+						nodeVersion,
+						format: outputFormat,
+						messages,
+						diagnostics,
+						includeTranscript,
+					});
+
+					if (debug) {
+						try {
+							JSON.stringify(outputData);
+						} catch (e) {
+							this.logger.error('Output data is not JSON-compatible', { error: e });
+						}
+					}
+
+					returnData.push({
+						json: outputData,
+						pairedItem: { item: itemIndex },
+					});
 				} catch (queryError) {
 					// The SDK delivers the result message before rejecting, so the spend
 					// and session data are already in `messages` — report them instead of
