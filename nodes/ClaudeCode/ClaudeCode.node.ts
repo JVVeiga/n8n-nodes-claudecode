@@ -8,19 +8,17 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createPromptStream } from './promptStream';
-import { checkProjectPath } from '../shared/projectPath';
 import { claudeCodeDescription } from './description/properties';
-import { checkPrompt, effectiveEffort as resolveEffort, isUltracode, readParams } from './params';
+import { checkPrompt, readParams } from './params';
 import { buildDiagnostics as collectDiagnostics } from './diagnostics';
 import { resolveResultText } from './output/resultText';
+import { buildQueryOptions } from './config';
 import { findResult } from '../shared/sdkMessage';
-import type { QueryOptions } from './types';
 import {
 	buildTimeoutPayload,
 	collectRunMetrics,
 	formatTimeoutDescription,
 	formatTimeoutMessage,
-	resolveGraceWindow,
 	shapeFailureJson,
 	type TerminationReason,
 } from './timeout';
@@ -70,25 +68,9 @@ export class ClaudeCode implements INodeType {
 				// One read of the node's parameters, into one typed object. Everything after this line
 				// works on plain data — see params.ts.
 				const params = readParams(this, itemIndex);
-				const {
-					operation,
-					model,
-					maxTurns,
-					projectPath,
-					outputFormat,
-					allowedTools,
-					disallowedTools,
-					restrictTools,
-					additional: additionalOptions,
-				} = params;
+				const { outputFormat, additional: additionalOptions } = params;
 				const rawPrompt = params.prompt;
-				const ultracode = isUltracode(params);
 				timeout = params.timeoutSeconds;
-
-				const graceWindow = resolveGraceWindow(
-					timeout,
-					additionalOptions.wrapUpGraceSeconds as number,
-				);
 
 				// Validate required parameters before arming the timers, so a rejected
 				// prompt cannot leak a pending timeout handle.
@@ -110,197 +92,47 @@ export class ClaudeCode implements INodeType {
 				// available in streaming input mode. The stream must be closed once the run is done
 				// or the SDK keeps the session open and the query never ends.
 				const promptStream = createPromptStream(rawPrompt);
-				const prompt = rawPrompt;
 
-				// Ultracode maps to xHigh effort (its defined level) plus the settings.ultracode
-				// session flag applied below. All other selections pass through unchanged.
-				const effectiveEffort = resolveEffort(params);
+				// Capture the effort level Claude Code actually applies (post-downgrade). Written by a
+				// hook that config.ts registers; read by diagnostics after the run.
+				let appliedEffort: string | undefined;
 
-				// Log start
+				// Every SDK option is set by an ordered table of appliers — see config.ts. Validation
+				// failures come back as a Problem rather than being thrown from inside, so that this is
+				// the only place that needs `this.getNode()`.
+				const outcome = buildQueryOptions(params, {
+					abortController,
+					promptStream,
+					onEffort: (level) => {
+						appliedEffort = level;
+					},
+				});
+				if ('problem' in outcome) {
+					throw new NodeOperationError(this.getNode(), outcome.problem.message, {
+						itemIndex,
+						...(outcome.problem.description ? { description: outcome.problem.description } : {}),
+					});
+				}
+				const { queryOptions, graceWindow } = outcome.config;
+
+				// Moved below the config build: it reports the grace window, which config.ts resolves.
 				if (additionalOptions.debug) {
 					this.logger.debug('Starting Claude Code execution', {
 						itemIndex,
-						prompt: prompt.substring(0, 100) + '...',
-						model,
-						maxTurns,
+						prompt: rawPrompt.substring(0, 100) + '...',
+						model: params.model,
+						maxTurns: params.maxTurns,
 						timeout: `${timeout}s`,
 						nodeVersion,
 						wrapUpGraceSeconds: graceWindow.graceSeconds,
 						wrapUpAtMs: graceWindow.wrapUpAtMs,
 						hardAbortAtMs: graceWindow.hardAbortAtMs,
-						allowedTools,
-						disallowedTools,
+						allowedTools: params.allowedTools,
+						disallowedTools: params.disallowedTools,
 						fallbackModel: additionalOptions.fallbackModel || 'none',
+						appliedOptions: outcome.config.applied,
+						...outcome.config.notes,
 					});
-				}
-
-				// Build query options. The type comes from the SDK (see types.ts) rather than being
-				// restated here, so a renamed option fails to compile instead of being dropped.
-				const queryOptions: QueryOptions = {
-					prompt: promptStream.stream,
-					options: {
-						abortController,
-						maxTurns,
-						permissionMode: additionalOptions.permissionMode || 'bypassPermissions',
-						model,
-						effort: effectiveEffort,
-					},
-				};
-
-				// Plan mode exposes no exit tool unless a permission callback is
-				// registered, so on its own it always ends with a plan and nothing
-				// written. Registering one lets Claude leave plan mode and act.
-				if (
-					queryOptions.options.permissionMode === 'plan' &&
-					additionalOptions.allowPlanExecution
-				) {
-					queryOptions.options.canUseTool = async (_toolName, input) => ({
-						behavior: 'allow',
-						updatedInput: input,
-					});
-				}
-
-				// Enable Ultracode as a real session setting: standing dynamic-workflow
-				// orchestration at xhigh effort (requires an xhigh-capable model + workflows).
-				if (ultracode) {
-					queryOptions.options.settings = { ultracode: true };
-				}
-
-				// Capture the effort level Claude Code actually applies (post-downgrade).
-				// It is exposed only inside hooks, not in the message stream; Stop/SubagentStop
-				// fire at end of turn so plain replies (no tool use) are covered too.
-				let appliedEffort: string | undefined;
-				const captureEffort = async (input: any) => {
-					const level = input?.effort?.level;
-					if (level) appliedEffort = level;
-					return { continue: true };
-				};
-				queryOptions.options.hooks = {
-					PreToolUse: [{ hooks: [captureEffort] }],
-					PostToolUse: [{ hooks: [captureEffort] }],
-					Stop: [{ hooks: [captureEffort] }],
-					SubagentStop: [{ hooks: [captureEffort] }],
-				};
-
-				// Append the user-provided system prompt to Claude Code's default preset
-				// (rather than replacing it), preserving the built-in agent behavior.
-				if (additionalOptions.systemPrompt) {
-					queryOptions.options.systemPrompt = {
-						type: 'preset',
-						preset: 'claude_code',
-						append: additionalOptions.systemPrompt,
-					};
-				}
-
-				// Use a custom Claude Code executable if provided (e.g. a globally
-				// installed CLI) instead of the one bundled with the SDK.
-				if (additionalOptions.pathToClaudeCodeExecutable?.trim()) {
-					queryOptions.options.pathToClaudeCodeExecutable =
-						additionalOptions.pathToClaudeCodeExecutable.trim();
-				}
-
-				// Add project path (cwd) if specified. Validated first — see checkProjectPath for why
-				// a bad path must not be left for the SDK's spawn-error handler to misdiagnose.
-				if (projectPath && projectPath.trim() !== '') {
-					const problem = checkProjectPath(projectPath);
-					if (problem) {
-						throw new NodeOperationError(this.getNode(), problem.message, {
-							itemIndex,
-							description: problem.description,
-						});
-					}
-					queryOptions.options.cwd = projectPath.trim();
-					if (additionalOptions.debug) {
-						this.logger.debug('Working directory set', { cwd: queryOptions.options.cwd });
-					}
-				}
-
-				// Restrict Built-in Tools is the real allowlist: an empty selection keeps
-				// the full set. Ultracode needs Workflow and Task, so add them rather
-				// than let a restriction silently disable orchestration.
-				const effectiveTools =
-					ultracode && restrictTools.length > 0
-						? Array.from(new Set([...restrictTools, 'Workflow', 'Task']))
-						: restrictTools;
-
-				if (effectiveTools.length > 0) {
-					queryOptions.options.tools = effectiveTools;
-					if (additionalOptions.debug) {
-						this.logger.debug('Built-in tools restricted', { tools: effectiveTools });
-					}
-				}
-
-				// Allowed Tools is the SDK's auto-approve list — it pre-approves tools
-				// rather than restricting the set. Under Ultracode, pre-approve what the
-				// orchestration needs so it is not gated by a permission prompt.
-				const effectiveAllowedTools =
-					ultracode && allowedTools.length > 0
-						? Array.from(new Set([...allowedTools, 'Workflow', 'Task']))
-						: allowedTools;
-
-				if (effectiveAllowedTools.length > 0) {
-					queryOptions.options.allowedTools = effectiveAllowedTools;
-					if (additionalOptions.debug) {
-						this.logger.debug('Allowed tools configured', { allowedTools: effectiveAllowedTools });
-					}
-				}
-
-				// Set disallowed tools if any are specified
-				if (disallowedTools.length > 0) {
-					queryOptions.options.disallowedTools = disallowedTools;
-					if (additionalOptions.debug) {
-						this.logger.debug('Disallowed tools configured', { disallowedTools });
-					}
-				}
-
-				// Add fallback model if specified. The two dropdowns share most of their
-				// values, and the SDK throws before spawning when they match — catch it
-				// here so the message names the n8n field.
-				if (additionalOptions.fallbackModel) {
-					if (additionalOptions.fallbackModel === model) {
-						throw new NodeOperationError(
-							this.getNode(),
-							'Fallback Model must be different from Model',
-							{
-								itemIndex,
-								description:
-									'The fallback is only used when the primary model is overloaded. Pick a different model, or set Fallback Model to None.',
-							},
-						);
-					}
-					queryOptions.options.fallbackModel = additionalOptions.fallbackModel;
-				}
-
-				// Map the Thinking selection to the SDK thinking config. When set, it
-				// takes precedence over Max Thinking Tokens (SDK behavior).
-				if (additionalOptions.thinking === 'disabled') {
-					queryOptions.options.thinking = { type: 'disabled' };
-				} else if (additionalOptions.thinking === 'adaptive') {
-					queryOptions.options.thinking = { type: 'adaptive' };
-				} else if (additionalOptions.thinking === 'summarized') {
-					queryOptions.options.thinking = { type: 'adaptive', display: 'summarized' };
-				}
-
-				// Add max thinking tokens if specified
-				if (additionalOptions.maxThinkingTokens && additionalOptions.maxThinkingTokens > 0) {
-					queryOptions.options.maxThinkingTokens = additionalOptions.maxThinkingTokens;
-				}
-
-				// Hard spend cap. Max Turns and Timeout bound how long a run goes, not
-				// what it costs; this is the only money bound the SDK offers.
-				if (additionalOptions.maxBudgetUsd && additionalOptions.maxBudgetUsd > 0) {
-					queryOptions.options.maxBudgetUsd = additionalOptions.maxBudgetUsd;
-				}
-
-				// Resume an explicit session when one is given. Otherwise fall back to
-				// `continue`, which resolves "the most recent conversation in this
-				// directory" — shared by every execution on the instance.
-				if (operation === 'continue') {
-					if (params.sessionId) {
-						queryOptions.options.resume = params.sessionId;
-					} else {
-						queryOptions.options.continue = true;
-					}
 				}
 
 				// Execute query
