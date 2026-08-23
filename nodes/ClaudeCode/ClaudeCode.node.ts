@@ -12,6 +12,8 @@ import { claudeCodeDescription } from './description/properties';
 import { checkPrompt, readParams } from './params';
 import { buildDiagnostics as collectDiagnostics } from './diagnostics';
 import { buildOutputItem } from './output';
+import { runQuery } from './runner';
+import { createDebugLogger } from '../shared/debug';
 import { buildQueryOptions } from './config';
 import {
 	buildTimeoutPayload,
@@ -28,18 +30,6 @@ import {
  * and this goes away with it.
  */
 export const queryImpl = { query };
-
-/** Sent as a normal user turn after the interrupt, to get a handover rather than more work. */
-const WRAP_UP_PROMPT = [
-	'Your time budget for this task is exhausted. Stop all work now.',
-	'Do not start new tasks, do not call tools, do not edit files.',
-	'Reply with, in this order:',
-	'1. What you completed.',
-	'2. What is incomplete or in progress.',
-	'3. The exact next steps to resume.',
-	'4. Any file paths, IDs, or state a follow-up run needs.',
-	'Be concise and factual. Do not apologise.',
-].join('\n');
 
 export class ClaudeCode implements INodeType {
 	description: INodeTypeDescription = claudeCodeDescription;
@@ -183,159 +173,29 @@ export class ClaudeCode implements INodeType {
 					return timeoutError;
 				};
 
-				// Held in a variable rather than iterated inline so control requests can reach it.
-				const runningQuery = queryImpl.query(queryOptions);
-
-				// Whether the wrap-up turn has been requested. Until it has, a result message means
-				// the run is over; after it, the FIRST result is the interrupt's own and the stream
-				// has to stay open for the summary that follows.
-				let wrapUpRequested = false;
-				let resultsSinceInterrupt = 0;
-				let streamClosed = false;
-
-				const closeStream = () => {
-					streamClosed = true;
-					promptStream.close();
-				};
-
-				// Interrupting is what makes the SDK account for the run: it emits a result message
-				// within ~100ms carrying the cumulative cost, tokens and session id. A plain abort()
-				// emits nothing at all, which is why a timed-out run used to report zeroes.
-				const wrapUpTimer =
-					graceWindow.wrapUpAtMs === null
-						? undefined
-						: setTimeout(() => {
-								// The run may have finished in the meantime. The SDK emits no result message
-								// until a turn ends, so one already present means there is nothing left to
-								// interrupt — bail out rather than bill a wrap-up turn and report a completed
-								// run as a timeout.
-								if (streamClosed || messages.some((m) => m.type === 'result')) return;
-
-								timedOut = true;
-								terminationReason = 'timeout_graceful';
-								wrapUpRequested = true;
-
-								void (async () => {
-									try {
-										await runningQuery.interrupt();
-									} catch (interruptError) {
-										// Best effort — the hard timer is the backstop.
-										if (additionalOptions.debug) {
-											this.logger.debug('Interrupt failed', {
-												error: interruptError instanceof Error ? interruptError.message : 'unknown',
-											});
-										}
-									}
-									promptStream.push(WRAP_UP_PROMPT);
-								})();
-							}, graceWindow.wrapUpAtMs);
-
-				// Always armed, whatever the grace: a wrap-up turn that hangs must not push the run
-				// past the timeout the workflow author configured.
-				const timeoutId = setTimeout(() => {
-					timedOut = true;
-					if (terminationReason === null) terminationReason = 'timeout_hard_abort';
-					abortController.abort();
-				}, graceWindow.hardAbortAtMs);
+				// The query, the two timers and the message loop live in runner.ts. It reports a timeout
+				// rather than throwing one, which is what removes the nested try/catch/finally from here.
+				const debugLog = createDebugLogger(this.logger, additionalOptions.debug === true);
+				const run = await runQuery({
+					queryOptions,
+					graceWindow,
+					promptStream,
+					abortController,
+					query: queryImpl.query,
+					debug: debugLog,
+					messages,
+					getAppliedEffort: () => appliedEffort,
+				});
+				timedOut = run.timedOut;
+				terminationReason = run.terminationReason;
+				wrapUpSucceeded = run.wrapUpSucceeded;
 
 				try {
-					for await (const message of runningQuery) {
-						messages.push(message);
+					if (run.error !== null) throw run.error;
 
-						// In streaming input mode the session stays open while the input stream is
-						// open, so the result message is the signal to close it. Without this the
-						// query would never end.
-						if (message.type === 'result') {
-							if (!wrapUpRequested) {
-								closeStream();
-							} else if (++resultsSinceInterrupt >= 2) {
-								// First result was the interrupt's; this one is the summary.
-								wrapUpSucceeded = true;
-								closeStream();
-							}
-						}
-
-						if (additionalOptions.debug) {
-							// Log detailed message content based on type
-							if (message.type === 'system' && (message as any).subtype === 'init') {
-								this.logger.debug('System init message', {
-									type: message.type,
-									subtype: (message as any).subtype,
-									model: (message as any).model,
-									toolCount: (message as any).tools?.length || 0,
-								});
-							} else if (message.type === 'assistant') {
-								const content = (message as any).message?.content;
-								this.logger.debug('Assistant message', {
-									type: message.type,
-									contentTypes: content?.map((c: any) => c.type) || [],
-									textLength: content?.find((c: any) => c.type === 'text')?.text?.length || 0,
-									hasToolUse: content?.some((c: any) => c.type === 'tool_use') || false,
-								});
-							} else if (message.type === 'user') {
-								this.logger.debug('User message', {
-									type: message.type,
-									hasToolResult: !!(message as any).message?.content?.some(
-										(c: any) => c.type === 'tool_result',
-									),
-								});
-							} else if (message.type === 'result') {
-								const resultMsg = message as any;
-								this.logger.debug('Result message', {
-									type: message.type,
-									subtype: resultMsg.subtype,
-									hasResult: !!resultMsg.result,
-									hasError: !!resultMsg.errors?.length,
-									resultLength: resultMsg.result ? String(resultMsg.result).length : 0,
-									error: resultMsg.errors?.join('; ') || 'none',
-									duration_ms: resultMsg.duration_ms,
-									total_cost: resultMsg.total_cost_usd,
-								});
-
-								// Log more details for error_during_execution
-								if (resultMsg.subtype === 'error_during_execution') {
-									this.logger.error('Claude Code execution error', {
-										subtype: resultMsg.subtype,
-										error: resultMsg.errors?.join('; '),
-										details: JSON.stringify(resultMsg).substring(0, 500),
-									});
-								}
-							} else {
-								this.logger.debug('Other message', {
-									type: message.type,
-									message: JSON.stringify(message).substring(0, 200),
-								});
-							}
-						}
-
-						// Track progress
-						if (message.type === 'assistant' && message.message?.content) {
-							const content = message.message.content[0];
-							if (additionalOptions.debug) {
-								if (content.type === 'text') {
-									this.logger.debug('Assistant response', {
-										text: content.text.substring(0, 100) + '...',
-									});
-								} else if (content.type === 'tool_use') {
-									this.logger.debug('Tool use', { toolName: content.name });
-								}
-							}
-						}
-					}
-
-					// A graceful timeout ends the generator normally, so without this the run falls
-					// through to the success path and reports green with the wrap-up as the answer.
-					if (timedOut) {
-						if (additionalOptions.debug) {
-							this.logger.debug('Run timed out', {
-								terminationReason,
-								wrapUpSucceeded,
-								wrapUpGraceSeconds: graceWindow.graceSeconds,
-								resultMessages: messages.filter((m) => m.type === 'result').length,
-							});
-						}
-						throw buildTimeoutError();
-					}
+					// A graceful timeout ends the generator normally, so without this the run falls through
+					// to the success path and reports green with the wrap-up as the answer.
+					if (timedOut) throw buildTimeoutError();
 
 					const duration = Date.now() - startTime;
 					if (additionalOptions.debug) {
@@ -433,12 +293,6 @@ export class ClaudeCode implements INodeType {
 					} else {
 						throw queryError;
 					}
-				} finally {
-					clearTimeout(timeoutId);
-					if (wrapUpTimer !== undefined) clearTimeout(wrapUpTimer);
-					// On an error path the loop stops consuming while the input generator is still
-					// suspended waiting for a follow-up turn. Closing releases it.
-					promptStream.close();
 				}
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

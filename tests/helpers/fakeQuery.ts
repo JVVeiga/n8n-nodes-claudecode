@@ -16,6 +16,11 @@ export type FakeQueryOptions = {
 	/** Make `interrupt()` itself reject, which the node must swallow. */
 	interruptThrows?: boolean;
 	/**
+	 * Stop the stream when this is aborted, the way the real SDK does. Without it a `hang` stream
+	 * runs forever: the hard timer aborts the controller and nothing notices.
+	 */
+	abortSignal?: AbortSignal;
+	/**
 	 * Messages to yield after `interrupt()` is called — the wrap-up turn. Only reachable when
 	 * `hang` is set, because otherwise the stream ends before the soft timer fires.
 	 */
@@ -29,6 +34,8 @@ export type FakeQueryRecord = {
 	/** Resolves once the stream has been fully consumed. */
 	iterated: boolean;
 };
+
+type QueryArgs = { options?: { abortController?: AbortController } };
 
 export type FakeQueryHandle = {
 	fake: typeof queryImpl.query;
@@ -54,13 +61,14 @@ export function createFakeQuery(options: FakeQueryOptions = {}): FakeQueryHandle
 				record.iterated = true;
 				return;
 			}
-			// Stay open so the wrap-up and hard-abort timers can fire. The node aborts us, which
-			// surfaces here as the loop simply stopping.
-			for (;;) {
+			// Stay open so the wrap-up and hard-abort timers can fire, then stop when the abort
+			// lands — which is what the real SDK does, and what makes the loop terminable.
+			const signal = options.abortSignal ?? (args as QueryArgs)?.options?.abortController?.signal;
+			while (!signal?.aborted) {
 				if (interrupted && pending.length > 0) {
 					while (pending.length > 0) yield pending.shift() as SDKMessage;
 				}
-				await new Promise((resolve) => setTimeout(resolve, 10));
+				await new Promise((resolve) => setTimeout(resolve, 5));
 			}
 		}
 
