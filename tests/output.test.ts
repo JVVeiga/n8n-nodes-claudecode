@@ -268,3 +268,167 @@ describe('legacy output — an empty-string result falls through', () => {
 		assert.notEqual(out.result, '');
 	});
 });
+
+describe('typeVersion 1.2 — one envelope, three views', () => {
+	const v12 = (format: OutputFormat, messages: SDKMessage[], includeTranscript = true) =>
+		buildOutputItem({
+			nodeVersion: 1.2,
+			format,
+			messages,
+			diagnostics: DIAGNOSTICS,
+			includeTranscript,
+			durationMs: 1234,
+		}) as Record<string, unknown>;
+
+	it('the three formats agree on result, success and metrics for the same run', () => {
+		// The whole point of C3: adding a field used to mean remembering three places, and the three
+		// could disagree about the same run.
+		const messages = streams.success();
+		const [text, msgs, structured] = FORMATS.map((f) => v12(f, messages));
+		for (const key of ['result', 'success', 'errorText', 'metrics', 'diagnostics']) {
+			assert.deepEqual(msgs[key], text[key], `messages/${key}`);
+			assert.deepEqual(structured[key], text[key], `structured/${key}`);
+		}
+	});
+
+	it('outputFormat chooses the optional sections, not the shape', () => {
+		const messages = streams.success();
+		assert.equal('messages' in v12('text', messages), false);
+		assert.equal('summary' in v12('text', messages), false);
+
+		assert.equal('messages' in v12('messages', messages), true);
+		assert.equal('summary' in v12('messages', messages), false);
+
+		assert.equal('messages' in v12('structured', messages), true);
+		assert.equal('summary' in v12('structured', messages), true);
+	});
+
+	it('includeTranscript: false still drops the transcript', () => {
+		assert.equal('messages' in v12('structured', streams.success(), false), false);
+		assert.ok(v12('structured', streams.success(), false).summary, 'the summary survives');
+	});
+
+	it('fixes F-01: an unknown cost reports null, not zero', () => {
+		const metrics = v12('text', streams.noResult()).metrics as Record<string, unknown>;
+		assert.equal(metrics.total_cost_usd, null, 'a run that produced no result is not a free run');
+		assert.equal(metrics.num_turns, null);
+	});
+
+	it('falls back to the measured wall time when the SDK reported no duration', () => {
+		const metrics = v12('text', streams.noResult()).metrics as Record<string, unknown>;
+		assert.equal(metrics.duration_ms, 1234, 'real, not invented');
+	});
+
+	it("prefers the SDK's own duration when it reported one", () => {
+		const metrics = v12('text', streams.success()).metrics as Record<string, unknown>;
+		assert.equal(metrics.duration_ms, 4821);
+	});
+
+	it('fixes F-03: every format carries metrics, including messages', () => {
+		for (const format of FORMATS) {
+			const metrics = v12(format, streams.success()).metrics as Record<string, unknown>;
+			assert.equal(metrics.total_cost_usd, 0.0412, format);
+			assert.equal(metrics.session_id, '1e76098f-2bf5-424d-9694-d1feab1cfc12', format);
+		}
+	});
+
+	it('drops messageCount — messages.length says it, and text has no transcript to count', () => {
+		for (const format of FORMATS) {
+			assert.equal('messageCount' in v12(format, streams.success()), false, format);
+		}
+	});
+
+	it('fixes F-06: a tool use counts wherever it appears in the turn', () => {
+		const toolAfterText = msg({
+			type: 'assistant',
+			message: {
+				content: [
+					{ type: 'text', text: 'let me check' },
+					{ type: 'tool_use', name: 'Read', input: {} },
+				],
+			},
+		});
+		const messages = [init(), toolAfterText, successResult()];
+		const summary = v12('structured', messages).summary as Record<string, unknown>;
+		assert.equal(summary.toolUseCount, 1, 'the legacy builder reports 0 here');
+	});
+
+	it('fixes F-07: the metrics come from the LAST result message', () => {
+		// On a graceful timeout the first result is the interrupt's own per-turn count; the last is
+		// the cumulative one. The legacy formats read the first and under-report.
+		const metrics = v12('structured', streams.gracefulTimeout()).metrics as Record<string, unknown>;
+		assert.equal(metrics.num_turns, 1, "the wrap-up result's own count");
+		assert.equal(metrics.total_cost_usd, 0.21266249999999998, 'the cumulative spend');
+	});
+
+	it('separates errorText from result, so a partial answer is distinguishable from a failure', () => {
+		const out = v12('text', streams.maxTurns());
+		assert.match(out.result as string, /^\[PARTIAL - Max turns reached\]/);
+		assert.equal(out.errorText, '[sdk] error_max_turns');
+		assert.equal(out.success, false);
+	});
+
+	it('errorText is an empty string, not null, on a successful run', () => {
+		assert.equal(v12('text', streams.success()).errorText, '');
+	});
+
+	it('reports where the result text came from, in the structured summary', () => {
+		assert.equal(
+			(v12('structured', streams.success()).summary as Record<string, unknown>).resultTextSource,
+			'result',
+		);
+		assert.equal(
+			(v12('structured', streams.noResult()).summary as Record<string, unknown>).resultTextSource,
+			'assistant',
+		);
+	});
+
+	it('counts thinking blocks, which the legacy summary never reported', () => {
+		const summary = v12('structured', streams.ultracode()).summary as Record<string, unknown>;
+		assert.equal(summary.thinkingBlockCount, 1);
+	});
+
+	it('survives every stream and stays JSON-serialisable', () => {
+		for (const format of FORMATS) {
+			for (const name of Object.keys(streams) as Array<keyof typeof streams>) {
+				const out = v12(format, streams[name]());
+				assert.ok(out.metrics, `${format}/${name}`);
+				assert.doesNotThrow(() => JSON.stringify(out), `${format}/${name}`);
+			}
+		}
+	});
+});
+
+describe('version routing — 1.2 must not leak backwards', () => {
+	it('1 and 1.1 still get the legacy shapes after 1.2 exists', () => {
+		for (const nodeVersion of [1, 1.1]) {
+			for (const format of FORMATS) {
+				const messages = streams.success();
+				assert.deepEqual(
+					buildOutputItem({
+						nodeVersion,
+						format,
+						messages,
+						diagnostics: DIAGNOSTICS,
+						includeTranscript: true,
+						durationMs: 1234,
+					}),
+					legacy(format, messages),
+					`v${nodeVersion}/${format}`,
+				);
+			}
+		}
+	});
+
+	it('a future 1.3 inherits the envelope rather than falling back to the legacy shapes', () => {
+		const out = buildOutputItem({
+			nodeVersion: 1.3,
+			format: 'text',
+			messages: streams.success(),
+			diagnostics: DIAGNOSTICS,
+			includeTranscript: true,
+			durationMs: 1,
+		});
+		assert.ok((out as Record<string, unknown>).metrics, 'routed to the unified envelope');
+	});
+});

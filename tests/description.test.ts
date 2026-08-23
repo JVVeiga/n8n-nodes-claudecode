@@ -33,9 +33,19 @@ describe('node description — identity', () => {
 		assert.equal(claudeCodeDescription.displayName, 'Claude Code');
 	});
 
-	it('declares versions 1 and 1.1, defaulting to 1.1', () => {
-		assert.deepEqual(claudeCodeDescription.version, [1, 1.1]);
-		assert.equal(claudeCodeDescription.defaultVersion, 1.1);
+	it('declares versions 1, 1.1 and 1.2, defaulting to 1.2', () => {
+		// A node keeps the version it was created with, so raising the default moves new nodes only.
+		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2]);
+		assert.equal(claudeCodeDescription.defaultVersion, 1.2);
+	});
+
+	it('never drops a version — an existing workflow pinned to it would stop loading', () => {
+		for (const version of [1, 1.1]) {
+			assert.ok(
+				(claudeCodeDescription.version as number[]).includes(version),
+				`typeVersion ${version} disappeared`,
+			);
+		}
 	});
 
 	it('stays usable as a tool and keeps one main input and output', () => {

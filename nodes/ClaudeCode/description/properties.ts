@@ -14,11 +14,18 @@ export const claudeCodeDescription: INodeTypeDescription = {
 	name: 'claudeCode',
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
-	// 1.1 changes two observable behaviours, so existing nodes stay on 1 until their author opts
-	// in: Timeout Wrap-Up Grace defaults to 60s instead of 0, and failure items are reshaped so
-	// they reach the error output branch.
-	version: [1, 1.1],
-	defaultVersion: 1.1,
+	// Each version changes observable behaviour, so a node stays where it was created until its
+	// author opts in:
+	//
+	//   1.1  Timeout Wrap-Up Grace defaults to 60s instead of 0, and failure items are reshaped
+	//        so they reach the error output branch.
+	//   1.2  One output envelope for all three formats. Metrics always under `metrics`; an
+	//        unknown cost reports null rather than 0; `messages` carries metrics too; a tool
+	//        use counts wherever it appears in a turn, not only as the first content block; the
+	//        metrics come from the LAST result message rather than the first, which matters on
+	//        a graceful timeout; and `errorText` is separate from `result`. See output/v12.ts.
+	version: [1, 1.1, 1.2],
+	defaultVersion: 1.2,
 	subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 	description:
 		'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',

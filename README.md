@@ -617,9 +617,47 @@ Use "Continue" operation to build complex multi-step workflows while maintaining
 ### 📊 **Output Formats**
 The Claude Code node offers three (the Usage node has one fixed shape — see
 [Usage & Plan Limits](#-usage--plan-limits)):
-- **Structured**: Full details with metrics
-- **Messages**: For debugging
-- **Text**: Simple results for chaining
+- **Structured**: everything — the answer, the metrics, a run summary, the transcript
+- **Messages**: the transcript, for debugging
+- **Text**: just the answer and the metrics, for chaining
+
+Since **typeVersion 1.2** all three share one envelope, and Output Format selects which optional
+sections come with it:
+
+```javascript
+{
+  result: 'pong',              // the answer, whatever it took to recover it
+  success: true,               // only an explicit success counts
+  errorText: '',               // separate from result, so a partial answer is distinguishable
+  metrics: {
+    duration_ms: 4821,
+    num_turns: 2,
+    total_cost_usd: 0.0412,    // null when the run produced no result — never a fabricated 0
+    usage: { /* … */ },
+    modelUsage: { /* per model */ },
+    session_id: '1e76098f-…',  // feed into Session ID to resume
+  },
+  diagnostics: { /* resolved model, applied effort, whether Ultracode fired */ },
+  messages: [ /* messages + structured only, and only with Include Raw Transcript on */ ],
+  summary: { /* structured only */ },
+}
+```
+
+**Existing workflows are untouched.** A node keeps the typeVersion it was created with, so nodes
+built before 1.2 keep emitting exactly what they always did — a flat `duration_ms` and
+`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. Only a
+newly added node starts on 1.2. To move an old one, delete and re-add it.
+
+What 1.2 changes, for anyone porting a workflow across:
+
+| | 1 / 1.1 | 1.2 |
+|---|---|---|
+| where the metrics live | flat on Text, nested on Structured, absent on Messages | always `metrics` |
+| an unknown cost | `0` on Text | `null` |
+| `messageCount` | on Messages only | dropped — use `messages.length` |
+| error text | folded into `result` with a `[PARTIAL - …]` prefix | `result` plus a separate `errorText` |
+| `summary.toolUseCount` | counts a tool only if it opened the turn | counts every tool use |
+| metrics on a graceful timeout | the interrupt's per-turn numbers | the cumulative ones |
 
 ### ⛽ **Check Capacity Before a Fan-Out**
 Put a **Claude Code Usage** node ahead of a batch and branch on `maxUtilization`. Ten Claude Code

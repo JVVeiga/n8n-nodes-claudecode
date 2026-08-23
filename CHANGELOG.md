@@ -1,3 +1,15 @@
+## [0.12.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.11.0...v0.12.0) (2026-08-22)
+
+### Features
+
+* **node:** typeVersion 1.2 — one output envelope for all three formats. The three formats used to build three different shapes, deriving `result`, `success` and the metrics three separate ways, so adding a field meant remembering three places and the three could disagree about the same run. Under 1.2, `Output Format` chooses which optional *sections* are present, never which shape is built: `{ result, success, errorText, metrics{duration_ms, num_turns, total_cost_usd, usage, modelUsage, session_id}, diagnostics }`, plus `messages` for the messages and structured formats and `summary` for structured. Four long-standing quirks are fixed with it: an unknown cost reports `null` instead of `0` (a run with no result message may well have spent money, and `0` claimed it was free); the `messages` format finally carries metrics, so wanting the transcript no longer means running the node twice to learn what it cost; a tool use counts wherever it appears in a turn rather than only as the first content block, which had `summary.toolUseCount` under-reporting on exactly the runs people inspect; and the metrics come from the *last* result message rather than the first, which matters on a graceful timeout where the first is the interrupt's own per-turn count. `errorText` is also new and separate from `result`, so a recovered partial answer is distinguishable from a real failure without string-matching. **Existing nodes are unaffected** — a node keeps the typeVersion it was created with, and 1 and 1.1 emit exactly what they always did, held byte-for-byte by 48 golden fixtures and verified in real n8n alongside a 1.2 node in the same instance.
+
+* **models:** every model is now selectable as **Fallback Model**. The Model selector offered nine and Fallback Model offered seven of them — Opus 4.7 and Fable 5 could be the primary model but not the fallback. Nobody decided that; the two lists had drifted. They are generated from one list now, so they cannot drift again.
+
+### Code Refactoring
+
+* **node:** the node was one 1386-line file whose `execute()` was 876 lines with four escape paths, and nothing in it was reachable from a test. It is now fourteen modules, none over 358 lines, with `execute()` reduced to wiring: `params.ts` is the only place that touches `IExecuteFunctions`, `config.ts` turns parameters into SDK options through an ordered table of appliers (a new SDK option is one entry), `runner.ts` owns the query and the timeout choreography and reports a timeout rather than throwing one, and `output/legacy.ts` is frozen so 1.2 could be built beside it instead of on top of it. Test count went from 76 to 405, plus 48 golden fixtures and a 20-check Docker suite against real n8n, none of which existed before. No behaviour change on 1 or 1.1 — that is the point, and it is a test rather than a claim.
+
 ## [0.11.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.10.0...v0.11.0) (2026-08-19)
 
 ### Features
