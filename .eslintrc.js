@@ -148,7 +148,7 @@ module.exports = {
 			// points, so the filename convention rule mistakes them for one and demands they be
 			// renamed to *.node.ts. Every other node rule still applies — the parameter and option
 			// checks are exactly why the schema is worth linting.
-			files: ['./nodes/**/description/*.ts'],
+			files: ['./nodes/**/description/*.ts', './nodes/**/description.ts'],
 			rules: {
 				'n8n-nodes-base/node-filename-against-convention': 'off',
 			},
