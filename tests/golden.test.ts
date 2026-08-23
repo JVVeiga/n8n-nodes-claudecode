@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ClaudeCode } from '../nodes/ClaudeCode/ClaudeCode.node';
+import { runItems } from '../nodes/ClaudeCode/ClaudeCode.node';
 import { claudeCodeParams, createFakeContext } from './helpers/executeFunctions';
 import { withFakeQuery } from './helpers/fakeQuery';
 import { streams } from './helpers/sdkMessages';
@@ -56,9 +56,8 @@ async function runNode(opts: {
 		typeVersion: opts.typeVersion,
 		params: claudeCodeParams({ outputFormat: opts.format }),
 	});
-	return withFakeQuery({ messages: streams[opts.stream]() }, async () => {
-		const node = new ClaudeCode();
-		const result = await node.execute.call(ctx);
+	return withFakeQuery({ messages: streams[opts.stream]() }, async (_r, query) => {
+		const result = await runItems(ctx, { query });
 		return result[0];
 	});
 }

@@ -1,5 +1,5 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { queryImpl } from '../../nodes/ClaudeCode/ClaudeCode.node';
+import type { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 
 /**
  * A stand-in for the SDK's `query()`. Yields a scripted message stream and records the options it
@@ -38,7 +38,7 @@ export type FakeQueryRecord = {
 type QueryArgs = { options?: { abortController?: AbortController } };
 
 export type FakeQueryHandle = {
-	fake: typeof queryImpl.query;
+	fake: typeof sdkQuery;
 	record: FakeQueryRecord;
 };
 
@@ -89,26 +89,23 @@ export function createFakeQuery(options: FakeQueryOptions = {}): FakeQueryHandle
 			supportedCommands: async () => [],
 			supportedModels: async () => [],
 			mcpServerStatus: async () => ({}),
-		} as unknown as ReturnType<typeof queryImpl.query>;
-	}) as typeof queryImpl.query;
+		} as unknown as ReturnType<typeof sdkQuery>;
+	}) as typeof sdkQuery;
 
 	return { fake, record };
 }
 
 /**
- * Swaps `query` for the duration of `body`, then puts the real one back even if the body throws.
- * The node's module-level indirection is the only seam available until runner.ts lands.
+ * Runs `body` with a fake `query`, and hands it the record so it can assert what was called.
+ *
+ * This used to swap a mutable module-level binding and put it back in a finally. It does not need
+ * to any more: `runItems` takes its dependencies as an argument, so the fake is passed in like any
+ * other value.
  */
 export async function withFakeQuery<T>(
 	options: FakeQueryOptions,
-	body: (record: FakeQueryRecord) => Promise<T>,
+	body: (record: FakeQueryRecord, fake: typeof sdkQuery) => Promise<T>,
 ): Promise<T> {
 	const { fake, record } = createFakeQuery(options);
-	const real = queryImpl.query;
-	queryImpl.query = fake;
-	try {
-		return await body(record);
-	} finally {
-		queryImpl.query = real;
-	}
+	return body(record, fake);
 }

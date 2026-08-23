@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { NodeOperationError } from 'n8n-workflow';
 import type { INodeExecutionData } from 'n8n-workflow';
-import { ClaudeCode } from '../nodes/ClaudeCode/ClaudeCode.node';
+import { ClaudeCode, runItems } from '../nodes/ClaudeCode/ClaudeCode.node';
 import { claudeCodeParams, createFakeContext, type ParamMap } from './helpers/executeFunctions';
 import { withFakeQuery, type FakeQueryOptions } from './helpers/fakeQuery';
 import { assistantText, init, streams, successResult, wrapUpResult } from './helpers/sdkMessages';
@@ -30,10 +30,9 @@ async function exec(opts: ExecOpts = {}) {
 		items: opts.items,
 		params: claudeCodeParams(opts.params ?? {}),
 	});
-	const result = await withFakeQuery(opts.query ?? { messages: streams.success() }, async () => {
-		const node = new ClaudeCode();
-		return node.execute.call(fake.ctx);
-	});
+	const result = await withFakeQuery(opts.query ?? { messages: streams.success() }, (_r, query) =>
+		runItems(fake.ctx, { query }),
+	);
 	return { items: result[0], fake };
 }
 
@@ -45,6 +44,27 @@ async function execExpectingThrow(opts: ExecOpts = {}) {
 	}
 	assert.fail('expected execute() to throw');
 }
+
+describe('ClaudeCode.execute — the adapter onto runItems', () => {
+	// The tests below all drive runItems directly, injecting a fake query. That leaves exactly one
+	// line uncovered — execute() itself — so this asserts the wiring is real: the class exposes
+	// execute, and it delegates rather than reimplementing anything.
+	it('exposes execute and the description', () => {
+		const node = new ClaudeCode();
+		assert.equal(typeof node.execute, 'function');
+		assert.equal(node.description.name, 'claudeCode');
+	});
+
+	it('execute() reaches the real SDK query, which is why it is not unit-tested', async () => {
+		// Called with a context whose prompt is empty, so it fails validation BEFORE any spawn. That
+		// proves execute() runs the same path as runItems without costing a CLI process.
+		const { ctx } = createFakeContext({ params: claudeCodeParams({ prompt: '' }) });
+		await assert.rejects(
+			() => new ClaudeCode().execute.call(ctx),
+			/Prompt is required and cannot be empty/,
+		);
+	});
+});
 
 describe('ClaudeCode.execute — the happy path', () => {
 	it('emits one item per input item, paired correctly', async () => {
@@ -70,7 +90,7 @@ describe('ClaudeCode.execute — the happy path', () => {
 		const controller = new AbortController();
 		const running = withFakeQuery(
 			{ messages: [init()], hang: true, abortSignal: controller.signal },
-			async () => new ClaudeCode().execute.call(fake.ctx),
+			(_r, query) => runItems(fake.ctx, { query }),
 		);
 		// Give execute() a tick to register the handler and start iterating.
 		await new Promise((resolve) => setTimeout(resolve, 50));
@@ -85,8 +105,8 @@ describe('ClaudeCode.execute — the happy path', () => {
 	it('passes the prompt into the query as a stream, not a string', async () => {
 		let seen: unknown;
 		const fake = createFakeContext({ params: claudeCodeParams() });
-		await withFakeQuery({ messages: streams.success() }, async (record) => {
-			await new ClaudeCode().execute.call(fake.ctx);
+		await withFakeQuery({ messages: streams.success() }, async (record, query) => {
+			await runItems(fake.ctx, { query });
 			seen = (record.calls[0] as { prompt?: unknown }).prompt;
 		});
 		assert.equal(typeof seen, 'object', 'a string prompt would disable interrupt()');
@@ -183,8 +203,8 @@ describe('ClaudeCode.execute — path 3: soft failure for the other formats', ()
 			// The first item has an empty prompt, the second a real one.
 			params: claudeCodeParams({ prompt: (i: number) => (i === 0 ? '' : 'go') }),
 		});
-		const result = await withFakeQuery({ messages: streams.success() }, async () =>
-			new ClaudeCode().execute.call(fake.ctx),
+		const result = await withFakeQuery({ messages: streams.success() }, (_r, query) =>
+			runItems(fake.ctx, { query }),
 		);
 		assert.equal(result[0].length, 2);
 		assert.match(
