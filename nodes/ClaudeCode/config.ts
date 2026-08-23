@@ -49,10 +49,8 @@ type ApplyContext = {
 type Applier = { name: string; apply: (ctx: ApplyContext) => Problem | boolean | void };
 
 /** Ultracode needs these to orchestrate at all. */
-const ORCHESTRATION_TOOLS = ['Workflow', 'Task'];
-
 const withOrchestration = (tools: string[]): string[] =>
-	Array.from(new Set([...tools, ...ORCHESTRATION_TOOLS]));
+	Array.from(new Set([...tools, 'Workflow', 'Task']));
 
 const APPLIERS: Applier[] = [
 	{
