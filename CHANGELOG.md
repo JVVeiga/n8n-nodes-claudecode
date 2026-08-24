@@ -1,5 +1,37 @@
 ## [0.12.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.11.0...v0.12.0) (2026-08-22)
 
+### No breaking changes
+
+Verified rather than assumed: the resolved node schema was diffed field by field against the
+previous release. All 13 parameter names, their types, defaults, `displayOptions` and option lists
+are unchanged. Nothing was removed or renamed.
+
+Two additive changes only:
+
+- `version` gained `1.2`; `defaultVersion` moved from `1.1` to `1.2`. **A node keeps the
+  typeVersion it was created with**, so this affects newly added nodes and nothing else. An existing
+  workflow emits exactly what it emitted before — held byte-for-byte by 48 golden fixtures, and
+  verified in real n8n with a 1.1-pinned node running alongside a 1.2 node in the same instance.
+- **Fallback Model** gained two options (Opus 4.7 and Fable 5). No stored value becomes invalid.
+
+There is nothing to migrate. If you want an existing node on 1.2, delete it and add a fresh one —
+there is no in-place upgrade, because silently changing a live workflow's output is what the
+versioning exists to prevent.
+
+#### Moving a workflow from 1.1 to 1.2
+
+| | 1 / 1.1 | 1.2 |
+|---|---|---|
+| where the metrics live | flat on Text, nested on Structured, absent on Messages | always `metrics` |
+| an unknown cost | `0` on Text | `null` |
+| `messageCount` | on Messages only | dropped — read `messages.length` |
+| error text | folded into `result` behind a `[PARTIAL - …]` prefix | `result`, plus a separate `errorText` |
+| `summary.toolUseCount` | counts a tool only when it opened the turn | counts every tool use |
+| metrics on a graceful timeout | the interrupt's per-turn numbers | the cumulative ones |
+
+`result`, `success` and `diagnostics` keep their names and meanings in both, so an expression
+reading only those needs no change.
+
 ### Features
 
 * **node:** typeVersion 1.2 — one output envelope for all three formats. The three formats used to build three different shapes, deriving `result`, `success` and the metrics three separate ways, so adding a field meant remembering three places and the three could disagree about the same run. Under 1.2, `Output Format` chooses which optional *sections* are present, never which shape is built: `{ result, success, errorText, metrics{duration_ms, num_turns, total_cost_usd, usage, modelUsage, session_id}, diagnostics }`, plus `messages` for the messages and structured formats and `summary` for structured. Four long-standing quirks are fixed with it: an unknown cost reports `null` instead of `0` (a run with no result message may well have spent money, and `0` claimed it was free); the `messages` format finally carries metrics, so wanting the transcript no longer means running the node twice to learn what it cost; a tool use counts wherever it appears in a turn rather than only as the first content block, which had `summary.toolUseCount` under-reporting on exactly the runs people inspect; and the metrics come from the *last* result message rather than the first, which matters on a graceful timeout where the first is the interrupt's own per-turn count. `errorText` is also new and separate from `result`, so a recovered partial answer is distinguishable from a real failure without string-matching. **Existing nodes are unaffected** — a node keeps the typeVersion it was created with, and 1 and 1.1 emit exactly what they always did, held byte-for-byte by 48 golden fixtures and verified in real n8n alongside a 1.2 node in the same instance.
