@@ -210,6 +210,10 @@ export async function runItems(
 				messages,
 				diagnostics,
 				includeTranscript: params.additional.includeTranscript !== false,
+				// The measured wall time, so the unified envelope can report a real duration when the
+				// SDK reported none of its own rather than a fabricated 0.
+				durationMs: run.durationMs,
+				envelope: params.additional.outputEnvelope,
 			});
 
 			returnData.push({ json: outputData, pairedItem: { item: itemIndex } });

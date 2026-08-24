@@ -341,3 +341,83 @@ describe('ClaudeCode.execute — includeTranscript', () => {
 		assert.equal(items[0].json.messageCount, 5, 'the count survives');
 	});
 });
+
+describe('ClaudeCode.execute — Output Envelope', () => {
+	// n8n has no UI picker for a node version and a node keeps the one it was created with, so an
+	// older node cannot otherwise reach the unified shape without being deleted and re-added. This
+	// is the in-place opt-in.
+	const unified = { additionalOptions: { outputEnvelope: 'unified' } };
+
+	it('defaults to auto, which leaves an older node on its legacy shape', async () => {
+		const { items } = await exec({ typeVersion: 1.1, params: { outputFormat: 'text' } });
+		assert.equal(typeof items[0].json.duration_ms, 'number', 'the flat legacy field');
+		assert.equal('metrics' in items[0].json, false);
+	});
+
+	it('an explicit auto is the same as omitting it', async () => {
+		const omitted = await exec({ typeVersion: 1.1, params: { outputFormat: 'text' } });
+		const explicit = await exec({
+			typeVersion: 1.1,
+			params: { outputFormat: 'text', additionalOptions: { outputEnvelope: 'auto' } },
+		});
+		assert.deepEqual(explicit.items[0].json, omitted.items[0].json);
+	});
+
+	it('unified gives a 1.1 node the new envelope without recreating it', async () => {
+		const { items } = await exec({
+			typeVersion: 1.1,
+			params: { outputFormat: 'text', ...unified },
+		});
+		assert.ok(items[0].json.metrics, 'the unified envelope');
+		assert.equal('duration_ms' in items[0].json, false, 'no flat legacy field');
+		assert.equal(items[0].json.errorText, '');
+	});
+
+	it('unified works on typeVersion 1 too, which is the point of the escape hatch', async () => {
+		const { items } = await exec({ typeVersion: 1, params: { outputFormat: 'text', ...unified } });
+		assert.ok(items[0].json.metrics);
+	});
+
+	it('unified on a 1.2 node changes nothing — it is already unified', async () => {
+		const plain = await exec({ typeVersion: 1.2, params: { outputFormat: 'text' } });
+		const forced = await exec({ typeVersion: 1.2, params: { outputFormat: 'text', ...unified } });
+		assert.deepEqual(forced.items[0].json, plain.items[0].json);
+	});
+
+	it('the opted-in shape matches what a real 1.2 node emits, field for field', async () => {
+		const optedIn = await exec({
+			typeVersion: 1.1,
+			params: { outputFormat: 'structured', ...unified },
+		});
+		const native = await exec({ typeVersion: 1.2, params: { outputFormat: 'structured' } });
+		assert.deepEqual(optedIn.items[0].json, native.items[0].json);
+	});
+});
+
+describe('ClaudeCode.execute — the measured duration reaches the output', () => {
+	// This is the gap that a builder-level test cannot see: buildOutputItem was correct and had a
+	// passing test for the wall-time fallback, but execute() never handed it the wall time. A 1.2 run
+	// whose SDK reported no duration therefore reported 0 — the fabricated number 1.2 exists to stop
+	// reporting. Asserted here, between the node and the builder, because that is where it broke.
+	it('reports a real duration when the SDK reported none', async () => {
+		const { items } = await exec({
+			typeVersion: 1.2,
+			params: { outputFormat: 'text' },
+			// noResult has no result message, so the SDK contributes no duration_ms. The delay makes
+			// the run take measurable wall time — without it a fake run reports 0 legitimately, which
+			// is indistinguishable from the duration never being passed through.
+			query: { messages: streams.noResult(), delayMs: 25 },
+		});
+		const metrics = items[0].json.metrics as Record<string, unknown>;
+		assert.ok(
+			(metrics.duration_ms as number) >= 20,
+			`a run that took ~25ms reported ${metrics.duration_ms}`,
+		);
+		assert.equal(metrics.total_cost_usd, null, 'an unknown cost stays null');
+	});
+
+	it("prefers the SDK's own duration when it reported one", async () => {
+		const { items } = await exec({ typeVersion: 1.2, params: { outputFormat: 'text' } });
+		assert.equal((items[0].json.metrics as Record<string, unknown>).duration_ms, 4821);
+	});
+});

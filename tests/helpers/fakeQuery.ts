@@ -13,6 +13,12 @@ export type FakeQueryOptions = {
 	throwAfter?: Error;
 	/** Never end: yield the scripted messages then hang, so the timeout timers fire. */
 	hang?: boolean;
+	/**
+	 * Wait this long before yielding anything, so the run takes measurable wall time. Needed to
+	 * assert on a measured duration: a fake that yields instantly makes Date.now() report 0, which
+	 * is indistinguishable from the bug where the duration is never passed through at all.
+	 */
+	delayMs?: number;
 	/** Make `interrupt()` itself reject, which the node must swallow. */
 	interruptThrows?: boolean;
 	/**
@@ -53,6 +59,9 @@ export function createFakeQuery(options: FakeQueryOptions = {}): FakeQueryHandle
 		const pending: SDKMessage[] = [];
 
 		async function* stream(): AsyncGenerator<SDKMessage> {
+			if (options.delayMs) {
+				await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+			}
 			for (const message of messages) {
 				yield message;
 			}

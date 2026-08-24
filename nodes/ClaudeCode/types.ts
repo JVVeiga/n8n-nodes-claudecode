@@ -30,6 +30,15 @@ export type Operation = 'query' | 'continue';
 /** The Thinking selector's values. Mapped onto the SDK's `ThinkingConfig` in config.ts. */
 export type ThinkingSelection = 'default' | 'disabled' | 'adaptive' | 'summarized';
 
+/**
+ * Which output shape to emit, independent of the node version.
+ *
+ * `auto` routes by typeVersion, which is the mechanism n8n gives for this. It exists because
+ * n8n has no UI picker for a node version and a node keeps the one it was created with, so an
+ * older node otherwise cannot reach the unified shape without being deleted and re-added.
+ */
+export type OutputEnvelope = 'auto' | 'unified';
+
 /** The `additionalOptions` collection. Every field is optional — an unset collection field
  * arrives as `undefined`, which is why version-aware defaults are applied in params.ts. */
 export type AdditionalOptions = {
@@ -43,6 +52,7 @@ export type AdditionalOptions = {
 	allowPlanExecution?: boolean;
 	pathToClaudeCodeExecutable?: string;
 	thinking?: ThinkingSelection;
+	outputEnvelope?: OutputEnvelope;
 	wrapUpGraceSeconds?: number;
 };
 

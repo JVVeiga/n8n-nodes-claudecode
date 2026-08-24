@@ -101,6 +101,7 @@ describe('node description — top-level parameters', () => {
 describe('node description — additionalOptions collection', () => {
 	const EXPECTED = [
 		'pathToClaudeCodeExecutable',
+		'outputEnvelope',
 		'debug',
 		'allowPlanExecution',
 		'includeTranscript',

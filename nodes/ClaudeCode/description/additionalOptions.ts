@@ -25,6 +25,29 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 				'Absolute path to a Claude Code CLI binary to use instead of the one bundled with the SDK (e.g. a globally installed "claude"). Leave empty to use the bundled executable.',
 		},
 		{
+			displayName: 'Output Envelope',
+			name: 'outputEnvelope',
+			type: 'options',
+			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+			options: [
+				{
+					name: 'Auto (Match Node Version)',
+					value: 'auto',
+					description:
+						'Node versions 1 and 1.1 emit their original per-format shapes; 1.2 emits the unified envelope',
+				},
+				{
+					name: 'Unified (1.2 Shape)',
+					value: 'unified',
+					description:
+						'Emit the unified envelope regardless of node version — how an existing node opts in without being recreated',
+				},
+			],
+			default: 'auto',
+			description:
+				'n8n has no UI picker for a node version, and a node keeps the version it was created with — so an older node cannot reach the unified output shape by any other route than being deleted and re-added, which loses its configuration. Set this to Unified to opt in in place. Auto changes nothing.',
+		},
+		{
 			displayName: 'Debug Mode',
 			name: 'debug',
 			type: 'boolean',

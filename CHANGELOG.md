@@ -14,9 +14,14 @@ Two additive changes only:
   verified in real n8n with a 1.1-pinned node running alongside a 1.2 node in the same instance.
 - **Fallback Model** gained two options (Opus 4.7 and Fable 5). No stored value becomes invalid.
 
-There is nothing to migrate. If you want an existing node on 1.2, delete it and add a fresh one —
-there is no in-place upgrade, because silently changing a live workflow's output is what the
-versioning exists to prevent.
+There is nothing to migrate. If you *want* an existing node on the new output shape, set
+**Output Envelope** to `Unified` in Additional Options — that opts in without recreating the node.
+It defaults to `Auto`, which changes nothing.
+
+That option exists because n8n has no UI picker for a node version and a node keeps the version it
+was created with, so an older node otherwise has no route to the new shape except being deleted and
+re-added, which loses its configuration. The override is deliberately one-directional: a *new* node
+that wants the old shape is rare and can pin `"typeVersion": 1.1` in the workflow JSON.
 
 #### Moving a workflow from 1.1 to 1.2
 
@@ -35,6 +40,8 @@ reading only those needs no change.
 ### Features
 
 * **node:** typeVersion 1.2 — one output envelope for all three formats. The three formats used to build three different shapes, deriving `result`, `success` and the metrics three separate ways, so adding a field meant remembering three places and the three could disagree about the same run. Under 1.2, `Output Format` chooses which optional *sections* are present, never which shape is built: `{ result, success, errorText, metrics{duration_ms, num_turns, total_cost_usd, usage, modelUsage, session_id}, diagnostics }`, plus `messages` for the messages and structured formats and `summary` for structured. Four long-standing quirks are fixed with it: an unknown cost reports `null` instead of `0` (a run with no result message may well have spent money, and `0` claimed it was free); the `messages` format finally carries metrics, so wanting the transcript no longer means running the node twice to learn what it cost; a tool use counts wherever it appears in a turn rather than only as the first content block, which had `summary.toolUseCount` under-reporting on exactly the runs people inspect; and the metrics come from the *last* result message rather than the first, which matters on a graceful timeout where the first is the interrupt's own per-turn count. `errorText` is also new and separate from `result`, so a recovered partial answer is distinguishable from a real failure without string-matching. **Existing nodes are unaffected** — a node keeps the typeVersion it was created with, and 1 and 1.1 emit exactly what they always did, held byte-for-byte by 48 golden fixtures and verified in real n8n alongside a 1.2 node in the same instance.
+
+* **node:** **Output Envelope** in Additional Options — `Auto` (the default, routes by node version) or `Unified`, which gives an existing node the 1.2 output shape in place. n8n offers no way to change a node's version after it is created, so without this the only route to the new shape was deleting the node and configuring a new one from scratch.
 
 * **models:** every model is now selectable as **Fallback Model**. The Model selector offered nine and Fallback Model offered seven of them — Opus 4.7 and Fable 5 could be the primary model but not the fallback. Nobody decided that; the two lists had drifted. They are generated from one list now, so they cannot drift again.
 

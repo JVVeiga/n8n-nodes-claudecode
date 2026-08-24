@@ -215,8 +215,13 @@ changes an existing workflow. New nodes start on the current default, `1.2`.
 
 All three get the diagnostics, the session ID and the self-describing error message.
 
-To move an existing node forward, delete it and add a fresh one — there is no in-place upgrade,
-because silently changing a running workflow's output is exactly what the versioning prevents.
+To give an existing node the newer output shape without recreating it, set **Output Envelope** to
+`Unified` in Additional Options. It defaults to `Auto`, which routes by version and changes nothing.
+
+That option exists because n8n has no version picker: a node keeps the version it was created with,
+and there is no UI to move it. Without the override, adopting the new shape meant deleting the node
+and configuring a replacement from scratch. The override only works in that direction — a new node
+that wants the old shape is rare, and can pin `"typeVersion": 1.1` in the workflow JSON.
 
 ### Reading the timeout data in the next node
 
