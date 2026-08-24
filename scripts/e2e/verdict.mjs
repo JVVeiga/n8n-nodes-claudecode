@@ -43,6 +43,29 @@ const checks = [
     const d = det(get('case22'));
     return d.timedOut === true && d.total_cost_usd === null;
   }],
+  // The Usage node. Its execute() spawns a real CLI through readUsage, the one module with no unit
+  // tests by design — so these are the only automated checks that reach it.
+  ['30 usage node reports plan capacity', () => {
+    const j = get('case30')?.itemJson;
+    return !!j && typeof j.authenticated === 'boolean' && typeof j.rateLimitsAvailable === 'boolean'
+      && Array.isArray(j.windows) && !!j.account && !!j.diagnostics
+      && typeof j.diagnostics.initMs === 'number';
+  }],
+  ['30 usage read is free — no prompt is sent', () => {
+    const j = get('case30')?.itemJson;
+    return !!j && (j.session?.totalCostUsd ?? 0) === 0 && j.diagnostics?.probed !== true;
+  }],
+  ['31 the account email is never leaked, and only ever appears when asked', () => {
+    // What this can prove depends on the credential. A CLAUDE_CODE_OAUTH_TOKEN session is
+    // inference-only, so there is no profile to read and no email exists either way — asserting one
+    // appears would be asserting against the environment, not the node. What holds in every case:
+    // the default must never carry an email, and the option must never invent one.
+    const off = get('case30')?.itemJson, on = get('case31')?.itemJson;
+    if (!off || !on) return false;
+    if ('email' in (off.account ?? {})) return false;            // never leaked by default
+    const profileReadable = off.account?.tokenSource !== 'CLAUDE_CODE_OAUTH_TOKEN';
+    return profileReadable ? typeof on.account?.email === 'string' : !('email' in (on.account ?? {}));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

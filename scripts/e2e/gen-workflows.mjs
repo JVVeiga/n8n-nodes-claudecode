@@ -271,6 +271,65 @@ cases.push(
 	}),
 );
 
+/**
+ * The Usage node. It had no coverage here at all, which mattered: its execute() spawns a real CLI
+ * through readUsage, and readUsage is the one module with no unit tests by design (it needs the
+ * SDK's control-request surface). So this case was the only thing that could exercise it, and it
+ * did not exist.
+ *
+ * The read sends no prompt, so it is free — unlike every Claude Code case in this file.
+ */
+function usageWorkflow({ name, notes, options = {} }) {
+	const triggerId = nextId();
+	const usageId = nextId();
+	return {
+		id: stableId(name),
+		name,
+		nodes: [
+			{
+				parameters: {},
+				id: triggerId,
+				name: 'When clicking Execute',
+				type: 'n8n-nodes-base.manualTrigger',
+				typeVersion: 1,
+				position: [0, 0],
+			},
+			{
+				parameters: { operation: 'read', projectPath: PROJECT, timeout: 60, usageOptions: options },
+				id: usageId,
+				name: 'Claude Code Usage',
+				type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeUsage',
+				typeVersion: 1,
+				position: [220, 0],
+			},
+		],
+		connections: {
+			'When clicking Execute': { main: [[{ node: 'Claude Code Usage', type: 'main', index: 0 }]] },
+		},
+		settings: { executionOrder: 'v1' },
+		active: false,
+		pinData: {},
+		meta: { testCaseNotes: notes },
+	};
+}
+
+cases.push(
+	usageWorkflow({
+		name: 'case30 usage node reads plan capacity',
+		notes:
+			'EXPECT: one item with authenticated, planLimitsApply, rateLimitsAvailable, windows[], ' +
+			'account{} and diagnostics{}. No prompt is sent, so session.totalCostUsd is 0 and nothing ' +
+			'is billed. This is the only automated check that exercises readUsage against a real CLI.',
+	}),
+	usageWorkflow({
+		name: 'case31 usage node withholds the email unless asked',
+		notes:
+			'Same read with Include Account Email on. EXPECT account.email present here and absent in ' +
+			'case30 — it is personal data, so the default must not leak it.',
+		options: { includeAccountEmail: true },
+	}),
+);
+
 let n = 0;
 for (const wf of cases) {
 	const file = `${String(++n).padStart(2, '0')}-${wf.name.split(' ')[0]}.json`;

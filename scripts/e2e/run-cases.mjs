@@ -131,7 +131,12 @@ for (const { id, name } of ids) {
 	}
 
 	const runData = parsed?.data?.resultData?.runData ?? {};
-	const ccRuns = runData['Claude Code'] ?? [];
+	// The node's name was hardcoded to 'Claude Code', so a case naming it anything else — the Usage
+	// node cases name it 'Claude Code Usage' — recorded zero items and looked like a silent pass.
+	// Take whichever Claude node actually ran.
+	const nodeName =
+		Object.keys(runData).find((k) => /^Claude Code/.test(k)) ?? 'Claude Code';
+	const ccRuns = runData[nodeName] ?? [];
 	const cc = ccRuns[0] ?? {};
 	// With onError: continueErrorOutput the node's item comes out of branch 1, not 0. Take the
 	// first non-empty branch rather than assuming index 0.
