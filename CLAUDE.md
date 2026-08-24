@@ -29,6 +29,12 @@ there are no GitHub Actions workflows in this repository.
 ### Interactive Commits
 Use `npm run commit` to use commitizen for guided commit creation.
 
+### What is NOT here
+No CI, no GitHub Actions, no semantic-release. The `@semantic-release/*` packages were in
+devDependencies with no config and no workflow to run them; they were removed. Publishing is the
+five manual steps above. Package contents are decided by `files` in package.json — there is no
+`.npmignore` (it was a no-op next to `files`, and its stale entries gave false confidence).
+
 ## Common Commands
 
 ### Development

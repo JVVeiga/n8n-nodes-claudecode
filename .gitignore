@@ -6,7 +6,10 @@ dist
 npm-debug.log*
 *.tgz
 yarn.lock
+# Editor state and personal preferences. .vscode/extensions.json IS versioned — the lint and
+# format extension recommendations are project config, not preference.
 .vscode/launch.json
+.vscode/settings.json
 /.playwright-mcp
 .specs
 # The E2E rig is versioned — it encodes findings that cost real work to discover, and it was

@@ -95,10 +95,3 @@ export type RunOutcome = {
 	 * rejecting, so `messages` may still hold the spend and session data. */
 	error: unknown;
 };
-
-/** A validation failure that the caller turns into a `NodeOperationError`. Returned rather than
- * thrown so config.ts stays pure and assertable without a node instance. */
-export type ConfigProblem = {
-	message: string;
-	description: string;
-};
