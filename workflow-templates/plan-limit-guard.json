@@ -135,7 +135,7 @@
       "id": "gated-agent-work",
       "name": "Run Agent Work",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
         1130,
         520

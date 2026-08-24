@@ -19,7 +19,7 @@ one paid fallback it offers for credentials that cannot read the usage endpoint.
 
 ## 🔀 What this fork changes
 
-Everything below this section is the upstream node's documentation. This fork adds:
+This started as a fork of [johnlindquist/n8n-nodes-claudecode](https://github.com/johnlindquist/n8n-nodes-claudecode) and has since diverged fully — the docs below are this fork's, not upstream's. What it adds:
 
 - **Claude Code v2 support** — migrated from `@anthropic-ai/claude-code` (CLI-only since v2, so the original node no longer resolves) to `@anthropic-ai/claude-agent-sdk`. Requires Node 22+.
 - **Model, Effort and Thinking selectors** — Opus 5 / Sonnet 5 / Haiku 4.5 / Fable 5, effort from low to max, plus Ultracode (xHigh + the Workflow tool).
@@ -28,6 +28,7 @@ Everything below this section is the upstream node's documentation. This fork ad
 - **Diagnostics** — every run reports the resolved model, the effort actually applied, the models billed, the session id and whether Ultracode orchestration was available.
 - **Cancellation and failure handling** — stopping the n8n execution now stops the agent; failed runs report their real cost instead of `$0`; Text output no longer swallows errors into a green execution.
 - **Graceful timeouts** ([details](#-timeouts)) — a run that overruns its Timeout is interrupted rather than killed, so it reports the tokens, cost and session it actually used and hands over what it finished. Killing the process makes the SDK report none of that, which is why a timed-out run used to return only an error string. Failure items also reach the **error output branch** now. Both behaviours are gated behind node version 1.1, so existing nodes are untouched.
+- **One output envelope** ([details](#-output-formats)) — the three output formats used to build three different shapes, so `result`, `success` and the metrics were derived three separate ways and could disagree about the same run. Since node version 1.2 the format picks which optional *sections* you get, not which shape. An unknown cost now reports `null` rather than `0`, and the Messages format finally carries metrics.
 - **Session ID** on Continue, so concurrent executions stop sharing one conversation.
 - **A second node, Claude Code Usage** ([details](#-usage--plan-limits)) — reads the logged-in
   account and how much of its plan is left, including when each window resets. It is the data behind
@@ -35,6 +36,16 @@ Everything below this section is the upstream node's documentation. This fork ad
   capacity, wait for a reset, or alert before hitting the wall. A `CLAUDE_CODE_OAUTH_TOKEN` session —
   the usual Docker setup — cannot read that endpoint at all, so the node offers an opt-in fallback
   that reads the two main windows off inference response headers for about $0.001.
+
+## Contents
+
+**Start here** — [Install](#-install) · [Your First Workflow](#-your-first-workflow) · [Templates](./workflow-templates/)
+
+**Reference** — [Features](#-powerful-features) · [Timeouts](#-timeouts) · [Output Formats](#-output-formats) · [Usage & Plan Limits](#-usage--plan-limits) · [Node versions](#node-versions)
+
+**Ideas** — [What Can You Build?](#-what-can-you-build) · [Use Cases](#-real-world-use-cases) · [Configuration Examples](#-configuration-examples) · [Workflow Patterns](#-workflow-patterns) · [Pro Tips](#-pro-tips)
+
+**Contributing** — [Commits, tests and releases](#-development--contributing)
 
 ## 🌟 What Can You Build?
 
@@ -64,7 +75,7 @@ Transform support tickets into code fixes automatically:
 - Update documentation based on common questions
 - Auto-respond with workarounds while fixes are deployed
 
-## ⚡ Quick Start
+## ⚡ Install
 
 ### Prerequisites
 1. **Claude Code CLI** (required on your n8n server):
@@ -223,20 +234,23 @@ The grace is clamped to half the Timeout, so a large grace on a short Timeout ca
 > SDK spends about two seconds killing the subprocess. So a hard-aborted node returns up to ~3s after
 > its Timeout, while the graceful path returns *under* it. Claude stops working on time either way.
 
-### Node version 1 vs 1.1
+### Node versions
 
-The grace changes when a run stops, so it is gated behind the node version rather than switched on
-by a package upgrade:
+Anything that changes what a node *emits* is gated behind its version, never switched on by a
+package upgrade. **A node keeps the version it was created with**, so upgrading the package never
+changes an existing workflow. New nodes start on the current default, `1.2`.
 
-| | Version 1 (existing nodes) | Version 1.1 (new nodes) |
-|---|---|---|
-| Timeout Wrap-Up Grace default | `0` — process killed at the Timeout, as before | `60` |
-| Failure item shape | flat report at the top level | `{ error, message, details }` |
-| Failure items on the error output | stay on the main output | routed to the error output |
+| | 1 | 1.1 | 1.2 (default) |
+|---|---|---|---|
+| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` |
+| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 |
+| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 |
+| Output shape | one per format | one per format | [one envelope](#-output-formats) |
 
-Existing nodes keep behaving exactly as they did. To opt in, either set the grace explicitly or add
-a fresh Claude Code node. Both versions get the diagnostics, the session ID and the self-describing
-error message.
+All three get the diagnostics, the session ID and the self-describing error message.
+
+To move an existing node forward, delete it and add a fresh one — there is no in-place upgrade,
+because silently changing a running workflow's output is exactly what the versioning prevents.
 
 ### Reading the timeout data in the next node
 
@@ -304,6 +318,51 @@ An **Error Workflow** gets more than the panel does. The `Error Trigger` receive
 
 So an alerting workflow can report what a timed-out run cost without any extra wiring. The message
 still carries the headline numbers inline, because that is the line a human reads in a Slack alert.
+
+## 📊 Output Formats
+The Claude Code node offers three (the Usage node has one fixed shape — see
+[Usage & Plan Limits](#-usage--plan-limits)):
+- **Structured**: everything — the answer, the metrics, a run summary, the transcript
+- **Messages**: the transcript, for debugging
+- **Text**: just the answer and the metrics, for chaining
+
+Since **node version 1.2** all three share one envelope, and Output Format selects which optional
+sections come with it:
+
+```javascript
+{
+  result: 'pong',              // the answer, whatever it took to recover it
+  success: true,               // only an explicit success counts
+  errorText: '',               // separate from result, so a partial answer is distinguishable
+  metrics: {
+    duration_ms: 4821,
+    num_turns: 2,
+    total_cost_usd: 0.0412,    // null when the run produced no result — never a fabricated 0
+    usage: { /* … */ },
+    modelUsage: { /* per model */ },
+    session_id: '1e76098f-…',  // feed into Session ID to resume
+  },
+  diagnostics: { /* resolved model, applied effort, whether Ultracode fired */ },
+  messages: [ /* messages + structured only, and only with Include Raw Transcript on */ ],
+  summary: { /* structured only */ },
+}
+```
+
+**Existing workflows are untouched.** A node keeps the typeVersion it was created with, so nodes
+built before 1.2 keep emitting exactly what they always did — a flat `duration_ms` and
+`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. Only a
+newly added node starts on 1.2. To move an old one, delete and re-add it.
+
+What 1.2 changes, for anyone porting a workflow across:
+
+| | 1 / 1.1 | 1.2 |
+|---|---|---|
+| where the metrics live | flat on Text, nested on Structured, absent on Messages | always `metrics` |
+| an unknown cost | `0` on Text | `null` |
+| `messageCount` | on Messages only | dropped — use `messages.length` |
+| error text | folded into `result` with a `[PARTIAL - …]` prefix | `result` plus a separate `errorText` |
+| `summary.toolUseCount` | counts a tool only if it opened the turn | counts every tool use |
+| metrics on a graceful timeout | the interrupt's per-turn numbers | the cumulative ones |
 
 ## 📊 Usage & Plan Limits
 
@@ -563,7 +622,7 @@ If (Can fix automatically)
   └─ No: Create Detailed Issue
 ```
 
-## 🚦 Getting Started
+## 🚦 Your First Workflow
 
 ### 1. **Verify Prerequisites**
 Make sure Claude Code CLI is installed and authenticated on your n8n server:
@@ -571,7 +630,7 @@ Make sure Claude Code CLI is installed and authenticated on your n8n server:
 claude --version  # Should show the version
 ```
 
-If not installed, see the [Quick Start](#-quick-start) section above.
+If not installed, see [Install](#-install) above.
 
 ### 2. **Create Your First Workflow**
 1. In n8n, create a new workflow
@@ -614,51 +673,6 @@ Control what Claude Code can do in `.claude/settings.json`:
 ### 🔗 **Chain Operations**
 Use "Continue" operation to build complex multi-step workflows while maintaining context.
 
-### 📊 **Output Formats**
-The Claude Code node offers three (the Usage node has one fixed shape — see
-[Usage & Plan Limits](#-usage--plan-limits)):
-- **Structured**: everything — the answer, the metrics, a run summary, the transcript
-- **Messages**: the transcript, for debugging
-- **Text**: just the answer and the metrics, for chaining
-
-Since **typeVersion 1.2** all three share one envelope, and Output Format selects which optional
-sections come with it:
-
-```javascript
-{
-  result: 'pong',              // the answer, whatever it took to recover it
-  success: true,               // only an explicit success counts
-  errorText: '',               // separate from result, so a partial answer is distinguishable
-  metrics: {
-    duration_ms: 4821,
-    num_turns: 2,
-    total_cost_usd: 0.0412,    // null when the run produced no result — never a fabricated 0
-    usage: { /* … */ },
-    modelUsage: { /* per model */ },
-    session_id: '1e76098f-…',  // feed into Session ID to resume
-  },
-  diagnostics: { /* resolved model, applied effort, whether Ultracode fired */ },
-  messages: [ /* messages + structured only, and only with Include Raw Transcript on */ ],
-  summary: { /* structured only */ },
-}
-```
-
-**Existing workflows are untouched.** A node keeps the typeVersion it was created with, so nodes
-built before 1.2 keep emitting exactly what they always did — a flat `duration_ms` and
-`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. Only a
-newly added node starts on 1.2. To move an old one, delete and re-add it.
-
-What 1.2 changes, for anyone porting a workflow across:
-
-| | 1 / 1.1 | 1.2 |
-|---|---|---|
-| where the metrics live | flat on Text, nested on Structured, absent on Messages | always `metrics` |
-| an unknown cost | `0` on Text | `null` |
-| `messageCount` | on Messages only | dropped — use `messages.length` |
-| error text | folded into `result` with a `[PARTIAL - …]` prefix | `result` plus a separate `errorText` |
-| `summary.toolUseCount` | counts a tool only if it opened the turn | counts every tool use |
-| metrics on a graceful timeout | the interrupt's per-turn numbers | the cumulative ones |
-
 ### ⛽ **Check Capacity Before a Fan-Out**
 Put a **Claude Code Usage** node ahead of a batch and branch on `maxUtilization`. Ten Claude Code
 nodes that all fail at 100% cost more than one read that says "not now" — and
@@ -693,6 +707,30 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 Use `npm run commit` for an interactive commit message builder.
 
+### Tests
+
+```bash
+npm test    # 465 tests — node:test, no framework, no extra dependencies
+```
+
+The gate for any change is `npm run lint && npm run build && npm test`.
+
+Two things worth knowing before you touch the node:
+
+**`tests/fixtures/` holds 48 golden fixtures** — byte-for-byte recordings of what node versions 1
+and 1.1 emit, across 8 message streams and 3 output formats. If they fail, behaviour moved, and
+that is the point: those versions are what every existing workflow reads. Regenerate only
+deliberately with `UPDATE_GOLDEN=1 npm test`, read the diff, and say in the commit message which
+fixture moved and why. Fixes to old behaviour belong in a new node version, not in the old one.
+
+**`nodes/ClaudeCode/output/legacy.ts` is frozen.** It preserves several quirks on purpose, each
+marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
+`v12.ts`.
+
+There is also a Docker suite that runs real n8n with the node installed and asserts 23 named
+behaviours against real executions. It lives in `scripts/e2e/` and is untracked — a working
+instrument rather than a deliverable. `CLAUDE.md` has the details.
+
 ### Release Process
 
 Releases are published manually. There is no CI — validate locally first:
@@ -700,6 +738,7 @@ Releases are published manually. There is no CI — validate locally first:
 ```bash
 npm run lint
 npm run build
+npm test
 npm publish --dry-run        # check the file list and version
 ```
 

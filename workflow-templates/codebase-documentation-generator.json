@@ -50,7 +50,7 @@
       "id": "generate-docs",
       "name": "Generate Documentation",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
         450,
         300
@@ -74,7 +74,7 @@
       "id": "create-diagrams",
       "name": "Create Architecture Diagrams",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
         650,
         300
@@ -106,7 +106,7 @@
               "type": "header",
               "text": {
                 "type": "plain_text",
-                "text": "📚 Documentation Updated"
+                "text": "\ud83d\udcda Documentation Updated"
               }
             },
             {
@@ -121,7 +121,7 @@
               "fields": [
                 {
                   "type": "mrkdwn",
-                  "text": "*Status:* ✅ Success"
+                  "text": "*Status:* \u2705 Success"
                 },
                 {
                   "type": "mrkdwn",
