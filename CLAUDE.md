@@ -152,7 +152,7 @@ reformatting them breaks the suite.
 
 ### End-to-end, in Docker
 
-`scripts/e2e/` (untracked — a working instrument, not a deliverable) brings up real n8n in Docker
+`scripts/e2e/` brings up real n8n in Docker
 with the node installed and asserts 23 named behaviours against real executions:
 
 ```bash

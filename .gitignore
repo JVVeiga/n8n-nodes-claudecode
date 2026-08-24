@@ -9,4 +9,9 @@ yarn.lock
 .vscode/launch.json
 /.playwright-mcp
 .specs
-scripts/e2e
+# The E2E rig is versioned — it encodes findings that cost real work to discover, and it was
+# already lost once to a wiped scratch directory. Its generated output is not.
+scripts/e2e/workflows/
+scripts/e2e/results.json
+scripts/e2e/run-*.log
+scripts/e2e/.pack/

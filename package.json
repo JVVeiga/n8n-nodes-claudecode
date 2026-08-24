@@ -40,7 +40,7 @@
     "lint": "eslint nodes package.json",
     "lintfix": "eslint nodes package.json --fix",
     "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes package.json",
-    "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/ is untracked and absent on this machine. See .specs/project/STATE.md (DEC-10) for where to recover it.' >&2; exit 1; }",
+    "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/n8n-up.sh is missing. It is versioned — restore it with: git checkout scripts/e2e' >&2; exit 1; }",
     "e2e:up": "npm run e2e:guard && bash scripts/e2e/n8n-up.sh",
     "e2e:run": "npm run e2e:guard && node scripts/e2e/run-cases.mjs",
     "e2e:verdict": "npm run e2e:guard && node scripts/e2e/verdict.mjs",
