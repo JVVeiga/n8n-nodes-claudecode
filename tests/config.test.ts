@@ -31,9 +31,9 @@ const problemOf = (over: Record<string, unknown> = {}, d = deps()) => {
 	return outcome.problem;
 };
 
-const applied = (over: Record<string, unknown> = {}): string[] => {
+const applied = (over: Record<string, unknown> = {}, d = deps()): string[] => {
 	const { ctx } = createFakeContext({ params: claudeCodeParams(over) });
-	const outcome = buildQueryOptions(readParams(ctx, 0), deps());
+	const outcome = buildQueryOptions(readParams(ctx, 0), d);
 	assert.ok('config' in outcome);
 	return outcome.config.applied;
 };
@@ -349,6 +349,8 @@ describe('buildQueryOptions — the applier table', () => {
 			'executablePath',
 			'projectPath',
 			'restrictTools',
+			// After restrictTools, so it amends a tool set that already exists on the options.
+			'stagedAttachments',
 			'allowedTools',
 			'disallowedTools',
 			'fallbackModel',
@@ -365,25 +367,30 @@ describe('buildQueryOptions — the applier table', () => {
 	});
 
 	it('reports every applier that fired on a fully-loaded config', () => {
-		const names = applied({
-			effort: 'ultracode',
-			operation: 'continue',
-			sessionId: 'abc',
-			projectPath: '/workspace',
-			allowedTools: ['Read'],
-			disallowedTools: ['Write'],
-			restrictTools: ['Bash'],
-			additionalOptions: {
-				permissionMode: 'plan',
-				allowPlanExecution: true,
-				systemPrompt: 'be terse',
-				pathToClaudeCodeExecutable: '/usr/bin/claude',
-				fallbackModel: 'haiku',
-				thinking: 'summarized',
-				maxThinkingTokens: 8000,
-				maxBudgetUsd: 3,
+		const names = applied(
+			{
+				effort: 'ultracode',
+				operation: 'continue',
+				sessionId: 'abc',
+				projectPath: '/workspace',
+				allowedTools: ['Read'],
+				disallowedTools: ['Write'],
+				restrictTools: ['Bash'],
+				additionalOptions: {
+					permissionMode: 'plan',
+					allowPlanExecution: true,
+					systemPrompt: 'be terse',
+					pathToClaudeCodeExecutable: '/usr/bin/claude',
+					fallbackModel: 'haiku',
+					thinking: 'summarized',
+					maxThinkingTokens: 8000,
+					maxBudgetUsd: 3,
+				},
 			},
-		});
+			// stagedAttachments is the one applier driven by a runtime fact rather than a
+			// parameter, so "fully loaded" has to include a staged directory.
+			deps({ stagedDir: '/tmp/n8n-claude-abc' }),
+		);
 		assert.deepEqual(names, APPLIER_NAMES);
 	});
 

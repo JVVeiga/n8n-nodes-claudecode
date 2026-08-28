@@ -72,6 +72,25 @@ export const claudeCodeDescription: INodeTypeDescription = {
 			hint: 'Use expressions like {{$json.prompt}} to use data from previous nodes',
 		},
 		{
+			displayName: 'Attach All Binaries',
+			name: 'attachAllBinaries',
+			type: 'boolean',
+			default: false,
+			description:
+				'Whether to send every binary property on the input item to Claude. Images, PDFs and small text files are attached directly to the request; anything larger or of a type that cannot be attached is written to a temporary directory Claude can read from. Turn this on when the incoming property names vary — a Monday item can arrive with data_0, data_1, data_2 and no fixed count.',
+		},
+		{
+			displayName: 'Binary Properties',
+			name: 'binaryProperties',
+			type: 'string',
+			default: '',
+			displayOptions: { show: { attachAllBinaries: [false] } },
+			placeholder: 'data, screenshot, export',
+			description:
+				'Comma-separated binary property names on the input item to send to Claude. Leave empty for a text-only request. A name that is not on the item fails that item, naming the property — a run that silently answers without the evidence is worse than one that stops.',
+			hint: 'Images, PDFs and small text files are attached directly; larger or unsupported types are staged to a temporary directory Claude reads from',
+		},
+		{
 			displayName: 'Session ID',
 			name: 'sessionId',
 			type: 'string',

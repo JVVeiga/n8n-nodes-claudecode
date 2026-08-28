@@ -23,6 +23,9 @@ export type ConfigDeps = {
 	onEffort: (level: string) => void;
 	/** Injected so config tests need no filesystem. */
 	pathExists?: (path: string) => boolean;
+	/** The temp directory holding staged attachments, when there were any. A runtime fact rather
+	 * than a parameter, which is why it arrives here alongside the AbortController. */
+	stagedDir?: string;
 };
 
 export type ConfigResult = {
@@ -147,6 +150,35 @@ const APPLIERS: Applier[] = [
 			if (tools.length === 0) return false;
 			options.tools = tools;
 			note('tools', tools);
+			return true;
+		},
+	},
+	{
+		// Files too large or of a type no content block can carry are written to a temp directory,
+		// which the CLI can only reach if it is named here.
+		//
+		// Placed after restrictTools so it amends a set that already exists on the options.
+		name: 'stagedAttachments',
+		apply: ({ options, params, deps, note }) => {
+			const dir = deps.stagedDir;
+			if (!dir) return false;
+			options.additionalDirectories = [dir];
+
+			// Restrict Built-in Tools is the real allowlist, and a restriction that omits Read makes
+			// staging fail silently: the run answers without ever having seen the file. Add Read
+			// rather than let that happen — the same reasoning as withOrchestration adding
+			// Workflow/Task under Ultracode. An empty restriction already has the full set.
+			if (params.restrictTools.length > 0 && !params.restrictTools.includes('Read')) {
+				// Read what restrictTools actually put there rather than params.restrictTools, so an
+				// Ultracode run keeps the Workflow/Task entries withOrchestration added. `tools` can
+				// also be a `{type:'preset'}` object per the SDK; the applier above never sets that,
+				// and the fallback covers it without asserting.
+				const current = Array.isArray(options.tools) ? options.tools : params.restrictTools;
+				options.tools = Array.from(new Set([...current, 'Read']));
+				note('readAddedForStaging', true);
+			}
+
+			note('stagedDir', dir);
 			return true;
 		},
 	},

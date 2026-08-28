@@ -61,6 +61,8 @@ describe('node description — top-level parameters', () => {
 	const EXPECTED = [
 		['operation', 'options', 'query'],
 		['prompt', 'string', ''],
+		['attachAllBinaries', 'boolean', false],
+		['binaryProperties', 'string', ''],
 		['sessionId', 'string', ''],
 		['model', 'options', 'sonnet'],
 		['effort', 'options', 'high'],
@@ -106,6 +108,9 @@ describe('node description — additionalOptions collection', () => {
 		'allowPlanExecution',
 		'includeTranscript',
 		'wrapUpGraceSeconds',
+		'inlineTextLimitKb',
+		'maxAttachmentMb',
+		'maxAttachmentCount',
 		'maxBudgetUsd',
 		'fallbackModel',
 		'thinking',

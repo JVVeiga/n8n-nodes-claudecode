@@ -5,6 +5,7 @@ import type {
 	SDKMessage,
 	SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { AttachmentSpec } from './attachments/types';
 import type { TerminationReason } from './timeout';
 
 /**
@@ -54,6 +55,9 @@ export type AdditionalOptions = {
 	thinking?: ThinkingSelection;
 	outputEnvelope?: OutputEnvelope;
 	wrapUpGraceSeconds?: number;
+	inlineTextLimitKb?: number;
+	maxAttachmentMb?: number;
+	maxAttachmentCount?: number;
 };
 
 /** Everything read off the node's parameters for one input item. The only thing produced by
@@ -71,6 +75,9 @@ export type ClaudeCodeParams = {
 	allowedTools: string[];
 	disallowedTools: string[];
 	restrictTools: string[];
+	/** Which binary properties to send and under what limits. Resolved in params.ts so every
+	 * consumer takes one plain value rather than five. */
+	attachments: AttachmentSpec;
 	additional: AdditionalOptions;
 	nodeVersion: number;
 	itemIndex: number;

@@ -1,5 +1,6 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import type { Problem } from '../shared/problem';
+import type { AttachmentSpec } from './attachments/types';
 import type {
 	AdditionalOptions,
 	ClaudeCodeParams,
@@ -21,6 +22,39 @@ import type {
  * typeVersion 1 predates the graceful stop, so it gets 0 and keeps hard-killing. */
 export const defaultGraceSeconds = (nodeVersion: number): number => (nodeVersion >= 1.1 ? 60 : 0);
 
+/** Defaults for the three attachment limits. Restated here rather than read from the schema
+ * because an unset collection field arrives as `undefined`, exactly like `wrapUpGraceSeconds`. */
+const ATTACHMENT_DEFAULTS = {
+	inlineTextLimitKb: 256,
+	maxAttachmentMb: 50,
+	maxAttachmentCount: 16,
+} as const;
+
+/** Split the Binary Properties field on commas and whitespace, dropping empties. */
+export const parseBinaryPropertyNames = (raw: string): string[] =>
+	raw
+		.split(/[\s,]+/)
+		.map((name) => name.trim())
+		.filter((name) => name !== '');
+
+function readAttachmentSpec(
+	ctx: IExecuteFunctions,
+	itemIndex: number,
+	additional: AdditionalOptions,
+): AttachmentSpec {
+	return {
+		all: ctx.getNodeParameter('attachAllBinaries', itemIndex, false) as boolean,
+		names: parseBinaryPropertyNames(
+			ctx.getNodeParameter('binaryProperties', itemIndex, '') as string,
+		),
+		// `??`, not `||`: 0 is a meaningful value for the text limit — it means "stage every text
+		// file" — and `||` would silently turn it back into 256.
+		inlineTextLimitKb: additional.inlineTextLimitKb ?? ATTACHMENT_DEFAULTS.inlineTextLimitKb,
+		maxAttachmentMb: additional.maxAttachmentMb ?? ATTACHMENT_DEFAULTS.maxAttachmentMb,
+		maxAttachmentCount: additional.maxAttachmentCount ?? ATTACHMENT_DEFAULTS.maxAttachmentCount,
+	};
+}
+
 export function readParams(ctx: IExecuteFunctions, itemIndex: number): ClaudeCodeParams {
 	const nodeVersion = ctx.getNode().typeVersion;
 	const additional = ctx.getNodeParameter('additionalOptions', itemIndex) as AdditionalOptions;
@@ -40,6 +74,9 @@ export function readParams(ctx: IExecuteFunctions, itemIndex: number): ClaudeCod
 		allowedTools: ctx.getNodeParameter('allowedTools', itemIndex, []) as string[],
 		disallowedTools: ctx.getNodeParameter('disallowedTools', itemIndex, []) as string[],
 		restrictTools: ctx.getNodeParameter('restrictTools', itemIndex, []) as string[],
+		// Read for every operation, like sessionId above and for the same reason: a params object
+		// whose shape depends on the operation makes every consumer know about the operation.
+		attachments: readAttachmentSpec(ctx, itemIndex, additional),
 		additional: {
 			...additional,
 			wrapUpGraceSeconds: additional.wrapUpGraceSeconds ?? defaultGraceSeconds(nodeVersion),
