@@ -45,7 +45,7 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 			],
 			default: 'auto',
 			description:
-				'n8n has no UI picker for a node version, and a node keeps the version it was created with — so an older node cannot reach the unified output shape by any other route than being deleted and re-added, which loses its configuration. Set this to Unified to opt in in place. Auto changes nothing.',
+				'Which output shape this node emits. A node keeps the typeVersion it was created with, and n8n offers no UI to change it — so an older node cannot otherwise reach the unified shape except by being deleted and re-added, which loses its configuration. Set this to Unified to opt in in place. Auto changes nothing.',
 		},
 		{
 			displayName: 'Debug Mode',

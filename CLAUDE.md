@@ -48,6 +48,11 @@ five manual steps above. Package contents are decided by `files` in package.json
 **The gate for any change**: `npm run lint && npm run build && npm test`. `npm run build` runs
 `format:check`, so an unformatted file fails it.
 
+Run it exactly like that. **Do not pipe the steps** — `npm run lint | tail -1` makes the exit code
+the pipe's, which is 0 even when eslint failed, so an `&&` chain sails past a red lint. Four commits
+shipped with a lint error that way. If you need to shorten the output, redirect and check `$?`:
+`npm run lint >/dev/null 2>&1; echo $?`.
+
 ### n8n Integration
 - Install locally: `npm link` then `n8n start` to test the node
 - The node appears in n8n UI under "Claude Code" category
