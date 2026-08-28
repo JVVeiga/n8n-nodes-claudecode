@@ -71,6 +71,13 @@ nodes/
     problem.ts                 a validation failure, returned rather than thrown
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
+    attachments/               n8n binary data -> content blocks, or files on disk
+      types.ts                 AttachmentSpec, Attachment, Route, AttachmentPlan
+      mime.ts                  the ENTIRE routing policy — which files inline, which stage
+      name.ts                  filename derivation, sanitizing, uniquifying
+      collect.ts               getBinaryDataBuffer + validation — the only impure reader
+      plan.ts                  Attachment[] -> ContentBlockParam[] + staging list (pure)
+      stage.ts                 the temp dir, and the cleanup the node must run
     description/               the declarative schema — pure data, no branching
       properties.ts            top-level parameters
       additionalOptions.ts     the Additional Options collection
@@ -104,6 +111,8 @@ nodes/
 | Add or change a node parameter | `description/properties.ts` or `description/additionalOptions.ts` |
 | Add a model | `description/models.ts` — both selectors generate from it |
 | Expose a new SDK option | one entry in the `APPLIERS` table in `config.ts` |
+| Support a new file type, or change a route | `attachments/mime.ts` — the tables are the policy |
+| Change what the model is told about staged files | `attachments/plan.ts` (`stagedHintBlock`) |
 | Change what a run reports | `diagnostics.ts` |
 | Change the output shape | `output/v12.ts` — **never** `output/legacy.ts` |
 | Change stop/timeout behaviour | `runner.ts` |
@@ -120,6 +129,18 @@ nodes/
   an error item or an exception. This is what keeps `execute()` free of nested try/catch.
 - **Interrupting is what makes the SDK account for a run.** `interrupt()` yields a result message
   with the real cost; a bare `abort()` yields nothing, which is why a killed run reports zeroes.
+- **A prompt turn can be content blocks, not only a string.** `SDKUserMessage.message` is the
+  Anthropic SDK's `MessageParam`, so `content` takes `ContentBlockParam[]` — an image, a PDF or a
+  document reaches the model directly, with no filesystem and no `Read` tool. Verified by the three
+  spikes in `.specs/features/attachments/spikes/` before any of it was built. This is the whole
+  reason the attachment feature is not a temp-directory-and-`--add-dir` copy of the alternatives.
+- **`diagnostics.attachments` is absent, not null, when there were no attachments.** `JSON.stringify`
+  drops an `undefined` field but a deep-equal sees an own property set to `undefined`, so the field is
+  added by a conditional spread. That is what keeps the 48 golden fixtures byte-identical and is why
+  attachments needed no new typeVersion.
+- **`attachments/collect.ts` is the only module that reads a buffer**, the same role `readUsage.ts`
+  plays for the Usage node. `mime.ts` and `plan.ts` never touch n8n or a disk, which is why the
+  routing policy and the exact blocks sent are unit-testable.
 - **Nodes cannot be constructor-injected.** n8n calls `execute.call(executionContext)`, so `this`
   is the context and instance fields are unreachable. Dependencies go through the exported
   `runItems(ctx, deps)` / `readUsageItems(ctx, deps)` — that is the seam tests use.
@@ -141,7 +162,7 @@ an existing version emits**; add a new one.
 ## Testing
 
 ```bash
-npm test                                    # 465 tests, node:test, no framework
+npm test                                    # 629 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -164,7 +185,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 23 named behaviours against real executions:
+with the node installed and asserts 28 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
@@ -176,6 +197,11 @@ so a macOS-host install fetches the darwin build and cannot run on linux. `e2e:r
 spend — the timeout cases run real agent turns, budget under US$1 for a full pass.
 
 `readUsage.ts` has no unit tests on purpose: it spawns a real CLI, and this suite covers it.
+
+The four attachment cases (case40-43) are the only checks that prove a file reaches the model at
+all — the unit tests prove which content blocks get built, not that the CLI and API accept them.
+case40 asks for the colour of a generated PNG and case42 asks for a value on the last row of a
+staged file, so neither can be answered without the bytes.
 
 ## Configuration Examples
 

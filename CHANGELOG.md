@@ -1,3 +1,47 @@
+## Unreleased
+
+### Attachments — send the files already on the item
+
+Binary data on the incoming n8n item can now go to Claude with the prompt: a Monday screenshot, a
+CSV export, an HTML capture, a PDF. Two new top-level parameters select what goes, and three in
+Additional Options bound it.
+
+| Parameter | Where | Default |
+|---|---|---|
+| **Attach All Binaries** | top level | `false` |
+| **Binary Properties** | top level, shown when the above is off | `''` |
+| **Inline Text Size Limit (KB)** | Additional Options | `256` |
+| **Max Attachment Size (MB)** | Additional Options | `50` |
+| **Max Attachment Count** | Additional Options | `16` |
+
+Files take one of two routes. Images (PNG/JPEG/GIF/WebP up to 5 MB), PDFs (up to 20 MB) and text
+under the inline limit are **attached to the request itself**, as content blocks — so vision works
+with no tool enabled and no filesystem involved. Anything larger, or of a type no block can carry
+(`.xlsx`, `.zip`, `.heic`), is **written to a temporary directory** exposed to the agent via
+`additionalDirectories`, and the prompt says what is there. That directory is removed when the item
+finishes — on success, on error, and on a timeout.
+
+A file that cannot be sent — a property that is not on the item, one over the size cap, or too many
+of them — fails that item with a message naming the property, rather than letting the run answer
+about evidence it never received. `Continue On Fail` still applies.
+
+When at least one attachment was sent, `diagnostics.attachments` reports the count, the total bytes,
+how each inlined file was sent, and the staged directory and its files.
+
+See [Attachments](README.md#attachments) for the routing table and the two things that will bite you.
+
+### No breaking changes, and no new node version
+
+- The five parameters are **additive and default to off**. A run with nothing attached makes no
+  filesystem call, builds no content blocks, and sends the prompt as the plain string it always did.
+- `diagnostics.attachments` is **absent** — not `null` — on a run with no attachments. All 48 golden
+  fixtures for typeVersions 1 and 1.1 are byte-identical and were not regenerated, so no existing
+  workflow's output moved. That is why this needed no typeVersion 1.3.
+- One thing to know if you changed **Permission Mode** away from the default: reading a *staged*
+  file is a `Read` call, and under `default` or `dontAsk` an unapproved call is denied. Add `Read` to
+  **Allowed Tools** if so. A tool *restriction* is handled automatically — when files are staged and
+  **Restrict Built-in Tools** is non-empty, `Read` is added to it.
+
 ## [0.12.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.11.0...v0.12.0) (2026-08-22)
 
 ### No breaking changes
