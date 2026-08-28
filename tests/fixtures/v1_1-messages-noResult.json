@@ -1,0 +1,66 @@
+[
+  {
+    "json": {
+      "messages": [
+        {
+          "type": "system",
+          "subtype": "init",
+          "model": "claude-sonnet-5",
+          "tools": [],
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "name": "Read",
+                "input": {}
+              }
+            ],
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "cache_read_input_tokens": 10
+            }
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "almost done"
+              }
+            ]
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        }
+      ],
+      "messageCount": 3,
+      "diagnostics": {
+        "requestedModel": "claude-sonnet-5",
+        "resolvedModel": "claude-sonnet-5",
+        "modelsUsed": [],
+        "fallbackModelRequested": null,
+        "requestedEffort": "high",
+        "effectiveEffort": "high",
+        "appliedEffort": null,
+        "permissionMode": "bypassPermissions",
+        "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+        "ultracodeRequested": false,
+        "workflowToolAvailable": false,
+        "workflowToolUses": 0,
+        "subagentToolUses": 0,
+        "thinkingRequested": "default",
+        "thinkingBlocks": 0
+      }
+    },
+    "pairedItem": {
+      "item": 0
+    }
+  }
+]

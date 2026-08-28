@@ -1,70 +1,86 @@
-# 🚀 Claude Code for n8n
+# Claude Code for n8n
 
-> **This is a fork** of [@johnlindquist/n8n-nodes-claudecode](https://github.com/johnlindquist/n8n-nodes-claudecode), which is itself a fork of [holt-web-ai/n8n-nodes-claudecode](https://github.com/holt-web-ai/n8n-nodes-claudecode). All credit for the original node goes to them.
->
-> It is published separately because it migrates to the Claude Agent SDK for Claude Code v2 and adds effort, thinking, Ultracode, tool restriction, a spend cap and run diagnostics. See [What this fork changes](#-what-this-fork-changes).
+Run the Claude Code agent as a step in an n8n workflow: give it a prompt and a project directory,
+and it reads, writes and runs things the way it does in a terminal — then hands the result to the
+next node.
 
-**Bring the power of Claude Code directly into your n8n automation workflows!**
-
-Imagine having an AI coding assistant that can analyze your codebase, fix bugs, write new features, manage databases, interact with APIs, and automate your entire development workflow - all within n8n. That's exactly what this node enables.
-
-The package installs two nodes: **Claude Code**, which runs the agent, and **Claude Code Usage**,
-which reads the account's remaining plan capacity and reset times — free, unless you opt into the
-one paid fallback it offers for credentials that cannot read the usage endpoint.
+The package installs two nodes. **Claude Code** runs the agent. **Claude Code Usage** reads how much
+of the account's plan is left and when each window resets, so a workflow can check capacity before
+it starts spending.
 
 [![n8n](https://img.shields.io/badge/n8n-community_node-orange.svg)](https://n8n.io/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Powered-blue.svg)](https://claude.ai/code)
 [![npm](https://img.shields.io/npm/v/@joaoveiga/n8n-nodes-claudecode.svg)](https://www.npmjs.com/package/@joaoveiga/n8n-nodes-claudecode)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
 
-## 🔀 What this fork changes
+Built on the Claude Agent SDK, for Claude Code v2. Requires Node 22+. Originally derived from the
+work of Adam Holt and John Lindquist — see [Credits](#credits).
 
-Everything below this section is the upstream node's documentation. This fork adds:
+## What it gives you
 
-- **Claude Code v2 support** — migrated from `@anthropic-ai/claude-code` (CLI-only since v2, so the original node no longer resolves) to `@anthropic-ai/claude-agent-sdk`. Requires Node 22+.
-- **Model, Effort and Thinking selectors** — Opus 5 / Sonnet 5 / Haiku 4.5 / Fable 5, effort from low to max, plus Ultracode (xHigh + the Workflow tool).
-- **Restrict Built-in Tools** — the control that actually bounds the tool set. Upstream's Allowed Tools maps to the SDK's auto-approve list and cannot restrict anything.
-- **Max Budget (USD)** — a hard spend cap. Max Turns and Timeout bound length, not cost.
-- **Diagnostics** — every run reports the resolved model, the effort actually applied, the models billed, the session id and whether Ultracode orchestration was available.
-- **Cancellation and failure handling** — stopping the n8n execution now stops the agent; failed runs report their real cost instead of `$0`; Text output no longer swallows errors into a green execution.
-- **Graceful timeouts** ([details](#-timeouts)) — a run that overruns its Timeout is interrupted rather than killed, so it reports the tokens, cost and session it actually used and hands over what it finished. Killing the process makes the SDK report none of that, which is why a timed-out run used to return only an error string. Failure items also reach the **error output branch** now. Both behaviours are gated behind node version 1.1, so existing nodes are untouched.
-- **Session ID** on Continue, so concurrent executions stop sharing one conversation.
-- **A second node, Claude Code Usage** ([details](#-usage--plan-limits)) — reads the logged-in
-  account and how much of its plan is left, including when each window resets. It is the data behind
-  the CLI's `/usage`, and it sends no prompt, so nothing is billed. Gate a workflow on remaining
-  capacity, wait for a reset, or alert before hitting the wall. A `CLAUDE_CODE_OAUTH_TOKEN` session —
-  the usual Docker setup — cannot read that endpoint at all, so the node offers an opt-in fallback
-  that reads the two main windows off inference response headers for about $0.001.
+**Control over what a run costs and how long it takes.** Effort from low to max, plus Ultracode
+(xHigh with dynamic workflow orchestration). A **Max Budget (USD)** hard cap, because Max Turns and
+Timeout bound how *long* a run goes, not what it *costs*. Model and fallback model, thinking depth,
+and a thinking display mode.
 
-## 🌟 What Can You Build?
+**Timeouts that still report what happened.** A run that overruns is interrupted rather than killed,
+so it reports the tokens, cost and session it actually used and hands over what it finished.
+Killing the process makes the SDK report none of that. See [Timeouts](#timeouts).
 
-### 🔧 **Automated Code Reviews**
-Create workflows that automatically review pull requests, suggest improvements, and even fix issues before merging.
+**A real bound on the tool set.** **Restrict Built-in Tools** is the allowlist that actually limits
+what the agent can reach. The SDK's own *Allowed Tools* is an auto-approve list — it pre-approves
+tools rather than restricting them, which is a distinction worth knowing before you rely on it.
+**Disallowed Tools** removes tools from the model's context entirely.
 
-### 🐛 **Intelligent Bug Fixing**
-Connect error monitoring tools to Claude Code - automatically diagnose and fix production issues in real-time.
+**Evidence of what ran.** Every run reports the model the CLI resolved to, the effort it actually
+applied after its own downgrades, which models were billed, the session id, and whether Ultracode
+orchestration was available. A failed run reports its real cost instead of `$0`.
 
-### 📊 **Database Management**
-Let Claude Code write complex SQL queries, optimize database schemas, and generate migration scripts based on your requirements.
+**Failures that behave like failures.** Stopping the n8n execution stops the agent, instead of
+leaving it running and spending with its output discarded. A failed run reaches the error output
+branch instead of hiding behind a green execution.
 
-### 🤖 **Self-Improving Workflows**
-Build n8n workflows that can modify and improve themselves using Claude Code's capabilities.
+**Plan capacity you can branch on.** The Usage node reads the same data behind the CLI's `/usage`
+and sends no prompt, so nothing is billed. Gate a batch on remaining capacity, wait for a reset, or
+alert before hitting the wall. A `CLAUDE_CODE_OAUTH_TOKEN` session — the usual Docker setup — cannot
+read that endpoint at all, so there is an opt-in fallback that reads the two main windows off
+inference response headers for about $0.001. See [Usage & Plan Limits](#usage--plan-limits).
 
-### 📝 **Documentation Generation**
-Automatically generate and update documentation for your entire codebase, APIs, or databases.
+**Sessions you can resume.** A **Session ID** on Continue, so concurrent executions stop sharing
+one conversation.
 
-### 🔄 **Code Migration**
-Automate the migration of legacy codebases to modern frameworks with intelligent refactoring.
+**One output envelope.** The three output formats share a shape; the format picks which optional
+sections you get. See [Output Formats](#output-formats).
 
-### 🎫 **Customer Support Automation**
-Transform support tickets into code fixes automatically:
-- Analyze customer bug reports and reproduce issues
-- Generate fixes for reported problems
-- Create test cases to prevent regression
-- Update documentation based on common questions
-- Auto-respond with workarounds while fixes are deployed
+## Contents
 
-## ⚡ Quick Start
+**Start here** — [Install](#install) · [Your First Workflow](#your-first-workflow) · [Templates](./workflow-templates/) · [What people build with it](#what-people-build-with-it)
+
+**Reference** — [Features](#features) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
+
+**Also** — [Notes worth knowing](#notes-worth-knowing) · [Development & Contributing](#development--contributing) · [Credits](#credits)
+
+## What people build with it
+
+Four templates ship in [`workflow-templates/`](./workflow-templates/), ready to import:
+
+| Template | Shape |
+|---|---|
+| [Automatic Bug Fixer](./workflow-templates/automatic-bug-fixer.json) | GitHub issue webhook → agent diagnoses and writes a fix → opens a PR |
+| [Documentation Generator](./workflow-templates/codebase-documentation-generator.json) | Schedule → agent reads the codebase → writes docs → commits |
+| [Customer Support Automation](./workflow-templates/customer-support-automation.json) | Support ticket → agent reproduces the issue → drafts a fix and a reply |
+| [Plan Limit Guard](./workflow-templates/plan-limit-guard.json) | Usage node checks remaining capacity → branches before the agent spends anything |
+
+Other things that fit the shape well: turning a Slack command into a pull request, triaging error
+logs into issues with a diagnosis attached, generating a migration script from a described schema
+change, or reviewing a diff against standards that live in the repo's own `CLAUDE.md`.
+
+**One caution, since the templates make it look easy.** These workflows let an agent write files and
+run commands. Keep a human review step before anything merges or deploys, keep **Max Budget (USD)**
+set, and use **Restrict Built-in Tools** to bound what a given workflow can reach. An agent that can
+open a PR is useful; one wired straight to production is a liability.
+
+## Install
 
 ### Prerequisites
 1. **Claude Code CLI** (required on your n8n server):
@@ -103,85 +119,46 @@ docker run -it --rm \
 
 📦 **NPM Package**: [@joaoveiga/n8n-nodes-claudecode](https://www.npmjs.com/package/@joaoveiga/n8n-nodes-claudecode)
 
-## 🎯 Real-World Use Cases
+## Features
 
-### 1. **GitHub Issue to Code**
-```
-Webhook (GitHub Issue) → Claude Code → Create PR → Notify Slack
-```
-Automatically implement features or fix bugs when issues are created.
+### Project path
 
-### 2. **Database Query Builder**
-```
-Form Trigger → Claude Code → Execute Query → Send Results
-```
-Natural language to SQL - let non-technical users query databases safely.
+Point the node at a directory and the agent works there: it reads the existing code, picks up the
+conventions already in it, and loads whatever `CLAUDE.md`, `.claude/settings.json` and `.mcp.json`
+that directory carries. This is the difference between an agent that guesses and one that follows
+the project it is editing.
 
-### 3. **Code Quality Guardian**
-```
-Git Push → Claude Code → Analyze Code → Block/Approve → Notify
-```
-Enforce coding standards and catch issues before they reach production.
+In Docker, the directory has to be mounted into the container — a path that exists only on the host
+fails with a `spawn ENOENT` the SDK misattributes to an architecture mismatch, so the node checks it
+up front and says so plainly instead.
 
-### 4. **API Integration Builder**
-```
-HTTP Request → Claude Code → Generate Integration → Test → Deploy
-```
-Automatically create integrations with third-party APIs.
+### Tools
 
-### 5. **Intelligent Log Analysis**
-```
-Error Logs → Claude Code → Diagnose → Create Fix → Open PR
-```
-Turn error logs into actionable fixes automatically.
+The agent gets the Claude Code tool set: reading, writing and editing files, running shell commands,
+searching a codebase, fetching web pages, managing todos, and launching subagents. Three selectors
+shape what a given workflow can use:
 
-### 6. **Customer Support to Code Fix**
-```
-Support Ticket → Claude Code → Reproduce Issue → Generate Fix → Test → Deploy → Auto-Reply
-```
-Transform customer complaints into deployed fixes in minutes, not days.
+| Selector | What it actually does |
+|---|---|
+| **Restrict Built-in Tools** | the real allowlist — an empty selection means the full set |
+| **Allowed Tools** | the SDK's auto-approve list; pre-approves, does not restrict |
+| **Disallowed Tools** | removes tools from the model's context entirely |
 
-## 🛠️ Powerful Features
+### Permission modes
 
-### **Project Context Awareness**
-Set a project path and Claude Code understands your entire codebase context:
-- Analyzes existing code patterns
-- Follows your coding standards
-- Understands your architecture
-- Respects your dependencies
+`bypassPermissions` is the default, because n8n runs headless and cannot answer a prompt — anything
+else would silently deny every tool that is not pre-approved. `plan` produces a plan and writes
+nothing; pair it with **Allow Plan Execution** if you want the agent to be able to leave plan mode
+and act, since without a permission callback registered plan mode has no exit.
 
-### **Plan Capacity Awareness**
-The **Claude Code Usage** node reads how much of the plan is left and when each window resets — so a
-workflow can throttle itself, wait for a reset, or downgrade the model instead of failing at the
-wall. Free on a stored login; about $0.001 per read on a token-only session, where the numbers have
-to come off inference headers. See [Usage & Plan Limits](#-usage--plan-limits).
+### MCP servers
 
-### **Tool Arsenal**
-Claude Code comes equipped with powerful tools:
-- 📁 **File Operations**: Read, write, edit multiple files
-- 💻 **Bash Commands**: Execute any command
-- 🔍 **Smart Search**: Find patterns across your codebase
-- 🌐 **Web Access**: Fetch documentation and resources
-- 📊 **Database Access**: Via MCP servers
-- 🔗 **API Integration**: GitHub, Slack, and more via MCP
+The node does not configure MCP itself. It loads whatever the target directory already declares in
+`.mcp.json` and `.claude/settings.json`, which means a workspace set up for interactive Claude Code
+works unchanged here — database access, GitHub, Slack, or anything custom. See
+[`examples/project-with-mcp/`](./examples/project-with-mcp/).
 
-### **Advanced SDK Options**
-Fine-tune Claude Code's behavior with these powerful options:
-- 🚫 **Disallowed Tools**: Explicitly block specific tools for security
-- 🔄 **Fallback Model**: Automatically switch models when primary is overloaded
-- 🧠 **Max Thinking Tokens**: Control Claude's internal reasoning depth
-- 🔐 **Permission Modes**: Choose from `default`, `acceptEdits`, `bypassPermissions`, or `plan`
-- ⏱️ **Timeout Wrap-Up Grace**: Stop a run that overruns *and still get its tokens, cost and a
-  handover summary — see [Timeouts](#-timeouts)
-
-### **Model Context Protocol (MCP)**
-Extend Claude Code with specialized capabilities:
-- PostgreSQL/MySQL database access
-- GitHub repository management
-- Slack workspace integration
-- Custom tool development
-
-## ⏱️ Timeouts
+## Timeouts
 
 A long agentic run that hits its **Timeout** used to report nothing but a string:
 
@@ -223,20 +200,28 @@ The grace is clamped to half the Timeout, so a large grace on a short Timeout ca
 > SDK spends about two seconds killing the subprocess. So a hard-aborted node returns up to ~3s after
 > its Timeout, while the graceful path returns *under* it. Claude stops working on time either way.
 
-### Node version 1 vs 1.1
+### Node versions
 
-The grace changes when a run stops, so it is gated behind the node version rather than switched on
-by a package upgrade:
+Anything that changes what a node *emits* is gated behind its version, never switched on by a
+package upgrade. **A node keeps the version it was created with**, so upgrading the package never
+changes an existing workflow. New nodes start on the current default, `1.2`.
 
-| | Version 1 (existing nodes) | Version 1.1 (new nodes) |
-|---|---|---|
-| Timeout Wrap-Up Grace default | `0` — process killed at the Timeout, as before | `60` |
-| Failure item shape | flat report at the top level | `{ error, message, details }` |
-| Failure items on the error output | stay on the main output | routed to the error output |
+| | 1 | 1.1 | 1.2 (default) |
+|---|---|---|---|
+| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` |
+| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 |
+| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 |
+| Output shape | one per format | one per format | [one envelope](#output-formats) |
 
-Existing nodes keep behaving exactly as they did. To opt in, either set the grace explicitly or add
-a fresh Claude Code node. Both versions get the diagnostics, the session ID and the self-describing
-error message.
+All three get the diagnostics, the session ID and the self-describing error message.
+
+To give an existing node the newer output shape without recreating it, set **Output Envelope** to
+`Unified` in Additional Options. It defaults to `Auto`, which routes by version and changes nothing.
+
+That option exists because n8n has no version picker: a node keeps the version it was created with,
+and there is no UI to move it. Without the override, adopting the new shape meant deleting the node
+and configuring a replacement from scratch. The override only works in that direction — a new node
+that wants the old shape is rare, and can pin `"typeVersion": 1.1` in the workflow JSON.
 
 ### Reading the timeout data in the next node
 
@@ -305,7 +290,52 @@ An **Error Workflow** gets more than the panel does. The `Error Trigger` receive
 So an alerting workflow can report what a timed-out run cost without any extra wiring. The message
 still carries the headline numbers inline, because that is the line a human reads in a Slack alert.
 
-## 📊 Usage & Plan Limits
+## Output Formats
+The Claude Code node offers three (the Usage node has one fixed shape — see
+[Usage & Plan Limits](#usage--plan-limits)):
+- **Structured**: everything — the answer, the metrics, a run summary, the transcript
+- **Messages**: the transcript, for debugging
+- **Text**: just the answer and the metrics, for chaining
+
+Since **node version 1.2** all three share one envelope, and Output Format selects which optional
+sections come with it:
+
+```javascript
+{
+  result: 'pong',              // the answer, whatever it took to recover it
+  success: true,               // only an explicit success counts
+  errorText: '',               // separate from result, so a partial answer is distinguishable
+  metrics: {
+    duration_ms: 4821,
+    num_turns: 2,
+    total_cost_usd: 0.0412,    // null when the run produced no result — never a fabricated 0
+    usage: { /* … */ },
+    modelUsage: { /* per model */ },
+    session_id: '1e76098f-…',  // feed into Session ID to resume
+  },
+  diagnostics: { /* resolved model, applied effort, whether Ultracode fired */ },
+  messages: [ /* messages + structured only, and only with Include Raw Transcript on */ ],
+  summary: { /* structured only */ },
+}
+```
+
+**Existing workflows are untouched.** A node keeps the typeVersion it was created with, so nodes
+built before 1.2 keep emitting exactly what they always did — a flat `duration_ms` and
+`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. Only a
+newly added node starts on 1.2. To move an old one, delete and re-add it.
+
+What 1.2 changes, for anyone porting a workflow across:
+
+| | 1 / 1.1 | 1.2 |
+|---|---|---|
+| where the metrics live | flat on Text, nested on Structured, absent on Messages | always `metrics` |
+| an unknown cost | `0` on Text | `null` |
+| `messageCount` | on Messages only | dropped — use `messages.length` |
+| error text | folded into `result` with a `[PARTIAL - …]` prefix | `result` plus a separate `errorText` |
+| `summary.toolUseCount` | counts a tool only if it opened the turn | counts every tool use |
+| metrics on a graceful timeout | the interrupt's per-turn numbers | the cumulative ones |
+
+## Usage & Plan Limits
 
 The package ships a second node, **Claude Code Usage**, for the question the query node cannot
 answer: how much of the plan is left, and when it comes back. It is the data behind the CLI's
@@ -460,7 +490,7 @@ outcome when n8n runs in Docker: the container has its own `HOME`, so `~/.claude
 into it. With **Error If Limits Unavailable** on, the node names this case in the error and tells you
 to run `claude login` as the user n8n runs as.
 
-## 📋 Configuration Examples
+## Configuration Examples
 
 ### Simple Code Analysis
 ```javascript
@@ -526,82 +556,42 @@ With MCP configuration (`.mcp.json`):
 }
 ```
 
-## 🔄 Workflow Patterns
+## Your First Workflow
 
-### Pattern 1: Continuous Code Improvement
-```
-Schedule Trigger (Daily)
-  ↓
-Claude Code (Analyze codebase for improvements)
-  ↓
-Create GitHub Issues
-  ↓
-Assign to Team
-```
+First, check the CLI is installed and authenticated on the machine n8n runs on — the node uses that
+login, and there is no credential to configure in n8n:
 
-### Pattern 2: Natural Language to Code
-```
-Slack Command
-  ↓
-Claude Code (Generate code from description)
-  ↓
-Create Pull Request
-  ↓
-Run Tests
-  ↓
-Notify Results
-```
-
-### Pattern 3: Intelligent Monitoring
-```
-Error Webhook
-  ↓
-Claude Code (Diagnose issue)
-  ↓
-If (Can fix automatically)
-  ├─ Yes: Create Fix PR
-  └─ No: Create Detailed Issue
-```
-
-## 🚦 Getting Started
-
-### 1. **Verify Prerequisites**
-Make sure Claude Code CLI is installed and authenticated on your n8n server:
 ```bash
-claude --version  # Should show the version
+claude --version
 ```
 
-If not installed, see the [Quick Start](#-quick-start) section above.
+Then:
 
-### 2. **Create Your First Workflow**
-1. In n8n, create a new workflow
-2. Add a **Manual Trigger** node (for testing)
-3. Add the **Claude Code** node
-4. Configure:
-   - **Operation**: Query
-   - **Prompt**: "Analyze the code in this directory and suggest improvements"
-   - **Project Path**: `/path/to/your/project`
-   - **Model**: Sonnet (faster) or Opus (more powerful)
-5. Click **Execute Workflow**
-6. Watch Claude Code analyze your project!
+1. New workflow → add a **Manual Trigger**.
+2. Add the **Claude Code** node.
+3. Set **Prompt** to something read-only for a first run — `List the files in this directory and
+   describe what the project does` — and **Project Path** to a real directory. In Docker, one that
+   is mounted into the container.
+4. Leave **Model** on Sonnet and **Output Format** on Structured. Execute.
 
-### 3. **Explore Advanced Features**
-- Check out the [workflow templates](./workflow-templates/) for ready-to-use examples, including the
-  [Plan Limit Guard](./workflow-templates/plan-limit-guard.json) that gates agent work on remaining
-  plan capacity
-- See the [examples directory](./examples/) for configuration options
-- Read about [MCP servers](#model-context-protocol-mcp) for database and API access
+The item that comes back carries the answer in `result`, what the run cost in `metrics`, and what
+actually ran in `diagnostics` — including the model the CLI resolved to and the effort it applied,
+which are not always what you asked for.
 
-## 💡 Pro Tips
+Two things worth doing before pointing it at anything that matters: set **Max Budget (USD)** in
+Additional Options, and turn on **Debug Mode** for the first few runs so the n8n log shows the
+message stream.
 
-### 🎯 **Use Project Paths**
-Always set a project path for better context and results:
-```
-/home/user/projects/my-app
-```
+From there: the [templates](./workflow-templates/) are working workflows rather than snippets,
+[`examples/`](./examples/) covers project configuration, and [MCP servers](#mcp-servers) add
+database and API access.
 
-### 🔒 **Configure Permissions**
-Control what Claude Code can do in `.claude/settings.json`:
+## Notes worth knowing
+
+### Bound what a workflow can do, in the project itself
+
+`.claude/settings.json` in the target directory applies here exactly as it does in a terminal:
+
 ```json
 {
   "permissions": {
@@ -611,37 +601,28 @@ Control what Claude Code can do in `.claude/settings.json`:
 }
 ```
 
-### 🔗 **Chain Operations**
-Use "Continue" operation to build complex multi-step workflows while maintaining context.
+This travels with the repository rather than the workflow, which is usually where you want it — the
+constraint belongs to the codebase, not to whoever wired the node.
 
-### 📊 **Output Formats**
-The Claude Code node offers three (the Usage node has one fixed shape — see
-[Usage & Plan Limits](#-usage--plan-limits)):
-- **Structured**: Full details with metrics
-- **Messages**: For debugging
-- **Text**: Simple results for chaining
+### Check capacity before a fan-out
 
-### ⛽ **Check Capacity Before a Fan-Out**
-Put a **Claude Code Usage** node ahead of a batch and branch on `maxUtilization`. Ten Claude Code
-nodes that all fail at 100% cost more than one read that says "not now" — and
-`nextResetInSeconds` feeds a Wait node directly.
+Put a **Claude Code Usage** node ahead of a batch and branch on `maxUtilization`. Ten agent runs
+that all fail at 100% cost more than one read that says "not now", and `nextResetInSeconds` feeds a
+Wait node directly.
 
-## 🤝 Community & Support
+### Continue shares a conversation unless you say otherwise
 
-- 📖 [Documentation](https://github.com/JVVeiga/n8n-nodes-claudecode)
-- 🐛 [Report Issues](https://github.com/JVVeiga/n8n-nodes-claudecode/issues) — for this fork. Please do not open issues about it on the upstream repositories.
-- 🌟 [Star on GitHub](https://github.com/JVVeiga/n8n-nodes-claudecode)
-- ⬆️ [Upstream project](https://github.com/johnlindquist/n8n-nodes-claudecode) by John Lindquist
+**Continue** with no **Session ID** resolves "the most recent conversation in this directory", which
+every execution on the instance shares — so two concurrent runs collide. Pass the `sessionId` from a
+previous run's diagnostics to resume a specific one.
 
-## 📈 What's Next?
+## Support
 
-We're constantly improving! Upcoming features:
-- Visual workflow builder for Claude Code operations
-- Pre-built workflow templates
-- Enhanced debugging tools
-- More MCP server integrations
+- [Issues](https://github.com/JVVeiga/n8n-nodes-claudecode/issues) — for this package. The earlier
+  projects it derives from are separate; please do not file issues about this one there.
+- [Repository](https://github.com/JVVeiga/n8n-nodes-claudecode)
 
-## 🔄 Development & Contributing
+## Development & Contributing
 
 ### Commit Conventions
 
@@ -655,6 +636,30 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 Use `npm run commit` for an interactive commit message builder.
 
+### Tests
+
+```bash
+npm test    # 465 tests — node:test, no framework, no extra dependencies
+```
+
+The gate for any change is `npm run lint && npm run build && npm test`.
+
+Two things worth knowing before you touch the node:
+
+**`tests/fixtures/` holds 48 golden fixtures** — byte-for-byte recordings of what node versions 1
+and 1.1 emit, across 8 message streams and 3 output formats. If they fail, behaviour moved, and
+that is the point: those versions are what every existing workflow reads. Regenerate only
+deliberately with `UPDATE_GOLDEN=1 npm test`, read the diff, and say in the commit message which
+fixture moved and why. Fixes to old behaviour belong in a new node version, not in the old one.
+
+**`nodes/ClaudeCode/output/legacy.ts` is frozen.** It preserves several quirks on purpose, each
+marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
+`v12.ts`.
+
+There is also a Docker suite that runs real n8n with the node installed and asserts 23 named
+behaviours against real executions. It lives in `scripts/e2e/` and is untracked — a working
+instrument rather than a deliverable. `CLAUDE.md` has the details.
+
 ### Release Process
 
 Releases are published manually. There is no CI — validate locally first:
@@ -662,6 +667,7 @@ Releases are published manually. There is no CI — validate locally first:
 ```bash
 npm run lint
 npm run build
+npm test
 npm publish --dry-run        # check the file list and version
 ```
 
@@ -675,18 +681,22 @@ git push && git push --tags
 
 `npm version` writes `package.json` and creates the matching git tag.
 
-## 📄 License
+## Credits
 
-MIT - Build amazing things!
+This package builds on earlier work, and the lineage is worth stating plainly:
 
----
+1. **[Adam Holt](https://github.com/holt-web-ai)** created the original n8n Claude Code node —
+   [holt-web-ai/n8n-nodes-claudecode](https://github.com/holt-web-ai/n8n-nodes-claudecode).
+2. **[John Lindquist](https://github.com/johnlindquist)** forked and maintained it —
+   [johnlindquist/n8n-nodes-claudecode](https://github.com/johnlindquist/n8n-nodes-claudecode).
+   This package's Claude Agent SDK migration started from his version.
+3. This package is maintained by **[João Veiga](https://github.com/JVVeiga)** —
+   [JVVeiga/n8n-nodes-claudecode](https://github.com/JVVeiga/n8n-nodes-claudecode). It has since
+   diverged: its own architecture, versioning and release line.
 
-**Ready to revolutionize your development workflow?** Install Claude Code for n8n today and join the future of automated software development!
+The idea, the original node structure, and the n8n integration groundwork are theirs. Thanks to both.
 
-### Lineage
+## License
 
-1. Originally created by [Adam Holt](https://github.com/holt-web-ai) — [holt-web-ai/n8n-nodes-claudecode](https://github.com/holt-web-ai/n8n-nodes-claudecode)
-2. Forked and maintained by [John Lindquist](https://github.com/johnlindquist) — [johnlindquist/n8n-nodes-claudecode](https://github.com/johnlindquist/n8n-nodes-claudecode)
-3. This fork, maintained by [João Veiga](https://github.com/JVVeiga) — [JVVeiga/n8n-nodes-claudecode](https://github.com/JVVeiga/n8n-nodes-claudecode)
-
-MIT throughout. The original copyright notice is kept intact in [LICENSE.md](LICENSE.md).
+MIT, throughout the lineage. The original copyright notice is kept intact in
+[LICENSE.md](LICENSE.md).

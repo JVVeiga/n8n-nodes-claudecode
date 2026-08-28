@@ -39,7 +39,7 @@
       "id": "claude-analyzer",
       "name": "Analyze & Fix Bug",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
         450,
         300
@@ -72,7 +72,7 @@
         "owner": "={{ $json.body.repository.owner.login }}",
         "repository": "={{ $json.body.repository.name }}",
         "issueNumber": "={{ $json.body.issue.number }}",
-        "body": "=🤖 **Claude Code Analysis Complete**\\n\\n{{ $node['Analyze & Fix Bug'].json.result }}\\n\\n---\\n*Automated fix has been pushed to the repository. Please review the changes.*"
+        "body": "=\ud83e\udd16 **Claude Code Analysis Complete**\\n\\n{{ $node['Analyze & Fix Bug'].json.result }}\\n\\n---\\n*Automated fix has been pushed to the repository. Please review the changes.*"
       },
       "id": "comment-issue",
       "name": "Comment on Issue",

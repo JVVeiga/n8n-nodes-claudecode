@@ -1,4 +1,5 @@
 import type { ModelUsage, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { contentOf, isAssistant, isInit, isResult } from '../shared/sdkMessage';
 
 /**
  * Pure helpers for reporting what a stopped run actually did. They encode n8n's and the SDK's
@@ -42,23 +43,8 @@ export type RunMetrics = {
 	resultTextSource: ResultTextSource;
 };
 
-type ResultMessage = Extract<SDKMessage, { type: 'result' }>;
-type AssistantMessage = Extract<SDKMessage, { type: 'assistant' }>;
-type InitMessage = Extract<SDKMessage, { type: 'system'; subtype: 'init' }>;
-
-const isResult = (m: SDKMessage): m is ResultMessage => m.type === 'result';
-const isAssistant = (m: SDKMessage): m is AssistantMessage => m.type === 'assistant';
-const isInit = (m: SDKMessage): m is InitMessage => m.type === 'system' && m.subtype === 'init';
-
 const last = <T>(items: T[]): T | undefined =>
 	items.length > 0 ? items[items.length - 1] : undefined;
-
-type ContentBlock = { type?: string; name?: string; text?: string };
-
-const contentOf = (m: AssistantMessage): ContentBlock[] => {
-	const content = m.message?.content;
-	return Array.isArray(content) ? (content as ContentBlock[]) : [];
-};
 
 /**
  * Reads spend and progress from the message stream. A graceful timeout emits TWO result messages,

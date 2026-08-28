@@ -1,0 +1,163 @@
+[
+  {
+    "json": {
+      "messages": [
+        {
+          "type": "system",
+          "subtype": "init",
+          "model": "claude-sonnet-5",
+          "tools": [
+            "Bash",
+            "Workflow",
+            "Task"
+          ],
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "considering the options"
+              }
+            ]
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "name": "Workflow",
+                "input": {}
+              }
+            ],
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "cache_read_input_tokens": 10
+            }
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "name": "Task",
+                "input": {}
+              }
+            ],
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "cache_read_input_tokens": 10
+            }
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "orchestration complete"
+              }
+            ]
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        {
+          "type": "result",
+          "subtype": "success",
+          "num_turns": 2,
+          "total_cost_usd": 0.0412,
+          "duration_ms": 4821,
+          "usage": {
+            "input_tokens": 12,
+            "output_tokens": 47
+          },
+          "modelUsage": {
+            "claude-sonnet-5": {
+              "inputTokens": 4,
+              "outputTokens": 47,
+              "cacheReadInputTokens": 65361,
+              "cacheCreationInputTokens": 23578,
+              "webSearchRequests": 0,
+              "costUSD": 0.0412,
+              "contextWindow": 1000000,
+              "maxOutputTokens": 64000
+            }
+          },
+          "stop_reason": "end_turn",
+          "terminal_reason": "completed",
+          "is_error": false,
+          "result": "pong",
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        }
+      ],
+      "summary": {
+        "userMessageCount": 0,
+        "assistantMessageCount": 4,
+        "toolUseCount": 2,
+        "hasResult": true,
+        "toolsAvailable": [
+          "Bash",
+          "Workflow",
+          "Task"
+        ]
+      },
+      "result": "pong",
+      "metrics": {
+        "duration_ms": 4821,
+        "num_turns": 2,
+        "total_cost_usd": 0.0412,
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 47
+        },
+        "modelUsage": {
+          "claude-sonnet-5": {
+            "inputTokens": 4,
+            "outputTokens": 47,
+            "cacheReadInputTokens": 65361,
+            "cacheCreationInputTokens": 23578,
+            "webSearchRequests": 0,
+            "costUSD": 0.0412,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000
+          }
+        }
+      },
+      "success": true,
+      "diagnostics": {
+        "requestedModel": "claude-sonnet-5",
+        "resolvedModel": "claude-sonnet-5",
+        "modelsUsed": [
+          "claude-sonnet-5"
+        ],
+        "fallbackModelRequested": null,
+        "requestedEffort": "high",
+        "effectiveEffort": "high",
+        "appliedEffort": null,
+        "permissionMode": "bypassPermissions",
+        "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+        "ultracodeRequested": false,
+        "workflowToolAvailable": true,
+        "workflowToolUses": 1,
+        "subagentToolUses": 1,
+        "thinkingRequested": "default",
+        "thinkingBlocks": 1
+      }
+    },
+    "pairedItem": {
+      "item": 0
+    }
+  }
+]

@@ -44,7 +44,7 @@
       "id": "analyze-and-fix",
       "name": "Analyze & Fix Issue",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
         450,
         300
@@ -67,7 +67,7 @@
       "id": "run-tests",
       "name": "Run Tests",
       "type": "@joaoveiga/n8n-nodes-claudecode.claudeCode",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
         650,
         300
@@ -100,7 +100,7 @@
         "owner": "your-org",
         "repository": "your-repo",
         "title": "=fix: Customer issue - {{ $node['Support Ticket Webhook'].json.body.title }}",
-        "body": "=## Customer Issue Fix\\n\\n**Ticket ID:** {{ $node['Support Ticket Webhook'].json.body.ticket_id }}\\n\\n**Problem:** {{ $node['Support Ticket Webhook'].json.body.title }}\\n\\n**Root Cause:**\\n{{ $node['Analyze & Fix Issue'].json.summary.root_cause }}\\n\\n**Solution:**\\n{{ $node['Analyze & Fix Issue'].json.summary.solution }}\\n\\n**Tests:** All tests passing ✅\\n\\n---\\n*This fix was automatically generated and tested by Claude Code*",
+        "body": "=## Customer Issue Fix\\n\\n**Ticket ID:** {{ $node['Support Ticket Webhook'].json.body.ticket_id }}\\n\\n**Problem:** {{ $node['Support Ticket Webhook'].json.body.title }}\\n\\n**Root Cause:**\\n{{ $node['Analyze & Fix Issue'].json.summary.root_cause }}\\n\\n**Solution:**\\n{{ $node['Analyze & Fix Issue'].json.summary.solution }}\\n\\n**Tests:** All tests passing \u2705\\n\\n---\\n*This fix was automatically generated and tested by Claude Code*",
         "head": "=fix/ticket-{{ $node['Support Ticket Webhook'].json.body.ticket_id }}",
         "base": "main"
       },
@@ -157,7 +157,7 @@
     {
       "parameters": {
         "channel": "#engineering-alerts",
-        "text": "=🚨 Customer Issue Auto-Fixed\\n\\n*Ticket:* {{ $node['Support Ticket Webhook'].json.body.title }}\\n*Customer:* {{ $node['Support Ticket Webhook'].json.body.customer_name }}\\n*Status:* Fix generated and tested\\n*PR:* {{ $node['Create Pull Request'].json.html_url }}\\n\\n*Action Required:* Please review and merge the PR",
+        "text": "=\ud83d\udea8 Customer Issue Auto-Fixed\\n\\n*Ticket:* {{ $node['Support Ticket Webhook'].json.body.title }}\\n*Customer:* {{ $node['Support Ticket Webhook'].json.body.customer_name }}\\n*Status:* Fix generated and tested\\n*PR:* {{ $node['Create Pull Request'].json.html_url }}\\n\\n*Action Required:* Please review and merge the PR",
         "authentication": "webhook"
       },
       "id": "notify-team",

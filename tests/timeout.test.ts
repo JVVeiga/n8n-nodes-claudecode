@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import {
 	buildTimeoutPayload,
 	collectRunMetrics,
@@ -11,89 +10,16 @@ import {
 	type RunMetrics,
 	type TimeoutPayloadInput,
 } from '../nodes/ClaudeCode/timeout';
-
-const SESSION = '1e76098f-2bf5-424d-9694-d1feab1cfc12';
-
-/** SDK message types carry many required fields that are irrelevant here. Fixtures stay readable
- * by asserting the shape rather than spelling out every field. */
-const msg = (shape: object): SDKMessage => shape as unknown as SDKMessage;
-
-const init = (sessionId = SESSION) =>
-	msg({
-		type: 'system',
-		subtype: 'init',
-		model: 'claude-sonnet-5',
-		tools: [],
-		session_id: sessionId,
-	});
-
-const assistantText = (text: string) =>
-	msg({ type: 'assistant', message: { content: [{ type: 'text', text }] }, session_id: SESSION });
-
-const assistantTool = (name: string, usageOutputTokens = 3) =>
-	msg({
-		type: 'assistant',
-		message: {
-			content: [{ type: 'tool_use', name, input: {} }],
-			// Placeholder values — the real SDK reports these per message and they do NOT add up to
-			// the session total. Present here specifically so a test can prove we ignore them.
-			usage: { input_tokens: 2, output_tokens: usageOutputTokens, cache_read_input_tokens: 10 },
-		},
-		session_id: SESSION,
-	});
-
-const model = (over: Partial<Record<string, number>> = {}) => ({
-	inputTokens: 4,
-	outputTokens: 486,
-	cacheReadInputTokens: 65361,
-	cacheCreationInputTokens: 23578,
-	webSearchRequests: 0,
-	costUSD: 0.16837829999999998,
-	contextWindow: 1000000,
-	maxOutputTokens: 64000,
-	...over,
-});
-
-/** The interrupt's own result, values taken from a real run. Per-turn counts, no text. */
-const interruptResult = msg({
-	type: 'result',
-	subtype: 'error_during_execution',
-	num_turns: 5,
-	total_cost_usd: 0.16837829999999998,
-	usage: { input_tokens: 4, output_tokens: 486 },
-	modelUsage: { 'claude-sonnet-5': model() },
-	stop_reason: 'tool_use',
-	terminal_reason: 'aborted_tools',
-	is_error: true,
-	errors: ['[ede_diagnostic] result_type=user'],
-	session_id: SESSION,
-});
-
-const WRAP_UP_TEXT =
-	'- Read `claudecode.svg`.\n- Left: describe `ClaudeCode.node.ts`.\n- Next: read it.';
-
-/** The wrap-up turn's result. Note num_turns restarts at 1 while modelUsage is cumulative. */
-const wrapUpResult = msg({
-	type: 'result',
-	subtype: 'success',
-	num_turns: 1,
-	total_cost_usd: 0.21266249999999998,
-	usage: { input_tokens: 2, output_tokens: 133 },
-	modelUsage: {
-		'claude-sonnet-5': model({
-			inputTokens: 6,
-			outputTokens: 619,
-			cacheReadInputTokens: 110085,
-			cacheCreationInputTokens: 28389,
-			costUSD: 0.21266249999999998,
-		}),
-	},
-	stop_reason: 'end_turn',
-	terminal_reason: 'completed',
-	is_error: false,
-	result: WRAP_UP_TEXT,
-	session_id: SESSION,
-});
+import {
+	assistantText,
+	assistantTool,
+	init,
+	interruptResult,
+	msg,
+	SESSION,
+	WRAP_UP_TEXT,
+	wrapUpResult,
+} from './helpers/sdkMessages';
 
 const payloadInput = (metrics: RunMetrics, over: Partial<TimeoutPayloadInput> = {}) =>
 	({
@@ -179,7 +105,7 @@ describe('collectRunMetrics — hard abort (no result message)', () => {
 	});
 
 	it('falls back to the init message for the session id', () => {
-		const metrics = collectRunMetrics([init('abc-123'), assistantTool('Read')]);
+		const metrics = collectRunMetrics([init({ sessionId: 'abc-123' }), assistantTool('Read')]);
 
 		assert.equal(metrics.sessionId, 'abc-123');
 	});

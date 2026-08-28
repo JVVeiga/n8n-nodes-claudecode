@@ -29,14 +29,29 @@ there are no GitHub Actions workflows in this repository.
 ### Interactive Commits
 Use `npm run commit` to use commitizen for guided commit creation.
 
+### What is NOT here
+No CI, no GitHub Actions, no semantic-release. The `@semantic-release/*` packages were in
+devDependencies with no config and no workflow to run them; they were removed. Publishing is the
+five manual steps above. Package contents are decided by `files` in package.json — there is no
+`.npmignore` (it was a no-op next to `files`, and its stale entries gave false confidence).
+
 ## Common Commands
 
 ### Development
-- `npm run dev` - Run TypeScript compiler in watch mode for development
-- `npm run build` - Build the project (clean dist, compile TypeScript, copy icons)
-- `npm run format` - Format code using Prettier
+- `npm test` - Compile and run the test suite (see [Testing](#testing))
+- `npm run build` - Build the project (format check, clean dist, compile, copy icons)
 - `npm run lint` - Run ESLint to check code quality
 - `npm run lintfix` - Auto-fix linting issues where possible
+- `npm run format` - Format code using Prettier
+- `npm run dev` - Run TypeScript compiler in watch mode
+
+**The gate for any change**: `npm run lint && npm run build && npm test`. `npm run build` runs
+`format:check`, so an unformatted file fails it.
+
+Run it exactly like that. **Do not pipe the steps** — `npm run lint | tail -1` makes the exit code
+the pipe's, which is 0 even when eslint failed, so an `&&` chain sails past a red lint. Four commits
+shipped with a lint error that way. If you need to shorten the output, redirect and check `$?`:
+`npm run lint >/dev/null 2>&1; echo $?`.
 
 ### n8n Integration
 - Install locally: `npm link` then `n8n start` to test the node
@@ -45,59 +60,122 @@ Use `npm run commit` to use commitizen for guided commit creation.
 
 ## Architecture Overview
 
-This is an n8n community node that integrates Claude Code SDK into n8n workflows. The architecture consists of:
+Two n8n nodes over the Claude Agent SDK. Both are thin shells; the work is in named modules.
 
-1. **Main Node Implementation** (`nodes/ClaudeCode/ClaudeCode.node.ts`)
-   - Implements `INodeType` interface from n8n
-   - Provides Query and Continue operations
-   - Handles Claude Code SDK initialization and message processing
-   - Manages tool availability and project path configuration
+```
+nodes/
+  shared/                      used by both nodes
+    projectPath.ts             the cwd check, plus its "mount it in Docker" description
+    debug.ts                   one debug gate — no `if (debug)` blocks in business logic
+    sdkMessage.ts              narrowing helpers over SDKMessage; the only casts live here
+    problem.ts                 a validation failure, returned rather than thrown
+  ClaudeCode/
+    ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
+    description/               the declarative schema — pure data, no branching
+      properties.ts            top-level parameters
+      additionalOptions.ts     the Additional Options collection
+      models.ts                MODELS — the ONE model list, feeding both selectors
+      toolOptions.ts           BUILT_IN_TOOL_OPTIONS, feeding all three tool selectors
+    types.ts                   ClaudeCodeParams, RunOutcome, and SdkOptions re-exported
+    params.ts                  readParams — the ONLY place that calls getNodeParameter
+    config.ts                  parameters -> SDK options, as an ordered applier table
+    runner.ts                  runs the query, owns both timers, reports timeouts
+    messageLog.ts              per-message debug logging
+    diagnostics.ts             evidence of what actually ran
+    output/
+      resultText.ts            "what does this run say" — the six-rung fallback ladder
+      legacy.ts                FROZEN typeVersion 1 / 1.1 shapes
+      v12.ts                   the 1.2 unified envelope
+      index.ts                 buildOutputItem — routes by typeVersion
+    errors.ts                  the four failure paths, as data
+    timeout.ts                 run metrics, grace window, timeout payload/messages
+    promptStream.ts            the prompt as an AsyncIterable
+  ClaudeCodeUsage/
+    ClaudeCodeUsage.node.ts    the class + readUsageItems(ctx, deps)
+    description.ts             its schema
+    readUsage.ts               spawns the CLI and reads usage (the only impure module)
+    usage.ts                   window/account normalisation
+```
 
-2. **Tool System**
-   - Dynamic tool enabling/disabling based on user configuration
-   - Supports: Bash, Edit/MultiEdit, Read/Write, Web operations, Todo management
-   - MCP servers supported via Claude's native configuration system (.claude/settings.local.json)
+### Where to make a change
 
-3. **Output Handling**
-   - Multiple output formats: structured JSON, messages array, or plain text
-   - Streaming support with abort signal handling
-   - Debug mode for troubleshooting
+| Task | File |
+|---|---|
+| Add or change a node parameter | `description/properties.ts` or `description/additionalOptions.ts` |
+| Add a model | `description/models.ts` — both selectors generate from it |
+| Expose a new SDK option | one entry in the `APPLIERS` table in `config.ts` |
+| Change what a run reports | `diagnostics.ts` |
+| Change the output shape | `output/v12.ts` — **never** `output/legacy.ts` |
+| Change stop/timeout behaviour | `runner.ts` |
+| Change a failure item | `errors.ts` |
 
-4. **Project Path Support** (v0.2.0+)
-   - Configure working directory via `projectPath` parameter
-   - Allows Claude Code to run in specific project directories
-   - Enables access to code repositories without changing n8n's working directory
+### Rules that are not obvious
 
-## Key Development Patterns
+- **`params.ts` is the only place that reads node parameters.** Everything downstream takes plain
+  data, which is why it is all unit-testable.
+- **`output/legacy.ts` is frozen.** It is what typeVersions 1 and 1.1 emit, held byte-for-byte by
+  48 golden fixtures. It preserves several quirks deliberately, each marked `FROZEN QUIRK` in the
+  tests with the finding it corresponds to. Fixes go in `v12.ts`.
+- **`runner.ts` reports a timeout, it does not throw one.** The caller decides whether that becomes
+  an error item or an exception. This is what keeps `execute()` free of nested try/catch.
+- **Interrupting is what makes the SDK account for a run.** `interrupt()` yields a result message
+  with the real cost; a bare `abort()` yields nothing, which is why a killed run reports zeroes.
+- **Nodes cannot be constructor-injected.** n8n calls `execute.call(executionContext)`, so `this`
+  is the context and instance fields are unreachable. Dependencies go through the exported
+  `runItems(ctx, deps)` / `readUsageItems(ctx, deps)` — that is the seam tests use.
 
-### n8n Node Structure
-- All node logic resides in `ClaudeCode.node.ts`
-- Parameters defined using n8n's declarative schema
-- Error handling follows n8n patterns with `NodeOperationError`
-- Supports both single execution and streaming responses
+## Node Versions
 
-### TypeScript Configuration
-- Strict mode enabled for type safety
-- Target ES2019 with CommonJS modules (n8n requirement)
-- Source maps generated for debugging
-- Output to `dist/` directory
+Observable behaviour changes are gated behind `description.version`. A node keeps the typeVersion
+it was created with, so raising `defaultVersion` only affects newly added nodes.
 
-### Code Style
-- Uses tabs with width 2 (n8n standard)
-- Single quotes for strings
-- Semicolons required
-- Maximum line width: 100 characters
-- ESLint configured with n8n-nodes-base rules
+| | What it changed |
+|---|---|
+| 1 | the original |
+| 1.1 | Timeout Wrap-Up Grace defaults to 60s; failure items reshaped to reach the error output |
+| 1.2 | one output envelope for all three formats (current default) |
 
+**Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
+an existing version emits**; add a new one.
 
-## Testing Approach
+## Testing
 
-No automated tests are configured (typical for n8n community nodes). Testing involves:
-1. Building the node: `npm run build`
-2. Linking locally: `npm link`
-3. Starting n8n: `n8n start`
-4. Creating test workflows with various parameter combinations
-5. Using Debug mode to inspect Claude Code interactions
+```bash
+npm test                                    # 465 tests, node:test, no framework
+npm run lint && npm run build && npm test   # the gate for any change
+UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
+```
+
+### The golden fixtures
+
+`tests/fixtures/` holds 48 recordings of exactly what the node emits for typeVersions 1 and 1.1,
+across 8 message streams and 3 output formats. They are compared byte-for-byte.
+
+**If they fail, behaviour moved.** That is the point. Only regenerate deliberately:
+
+1. Run `UPDATE_GOLDEN=1 npm test`.
+2. Read the `git diff`. Every changed byte is a behaviour change to an existing workflow.
+3. If it was not intended, revert and fix the code instead.
+4. If it was, the commit message has to say which fixture moved and why.
+
+They are in `.prettierignore` — they are `JSON.stringify` output compared with `assert.equal`, so
+reformatting them breaks the suite.
+
+### End-to-end, in Docker
+
+`scripts/e2e/` brings up real n8n in Docker
+with the node installed and asserts 23 named behaviours against real executions:
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
+npm run e2e:up && npm run e2e:run && npm run e2e:verdict
+```
+
+The node must be installed **inside** the container: the SDK ships platform-specific CLI binaries,
+so a macOS-host install fetches the darwin build and cannot run on linux. `e2e:run` costs real API
+spend — the timeout cases run real agent turns, budget under US$1 for a full pass.
+
+`readUsage.ts` has no unit tests on purpose: it spawns a real CLI, and this suite covers it.
 
 ## Configuration Examples
 
