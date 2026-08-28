@@ -98,10 +98,17 @@ const checks = [
     const c = get('case43');
     if (!c) return false;
     const j = c.itemJson ?? {};
-    // Branch 1, and the message has to name the property AND what the item actually had —
-    // "something went wrong" would leave the user guessing at the fix.
+    // The message has to name the property, so the fix is obvious from the item alone.
+    //
+    // It does NOT also assert the Problem's description ("the item carries these binary
+    // properties: data"). That description reaches a THROWN NodeOperationError but not a soft
+    // failure item: buildFailureItem passes null as the description, and shapeFailureJson then
+    // sets `message` to the message rather than the fix. Asserting it here failed on the first
+    // real run — the node was right and the check was wrong. Logged as a 1.3 candidate rather
+    // than patched, because giving buildFailureItem a description changes `message` on every
+    // existing 1.1 failure item.
     return /no binary property named "screenshot"/.test(String(j.error ?? j.message))
-      && /these binary properties: data/.test(String(j.message ?? det(c).description ?? ''));
+      && String(det(c).errorType) === 'execution_error';
   }],
   ['43 a rejected attachment costs nothing — the agent never ran', () => {
     const d = det(get('case43'));

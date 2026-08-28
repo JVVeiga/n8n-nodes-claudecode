@@ -109,6 +109,34 @@ staged file — so a model inferring from the hint block instead of reading the 
 
 These four ignore `fixture-project/`, and are cheap: one short turn each.
 
+## Retry a timing-sensitive failure before investigating it
+
+The timeout cases (`case01`, `case02`, `case03`, and `case08` which resumes case01's session)
+assert that *work completed* inside a short window — a session id was captured, a cost was
+reported, a wrap-up finished. That makes them sensitive to API latency in a way no other case is,
+and the window is small by necessity: too loose and the prompt finishes and the case stops testing
+anything at all (see the fixture-project note above).
+
+Observed on 2026-08-28, one full pass, unchanged code:
+
+| Case | Slow window | Immediate retry |
+|---|---|---|
+| `case21` (a one-word "pong", 120s timeout) | 319.1s — **timed out** | 17.9s — success |
+| `case08` | 528.1s — error | 17.1s — success |
+| `case02` / `case03` | 0 assistant turns, no session id | 17.1s / 16.4s, session captured |
+| `case01` | no session id, cost unknown | 40.1s, session captured |
+
+Six checks failed, then all six passed on retry. The node reported honestly throughout — "timed out
+after 15s, 0 assistant turns, cost unknown, no session id" is exactly what it is designed to say
+when a kill yields nothing — so the FAILs were true statements about a slow API, not about the code.
+
+**So: on a FAIL in `case01`/`02`/`03`/`08`, re-run just those cases before reading a single line of
+node source.** `node scripts/e2e/run-cases.mjs case01 case02 case03 case08` — results.json merges,
+so a retry updates in place and the other cases are left alone. If it fails twice, then investigate.
+
+The attachment cases and the `case04*`/`case20*` cases have no such dependency: they assert what an
+item contains, not how fast it arrived.
+
 ## Reading a failure
 
 `run-cases.mjs` writes `run-<slug>.log` per case — the full n8n CLI output including the
