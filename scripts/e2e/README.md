@@ -73,14 +73,41 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 | `gen-workflows.mjs` | host | generates one workflow JSON per case into `workflows/` |
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
-| `fixture-project/` | mounted as `/workspace` | six ~2.5k-line TS files that reliably overrun a short timeout |
+| `fixture-project/` | mounted as `/workspace` | six 126-line TS files; described one at a time, they overrun a *tight* timeout |
 | `ids.js` | container | workflow id ↔ name listing, read from the sqlite DB |
 | `list-wf.js` | container | per-workflow summary: typeVersion, timeout, grace, format, onError |
 | `last-exec.js` / `last-execs.js` | container | inspect the most recent execution(s) |
 | `activate.js` | container | activates the `case10 PRODUCER` workflow (the trigger case) |
-| `show*.mjs` / `verify-*.mjs` | host | ad-hoc inspectors kept from earlier sessions |
+| `patch-session.js` / `read-exec.js` | container | patch a case's Session ID; read one execution's output |
 
 Generated, safe to delete: `workflows/`, `results.json`, `run-*.log`, `.pack/`.
+
+**The fixture project's size is load-bearing, and not in the direction it looks.** Six 126-line
+files, not the six 2.5k-line files an earlier version of this file claimed. Measured on
+`claude-sonnet-5`, describing them one at a time runs 19–45s — so the timeout cases are set well
+under that floor. Paired with the 45–60s timeouts they originally had, the prompt *finished* and four
+cases asserted a timeout that never happened. Keep the timeouts tight, or re-measure when the fixture
+or the model changes.
+
+## The attachment cases
+
+`case40`–`case43` are the only cases whose input is binary, so they have a Code node in front of
+Claude Code that produces it — the same `{data: <base64>, mimeType, fileName}` shape an HTTP Request
+or Monday node emits, which is what makes them exercise `getBinaryDataBuffer` for real. The bytes are
+generated in `gen-workflows.mjs` (including the PNG, byte by byte), so nothing binary is committed
+and the assertion lives next to the data it asserts on.
+
+They are also the only checks that prove a file reaches the *model*. The unit tests prove which
+content blocks get built; only these prove the CLI and the API accept them, and that a staged
+directory in `os.tmpdir()` is reachable from inside the container.
+
+Each is designed so it cannot be answered without the bytes: `case40` asks the colour of a generated
+PNG, `case41` a CSV value that exists nowhere else, and `case42` a value on the **last** row of a
+staged file — so a model inferring from the hint block instead of reading the file gets it wrong.
+`case43` asserts a rejected attachment costs nothing, because `collectAttachments` fails before
+`query()` is ever called.
+
+These four ignore `fixture-project/`, and are cheap: one short turn each.
 
 ## Reading a failure
 

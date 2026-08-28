@@ -66,6 +66,48 @@ const checks = [
     const profileReadable = off.account?.tokenSource !== 'CLAUDE_CODE_OAUTH_TOKEN';
     return profileReadable ? typeof on.account?.email === 'string' : !('email' in (on.account ?? {}));
   }],
+  // Attachments. These are the only checks that prove a file reaches the model at all — the unit
+  // tests prove which blocks get built, not that the API and CLI accept them.
+  ['40 an image reaches the model directly, with no tool involved', () => {
+    const j = get('case40')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // The answer has to come from the pixels: nothing in the prompt says what colour it is.
+    return /green/i.test(String(j.result)) && !/NO_IMAGE/.test(String(j.result))
+      && a?.count === 1 && a.staged === null && a.inline?.[0]?.as === 'image';
+  }],
+  ['41 a csv reaches the model as a document block', () => {
+    const j = get('case41')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // 412 exists nowhere but in the attached bytes.
+    return /412/.test(String(j.result)) && a?.inline?.[0]?.as === 'document-text' && a.staged === null;
+  }],
+  ['42 an oversized file is staged, and the agent reads it off disk', () => {
+    const j = get('case42')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // 8823 is on the LAST row, so the hint block alone cannot produce it — this is what proves
+    // additionalDirectories worked and the temp dir was reachable from inside the container.
+    return /8823/.test(String(j.result))
+      && a?.inline?.length === 0
+      && typeof a.staged?.dir === 'string' && a.staged.dir.length > 0
+      && a.staged.files?.[0]?.name === 'dump.csv';
+  }],
+  ['43 a missing binary property fails the item on the error branch, naming it', () => {
+    const c = get('case43');
+    if (!c) return false;
+    const j = c.itemJson ?? {};
+    // Branch 1, and the message has to name the property AND what the item actually had —
+    // "something went wrong" would leave the user guessing at the fix.
+    return /no binary property named "screenshot"/.test(String(j.error ?? j.message))
+      && /these binary properties: data/.test(String(j.message ?? det(c).description ?? ''));
+  }],
+  ['43 a rejected attachment costs nothing — the agent never ran', () => {
+    const d = det(get('case43'));
+    // No session, no turns: collectAttachments fails before query() is called.
+    return (d.total_cost_usd ?? 0) === 0 && !d.session_id;
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

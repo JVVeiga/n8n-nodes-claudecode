@@ -3,6 +3,7 @@
 // plus a Set node reading the payload fields the case is about, so the assertion is visible in the
 // UI without digging through JSON.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 
 const OUT = new URL('./workflows/', import.meta.url).pathname;
 rmSync(OUT, { recursive: true, force: true });
@@ -327,6 +328,211 @@ cases.push(
 			'Same read with Include Account Email on. EXPECT account.email present here and absent in ' +
 			'case30 — it is personal data, so the default must not leak it.',
 		options: { includeAccountEmail: true },
+	}),
+);
+
+// ---------------------------------------------------------------------------------------------
+// Attachment cases. These are the only ones whose input is binary data, so they need a node in
+// front of Claude Code that produces some. A Code node is used rather than a fixture file in the
+// container: the bytes are generated here, so the assertion and the data it asserts on live in
+// one place, and nothing binary is committed.
+// ---------------------------------------------------------------------------------------------
+
+/** A solid-colour PNG, built byte by byte. Same generator as the spike that proved image blocks
+ * reach the model at all — see .specs/features/attachments/spikes/. */
+function solidPng(size, [r, g, b]) {
+	const crcTable = [];
+	for (let i = 0; i < 256; i++) {
+		let c = i;
+		for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+		crcTable[i] = c >>> 0;
+	}
+	const crc32 = (buf) => {
+		let crc = 0xffffffff;
+		for (const byte of buf) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+		return (crc ^ 0xffffffff) >>> 0;
+	};
+	const chunk = (type, data) => {
+		const len = Buffer.alloc(4);
+		len.writeUInt32BE(data.length);
+		const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+		const crc = Buffer.alloc(4);
+		crc.writeUInt32BE(crc32(body));
+		return Buffer.concat([len, body, crc]);
+	};
+
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(size, 0);
+	ihdr.writeUInt32BE(size, 4);
+	ihdr[8] = 8; // bit depth
+	ihdr[9] = 2; // colour type: truecolour
+	const raw = Buffer.alloc(size * (1 + size * 3));
+	for (let y = 0; y < size; y++) {
+		const row = y * (1 + size * 3);
+		raw[row] = 0; // filter: none
+		for (let x = 0; x < size; x++) {
+			raw[row + 1 + x * 3] = r;
+			raw[row + 2 + x * 3] = g;
+			raw[row + 3 + x * 3] = b;
+		}
+	}
+	return Buffer.concat([
+		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		chunk('IHDR', ihdr),
+		chunk('IDAT', deflateSync(raw)),
+		chunk('IEND', Buffer.alloc(0)),
+	]);
+}
+
+/**
+ * manualTrigger -> Code (produces the binary) -> Claude Code -> Set.
+ *
+ * The Code node returns `binary` with base64 `data`, which is exactly the shape an upstream
+ * HTTP Request or Monday node produces, so this exercises `getBinaryDataBuffer` for real.
+ */
+function attachmentWorkflow({
+	name,
+	notes,
+	files,
+	prompt,
+	binaryProperties,
+	attachAllBinaries = false,
+	additionalOptions = {},
+	onError,
+	readFields = [],
+	timeout = 120,
+}) {
+	const entries = Object.entries(files)
+		.map(
+			([prop, f]) =>
+				`    ${JSON.stringify(prop)}: { data: ${JSON.stringify(f.base64)}, mimeType: ${JSON.stringify(f.mimeType)}, fileName: ${JSON.stringify(f.fileName)} }`,
+		)
+		.join(',\n');
+	const code = `return [{\n  json: {},\n  binary: {\n${entries}\n  },\n}];`;
+
+	const wf = workflow({
+		name,
+		notes,
+		claude: { prompt, timeout, additionalOptions },
+		onError,
+		readFields,
+		version: 1.2,
+	});
+
+	// Splice the Code node in between the trigger and Claude Code, and rewire.
+	wf.nodes.splice(1, 0, {
+		parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: code },
+		id: nextId(),
+		name: 'Make binary',
+		type: 'n8n-nodes-base.code',
+		typeVersion: 2,
+		position: [180, 0],
+	});
+	wf.nodes.find((node) => node.name === 'Claude Code').position = [400, 0];
+	const readPayload = wf.nodes.find((node) => node.name === 'Read payload');
+	if (readPayload) readPayload.position = [640, onError === 'continueErrorOutput' ? 160 : 0];
+
+	wf.connections['When clicking Execute'] = {
+		main: [[{ node: 'Make binary', type: 'main', index: 0 }]],
+	};
+	wf.connections['Make binary'] = {
+		main: [[{ node: 'Claude Code', type: 'main', index: 0 }]],
+	};
+
+	const claude = wf.nodes.find((node) => node.name === 'Claude Code');
+	claude.parameters.attachAllBinaries = attachAllBinaries;
+	claude.parameters.binaryProperties = binaryProperties ?? '';
+	// Attachments are the point of these cases; the agent must not be able to "solve" them by
+	// reading the fixture project instead.
+	claude.parameters.projectPath = PROJECT;
+	claude.parameters.restrictTools = [];
+
+	return wf;
+}
+
+const SEA_GREEN_PNG = solidPng(64, [0x2e, 0x8b, 0x57]);
+const MARKER_CSV = 'sku,qty\nWIDGET-7741,412\nGIZMO-9,3\n';
+// Over the 1 KB inline limit set on case42, with the answer buried past the first row so a model
+// that guessed from the hint block rather than reading the file would get it wrong.
+const BIG_CSV = `sku,qty\n${'FILLER-000,1\n'.repeat(400)}NEEDLE-5150,8823\n`;
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case40 attachment - image inline, vision with no tools',
+		notes:
+			'A 64x64 solid sea-green PNG on binary property "shot", sent as an image content block. ' +
+			'EXPECT the result to name the colour (green). diagnostics.attachments.inline[0].as must ' +
+			'be "image" and staged must be null. This is the case that proves an image reaches the ' +
+			'model directly — no filesystem, no Read tool.',
+		files: {
+			shot: {
+				base64: SEA_GREEN_PNG.toString('base64'),
+				mimeType: 'image/png',
+				fileName: 'shot.png',
+			},
+		},
+		binaryProperties: 'shot',
+		prompt:
+			'Answer in one word only. What colour fills the attached image? If you cannot see an image, answer exactly NO_IMAGE.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case41 attachment - csv inline as a document block',
+		notes:
+			'A 3-row CSV on binary property "data". EXPECT the result to be 412 — a value that exists ' +
+			'nowhere but in the attached file. diagnostics.attachments.inline[0].as must be ' +
+			'"document-text".',
+		files: {
+			data: {
+				base64: Buffer.from(MARKER_CSV, 'utf8').toString('base64'),
+				mimeType: 'text/csv',
+				fileName: 'export.csv',
+			},
+		},
+		binaryProperties: 'data',
+		prompt:
+			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document? If you see no document, answer NO_DOC.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case42 attachment - oversized text staged to disk and read',
+		notes:
+			'A ~5 KB CSV with Inline Text Size Limit set to 1 KB, so it is staged instead of attached. ' +
+			'EXPECT diagnostics.attachments.staged.dir to be populated, inline to be empty, and the ' +
+			'result to be 8823 — which is on the LAST row, so the agent had to actually Read the file ' +
+			'rather than infer from the hint block. Also proves additionalDirectories works and the ' +
+			'temp dir is reachable from inside the container.',
+		files: {
+			dump: {
+				base64: Buffer.from(BIG_CSV, 'utf8').toString('base64'),
+				mimeType: 'text/csv',
+				fileName: 'dump.csv',
+			},
+		},
+		binaryProperties: 'dump',
+		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
+		prompt:
+			'Answer with the number only. What qty does SKU NEEDLE-5150 have? The file is staged on disk; read it. If you cannot find it, answer NOT_FOUND.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case43 attachment - a named property that is not on the item fails the item',
+		notes:
+			'Binary Properties names "screenshot", the item carries only "data". EXPECT branch 1 (the ' +
+			'error output) with a message naming "screenshot" and listing what the item does have, and ' +
+			'NO spend — query is never called. Silently answering without the evidence is the failure ' +
+			'mode this guards against.',
+		files: {
+			data: {
+				base64: Buffer.from(MARKER_CSV, 'utf8').toString('base64'),
+				mimeType: 'text/csv',
+				fileName: 'export.csv',
+			},
+		},
+		binaryProperties: 'screenshot',
+		prompt: FAST_PROMPT,
+		onError: 'continueErrorOutput',
+		readFields: ['error', 'message'],
 	}),
 );
 
