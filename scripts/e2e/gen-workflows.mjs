@@ -401,6 +401,9 @@ function attachmentWorkflow({
 	onError,
 	readFields = [],
 	timeout = 120,
+	// Empty means the full built-in tool set. A non-empty list is what makes the stagedAttachments
+	// applier's Read-injection branch reachable at all — see case45.
+	restrictTools = [],
 }) {
 	const entries = Object.entries(files)
 		.map(
@@ -445,7 +448,7 @@ function attachmentWorkflow({
 	// Attachments are the point of these cases; the agent must not be able to "solve" them by
 	// reading the fixture project instead.
 	claude.parameters.projectPath = PROJECT;
-	claude.parameters.restrictTools = [];
+	claude.parameters.restrictTools = restrictTools;
 
 	return wf;
 }
@@ -530,6 +533,120 @@ cases.push(
 			},
 		},
 		binaryProperties: 'screenshot',
+		prompt: FAST_PROMPT,
+		onError: 'continueErrorOutput',
+		readFields: ['error', 'message'],
+	}),
+);
+
+// The first four cases each exercise one route with one file, a named property list, and no tool
+// restriction. These four cover what that leaves: the toggle, several files at once, the two routes
+// meeting in one item, the third block type, the size cap, and — the one that matters most — the
+// guard that stops a tool restriction from silently defeating staging.
+
+/** A one-page PDF with correct xref offsets, built here so no binary is committed. Same generator
+ * as the spike that proved base64 PDF blocks reach the model. */
+function onePagePdf(text) {
+	const content = `BT /F1 24 Tf 72 700 Td (${text}) Tj ET\n`;
+	const objs = [
+		'<< /Type /Catalog /Pages 2 0 R >>',
+		'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+		'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+		`<< /Length ${content.length} >>\nstream\n${content}endstream`,
+		'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+	];
+	let pdf = '%PDF-1.4\n';
+	const offsets = [];
+	objs.forEach((body, i) => {
+		offsets.push(pdf.length);
+		pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+	});
+	const xrefAt = pdf.length;
+	pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+	for (const off of offsets) pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
+	pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+	return Buffer.from(pdf, 'latin1');
+}
+
+const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case44 attachment - attach all, several files, inline and staged together',
+		notes:
+			'Attach All Binaries with three properties and no name list: a PNG, a small CSV, and a CSV ' +
+			'over the 1 KB inline limit. EXPECT diagnostics.attachments.count 3, inline holding the ' +
+			'image and the small csv IN PROPERTY-NAME ORDER (a_shot.png then b_small.csv), and staged ' +
+			'holding c_big.csv. The result must contain BOTH 771 (small csv, attached) and 8823 (last ' +
+			'row of the staged csv, so it had to Read). This is the only case where the two routes meet ' +
+			'in one request, and the only one that proves the toggle and multi-file ordering at all.',
+		files: {
+			a_shot: { base64: SEA_GREEN_PNG.toString('base64'), mimeType: 'image/png', fileName: 'a_shot.png' },
+			b_small: { base64: b64('sku,qty\nSMALL-1,771\n'), mimeType: 'text/csv', fileName: 'b_small.csv' },
+			c_big: { base64: b64(BIG_CSV), mimeType: 'text/csv', fileName: 'c_big.csv' },
+		},
+		attachAllBinaries: true,
+		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
+		prompt:
+			'Answer with exactly two numbers separated by a space, nothing else: first the qty of SKU SMALL-1, then the qty of SKU NEEDLE-5150. One of the files is on disk; read it.',
+		readFields: ['result'],
+		timeout: 180,
+	}),
+	attachmentWorkflow({
+		name: 'case45 attachment - a tool restriction cannot silently defeat staging',
+		notes:
+			'A staged file with Restrict Built-in Tools set to Bash and Grep, which OMITS Read. Without ' +
+			'the stagedAttachments applier adding Read, the agent cannot open the file and answers ' +
+			'without the evidence while still reporting success — a green run with a wrong answer, ' +
+			'which is the exact failure this guard exists to prevent. EXPECT result 8823 and ' +
+			'diagnostics.attachments.staged populated. This is the only requirement whose whole purpose ' +
+			'is preventing a false green, and the only one that can only break in a real container.',
+		files: {
+			dump: { base64: b64(BIG_CSV), mimeType: 'text/csv', fileName: 'dump.csv' },
+		},
+		binaryProperties: 'dump',
+		restrictTools: ['Bash', 'Grep'],
+		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
+		prompt:
+			'Answer with the number only. What qty does SKU NEEDLE-5150 have? The file is on disk; read it. If you cannot open it, answer CANNOT_READ.',
+		readFields: ['result'],
+		timeout: 180,
+	}),
+	attachmentWorkflow({
+		name: 'case46 attachment - pdf inline as a base64 document block',
+		notes:
+			'A one-page PDF built byte by byte. EXPECT result 3947 — a value that exists only inside ' +
+			'the PDF — and inline[0].as === "document-pdf". The third and last block type; the other ' +
+			'two are covered by case40 and case41. Proven against the real API by a spike before this ' +
+			'was built, but never through the container until now.',
+		files: {
+			invoice: {
+				base64: onePagePdf('Invoice ZX-88: total 3947 EUR').toString('base64'),
+				mimeType: 'application/pdf',
+				fileName: 'invoice.pdf',
+			},
+		},
+		binaryProperties: 'invoice',
+		prompt:
+			'Answer with the number only. What is the total in the attached PDF? If you see no PDF, answer NO_PDF.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case47 attachment - a file over the size cap fails the item',
+		notes:
+			'A 2 MB file with Max Attachment Size set to 1 MB. EXPECT the error branch with a message ' +
+			'naming the property, its size and the limit, and NO spend — the cap is checked before ' +
+			'query() is called. Distinct from case43, which covers a property that is not on the item ' +
+			'at all: this one covers a property that is there and too big.',
+		files: {
+			huge: {
+				base64: Buffer.alloc(2 * 1024 * 1024, 0x41).toString('base64'),
+				mimeType: 'text/plain',
+				fileName: 'huge.txt',
+			},
+		},
+		binaryProperties: 'huge',
+		additionalOptions: { debug: true, maxAttachmentMb: 1 },
 		prompt: FAST_PROMPT,
 		onError: 'continueErrorOutput',
 		readFields: ['error', 'message'],

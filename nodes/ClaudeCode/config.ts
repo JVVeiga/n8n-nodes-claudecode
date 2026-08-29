@@ -176,6 +176,11 @@ const APPLIERS: Applier[] = [
 				const current = Array.isArray(options.tools) ? options.tools : params.restrictTools;
 				options.tools = Array.from(new Set([...current, 'Read']));
 				note('readAddedForStaging', true);
+				// Overwrite the note restrictTools already wrote, so the debug log reports the list
+				// actually sent rather than the one before the injection. Without this the log says
+				// ["Bash","Grep"] on a run that really sent ["Bash","Grep","Read"] — misleading in
+				// exactly the situation this applier exists to make debuggable.
+				note('tools', options.tools);
 			}
 
 			note('stagedDir', dir);

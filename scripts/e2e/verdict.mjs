@@ -115,6 +115,49 @@ const checks = [
     // No session, no turns: collectAttachments fails before query() is called.
     return (d.total_cost_usd ?? 0) === 0 && !d.session_id;
   }],
+  ['44 attach-all sends several files, in property-name order', () => {
+    const a = get('case44')?.itemJson?.diagnostics?.attachments;
+    if (!a || a.count !== 3) return false;
+    // Sorted by property name (a_shot, b_small, c_big), not by item key order — the guarantee is
+    // that the model sees the same sequence on every run over the same data.
+    return a.inline?.length === 2
+      && a.inline[0].name === 'a_shot.png' && a.inline[0].as === 'image'
+      && a.inline[1].name === 'b_small.csv' && a.inline[1].as === 'document-text'
+      && a.staged?.files?.length === 1 && a.staged.files[0].name === 'c_big.csv';
+  }],
+  ['44 inline and staged reach the model in the SAME request', () => {
+    const j = get('case44')?.itemJson;
+    // 771 is in the attached csv, 8823 on the last row of the staged one. Both present means the
+    // two routes coexist in one turn — the only case that proves it.
+    return j?.success === true && /771/.test(String(j.result)) && /8823/.test(String(j.result));
+  }],
+  ['45 a tool restriction omitting Read cannot silently defeat staging', () => {
+    const j = get('case45')?.itemJson;
+    if (!j || j.success !== true) return false;
+    // Restrict Built-in Tools was ['Bash','Grep']. Without the applier adding Read the agent
+    // cannot open the staged file and answers without it while still reporting success — a green
+    // run with a wrong answer. 8823 is only obtainable by reading the file.
+    return /8823/.test(String(j.result)) && !/CANNOT_READ/.test(String(j.result))
+      && typeof j.diagnostics?.attachments?.staged?.dir === 'string';
+  }],
+  ['46 a pdf reaches the model as a base64 document block', () => {
+    const j = get('case46')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // 3947 exists only inside the generated PDF.
+    return /3947/.test(String(j.result)) && a?.inline?.[0]?.as === 'document-pdf';
+  }],
+  ['47 a file over the size cap fails the item, naming it and the limit', () => {
+    const c = get('case47');
+    if (!c) return false;
+    const j = c.itemJson ?? {};
+    const msg = String(j.error ?? j.message);
+    return /"huge"/.test(msg) && /2\.0 MB/.test(msg) && /limit of 1 MB/.test(msg);
+  }],
+  ['47 a file rejected by the cap costs nothing', () => {
+    const d = det(get('case47'));
+    return (d.total_cost_usd ?? 0) === 0 && !d.session_id;
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

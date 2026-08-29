@@ -91,7 +91,7 @@ or the model changes.
 
 ## The attachment cases
 
-`case40`–`case43` are the only cases whose input is binary, so they have a Code node in front of
+`case40`–`case47` are the only cases whose input is binary, so they have a Code node in front of
 Claude Code that produces it — the same `{data: <base64>, mimeType, fileName}` shape an HTTP Request
 or Monday node emits, which is what makes them exercise `getBinaryDataBuffer` for real. The bytes are
 generated in `gen-workflows.mjs` (including the PNG, byte by byte), so nothing binary is committed
@@ -107,7 +107,21 @@ staged file — so a model inferring from the hint block instead of reading the 
 `case43` asserts a rejected attachment costs nothing, because `collectAttachments` fails before
 `query()` is ever called.
 
-These four ignore `fixture-project/`, and are cheap: one short turn each.
+`case44`–`case47` cover what one file on one route cannot: the Attach All toggle with three files
+at once (proving property-name ordering, and that an inline file and a staged file coexist in one
+request), a PDF, the size cap, and — the one that matters most — a staged file under a
+**Restrict Built-in Tools** list that omits `Read`. Without the applier injecting `Read`, that run
+answers `CANNOT_READ` and still reports success: a green execution with a wrong answer. It is the
+only requirement whose entire purpose is preventing a false green, and the only one that can only
+break in a real container.
+
+These eight ignore `fixture-project/`, and are cheap: one to three turns each, ~$0.24 for all of
+them.
+
+Two behaviours stay unit-only on purpose: the MIME fallback chain (declared type -> extension ->
+UTF-8 sniff) and an image over the 5 MB ceiling staging instead of inlining. Both are pure
+functions of `(mimeType, bytes)` with no environment dependency, which is the whole reason
+`mime.ts` takes no I/O.
 
 ## Retry a timing-sensitive failure before investigating it
 

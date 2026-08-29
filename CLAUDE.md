@@ -162,7 +162,7 @@ an existing version emits**; add a new one.
 ## Testing
 
 ```bash
-npm test                                    # 629 tests, node:test, no framework
+npm test                                    # 631 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -185,7 +185,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 28 named behaviours against real executions:
+with the node installed and asserts 34 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

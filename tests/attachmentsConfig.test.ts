@@ -85,6 +85,21 @@ describe('stagedAttachments applier — with staging', () => {
 		);
 	});
 
+	it('re-notes tools after the injection, so the debug log is not stale', () => {
+		// restrictTools notes ['Bash'] before this applier runs. Without the overwrite the debug
+		// log claims a run sent ['Bash'] when it really sent ['Bash','Read'] — a lie in exactly
+		// the case this applier exists to make debuggable. Caught by reading a real e2e log.
+		const notes = notesOf({ restrictTools: ['Bash', 'Grep'] }, { stagedDir: STAGED });
+		assert.deepEqual(notes.tools, ['Bash', 'Grep', 'Read']);
+	});
+
+	it('leaves the tools note alone when it did not inject anything', () => {
+		assert.deepEqual(notesOf({ restrictTools: ['Read', 'Bash'] }, { stagedDir: STAGED }).tools, [
+			'Read',
+			'Bash',
+		]);
+	});
+
 	it('adds Read exactly once', () => {
 		const options = build({ restrictTools: ['Bash'] }, { stagedDir: STAGED });
 		assert.equal((options.tools as string[]).filter((t) => t === 'Read').length, 1);
