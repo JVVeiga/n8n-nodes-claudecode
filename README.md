@@ -729,7 +729,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 465 tests — node:test, no framework, no extra dependencies
+npm test    # 631 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -746,9 +746,12 @@ fixture moved and why. Fixes to old behaviour belong in a new node version, not 
 marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
 `v12.ts`.
 
-There is also a Docker suite that runs real n8n with the node installed and asserts 23 named
-behaviours against real executions. It lives in `scripts/e2e/` and is untracked — a working
-instrument rather than a deliverable. `CLAUDE.md` has the details.
+There is also a Docker suite that runs real n8n with the node installed and asserts 34 named
+behaviours against real executions — including that an attached image, PDF or document actually
+reaches the model, which no unit test can prove. It lives in `scripts/e2e/`, which **is** versioned;
+only what it generates (`workflows/`, `results.json`, `run-*.log`, `.pack/`) is gitignored. It costs
+real API spend, so it is not part of the gate. `scripts/e2e/README.md` has the details, including
+which cases to re-run before believing a failure.
 
 ### Release Process
 
