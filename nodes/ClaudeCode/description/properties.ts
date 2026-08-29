@@ -72,25 +72,6 @@ export const claudeCodeDescription: INodeTypeDescription = {
 			hint: 'Use expressions like {{$json.prompt}} to use data from previous nodes',
 		},
 		{
-			displayName: 'Attach All Binaries',
-			name: 'attachAllBinaries',
-			type: 'boolean',
-			default: false,
-			description:
-				'Whether to send every binary property on the input item to Claude. Images, PDFs and small text files are attached directly to the request; anything larger or of a type that cannot be attached is written to a temporary directory Claude can read from. Turn this on when the incoming property names vary — a Monday item can arrive with data_0, data_1, data_2 and no fixed count.',
-		},
-		{
-			displayName: 'Binary Properties',
-			name: 'binaryProperties',
-			type: 'string',
-			default: '',
-			displayOptions: { show: { attachAllBinaries: [false] } },
-			placeholder: 'data, screenshot, export',
-			description:
-				'Comma-separated binary property names on the input item to send to Claude. Leave empty for a text-only request. A name that is not on the item fails that item, naming the property — a run that silently answers without the evidence is worse than one that stops.',
-			hint: 'Images, PDFs and small text files are attached directly; larger or unsupported types are staged to a temporary directory Claude reads from',
-		},
-		{
 			displayName: 'Session ID',
 			name: 'sessionId',
 			type: 'string',
@@ -166,6 +147,34 @@ export const claudeCodeDescription: INodeTypeDescription = {
 				'The directory path where Claude Code should run (e.g., /path/to/project). If empty, uses the current working directory.',
 			placeholder: '/home/user/projects/my-app',
 			hint: 'This sets the working directory for Claude Code, allowing it to access files and run commands in the specified project location',
+		},
+		{
+			displayName: 'Attach All Binaries',
+			name: 'attachAllBinaries',
+			type: 'boolean',
+			// Defaults ON, unlike almost everything else here, because the common case is that a
+			// file on the item is meant for Claude — a Monday screenshot, a CSV export. An item
+			// with no binary data is unaffected: nothing is collected and nothing is sent.
+			//
+			// This does NOT change a stored workflow. n8n resolves a parameter with
+			// `get(node.parameters, name, fallbackValue)`, so a node saved before this parameter
+			// existed has no key and falls through to the fallback params.ts passes — which is
+			// deliberately `false`. The schema default is what the editor writes into a NEWLY
+			// added node. Do not "fix" that asymmetry: it is what keeps an upgrade inert.
+			default: true,
+			description:
+				'Whether to send every binary property on the input item to Claude. Images, PDFs and small text files are attached directly to the request; anything larger or of a type that cannot be attached is written to a temporary directory Claude can read from. On by default because an item that carries a file usually carries it for a reason; turn it off to send nothing, or to name specific properties instead.',
+		},
+		{
+			displayName: 'Binary Properties',
+			name: 'binaryProperties',
+			type: 'string',
+			default: '',
+			displayOptions: { show: { attachAllBinaries: [false] } },
+			placeholder: 'data, screenshot, export',
+			description:
+				'Comma-separated binary property names on the input item to send to Claude. Leave empty for a text-only request. A name that is not on the item fails that item, naming the property — a run that silently answers without the evidence is worse than one that stops.',
+			hint: 'Images, PDFs and small text files are attached directly; larger or unsupported types are staged to a temporary directory Claude reads from',
 		},
 		{
 			displayName: 'Output Format',

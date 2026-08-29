@@ -28,7 +28,15 @@ describe('parseBinaryPropertyNames', () => {
 });
 
 describe('readParams — the attachment spec', () => {
-	it('defaults to off, with the schema defaults for the limits', () => {
+	it('is OFF when the parameter is absent — a workflow saved before it existed', () => {
+		// This is the upgrade-safety case, and it works because `claudeCodeParams()` does not
+		// include `attachAllBinaries` at all: the fake resolves a missing key to the fallback,
+		// exactly as n8n does with `get(node.parameters, name, fallbackValue)`.
+		//
+		// The schema default is `true`, deliberately different. n8n never consults the schema at
+		// run time — it is only what the editor writes into a NEWLY added node — so a stored
+		// workflow lands here, on `false`, and a package upgrade cannot start attaching files in
+		// a workflow that already carries binary data.
 		assert.deepEqual(spec(), {
 			all: false,
 			names: [],

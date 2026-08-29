@@ -43,6 +43,12 @@ function readAttachmentSpec(
 	additional: AdditionalOptions,
 ): AttachmentSpec {
 	return {
+		// The fallback is `false` while the schema default is `true`, and that mismatch is the
+		// point. n8n resolves a parameter with `get(node.parameters, name, fallbackValue)`
+		// (node-execution-context.js), so it never consults the schema at run time: a node saved
+		// before this parameter existed has no key and lands here, on `false`. The schema default
+		// is only what the editor writes into a newly added node. Matching them would make a
+		// package upgrade start attaching files in every stored workflow that carries binary data.
 		all: ctx.getNodeParameter('attachAllBinaries', itemIndex, false) as boolean,
 		names: parseBinaryPropertyNames(
 			ctx.getNodeParameter('binaryProperties', itemIndex, '') as string,

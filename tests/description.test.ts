@@ -61,14 +61,14 @@ describe('node description — top-level parameters', () => {
 	const EXPECTED = [
 		['operation', 'options', 'query'],
 		['prompt', 'string', ''],
-		['attachAllBinaries', 'boolean', false],
-		['binaryProperties', 'string', ''],
 		['sessionId', 'string', ''],
 		['model', 'options', 'sonnet'],
 		['effort', 'options', 'high'],
 		['maxTurns', 'number', undefined],
 		['timeout', 'number', undefined],
 		['projectPath', 'string', ''],
+		['attachAllBinaries', 'boolean', undefined],
+		['binaryProperties', 'string', ''],
 		['outputFormat', 'options', undefined],
 		['allowedTools', 'multiOptions', undefined],
 		['disallowedTools', 'multiOptions', undefined],
@@ -97,6 +97,19 @@ describe('node description — top-level parameters', () => {
 
 	it('prompt stays required', () => {
 		assert.equal(byName('prompt').required, true);
+	});
+
+	it('attachAllBinaries defaults ON in the schema — what a NEW node gets', () => {
+		// Asserted separately from the table above because the table's `undefined` means "do not
+		// check", and this default is load-bearing: it is the only one in the schema that differs
+		// from the fallback params.ts passes. See the next test for why.
+		assert.equal(byName('attachAllBinaries').default, true);
+	});
+
+	it('binaryProperties hides while Attach All Binaries is on', () => {
+		assert.deepEqual(byName('binaryProperties').displayOptions, {
+			show: { attachAllBinaries: [false] },
+		});
 	});
 });
 

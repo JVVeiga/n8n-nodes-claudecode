@@ -174,12 +174,21 @@ Two parameters select what goes:
 
 | Parameter | |
 |---|---|
-| **Attach All Binaries** | send every binary property on the item, ordered by property name |
+| **Attach All Binaries** | send every binary property on the item, ordered by property name — **on by default** |
 | **Binary Properties** | a comma-separated list, when you want only some of them |
 
-Reach for **Attach All Binaries** when the property names come from upstream and vary — Monday emits
-`data_0`, `data_1`, `data_2` with no fixed count. Use the list when you want to leave a heavy
-attachment out and not pay tokens for it.
+Both sit under **Project Path**, since they describe what goes into the request rather than how it
+runs.
+
+**Attach All Binaries is on by default**, because an item that carries a file usually carries it for
+a reason, and because the property names often come from upstream and vary — Monday emits `data_0`,
+`data_1`, `data_2` with no fixed count. An item with no binary data is unaffected: nothing is
+collected and nothing is sent. Turn it off and name properties instead when you want to leave a
+heavy attachment out and not pay tokens for it, or off with an empty list for a text-only request.
+
+If you are upgrading, nothing changes in a workflow you already built: n8n reads a parameter from
+the stored workflow and falls back to the node's own value, never to the schema default, so a node
+saved before this release keeps the feature off until you turn it on.
 
 ### Attached directly, or staged on disk
 

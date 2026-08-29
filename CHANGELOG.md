@@ -8,7 +8,7 @@ Additional Options bound it.
 
 | Parameter | Where | Default |
 |---|---|---|
-| **Attach All Binaries** | top level | `false` |
+| **Attach All Binaries** | top level, under Project Path | `true` |
 | **Binary Properties** | top level, shown when the above is off | `''` |
 | **Inline Text Size Limit (KB)** | Additional Options | `256` |
 | **Max Attachment Size (MB)** | Additional Options | `50` |
@@ -32,8 +32,14 @@ See [Attachments](README.md#attachments) for the routing table and the two thing
 
 ### No breaking changes, and no new node version
 
-- The five parameters are **additive and default to off**. A run with nothing attached makes no
-  filesystem call, builds no content blocks, and sends the prompt as the plain string it always did.
+- **A package upgrade changes nothing in a stored workflow.** **Attach All Binaries** defaults to
+  `true` in the schema, so a newly added node has it on — but n8n resolves a parameter with
+  `get(node.parameters, name, fallbackValue)` and never consults the schema at run time, so a node
+  saved before this release has no such key and falls through to the node's own fallback, which is
+  `false`. The mismatch is deliberate and commented in both places. A run with nothing attached
+  makes no filesystem call, builds no content blocks, and sends the prompt as the plain string it
+  always did.
+- An item carrying no binary data is unaffected either way: nothing is collected and nothing is sent.
 - `diagnostics.attachments` is **absent** — not `null` — on a run with no attachments. All 48 golden
   fixtures for typeVersions 1 and 1.1 are byte-identical and were not regenerated, so no existing
   workflow's output moved. That is why this needed no typeVersion 1.3.
