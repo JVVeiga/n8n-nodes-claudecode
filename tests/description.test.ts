@@ -8,6 +8,11 @@ import {
 	MODEL_OPTIONS,
 } from '../nodes/ClaudeCode/description/models';
 import { BUILT_IN_TOOL_OPTIONS } from '../nodes/ClaudeCode/description/toolOptions';
+import {
+	EXTENSION_OPTIONS,
+	KNOWN_EXTENSIONS,
+} from '../nodes/ClaudeCode/description/extensionOptions';
+import { ROUTABLE_EXTENSIONS } from '../nodes/ClaudeCode/attachments/mime';
 
 const props = claudeCodeDescription.properties;
 const byName = (name: string): INodeProperties => {
@@ -121,6 +126,7 @@ describe('node description — additionalOptions collection', () => {
 		'allowPlanExecution',
 		'includeTranscript',
 		'wrapUpGraceSeconds',
+		'allowedExtensions',
 		'inlineTextLimitKb',
 		'maxAttachmentMb',
 		'maxAttachmentCount',
@@ -201,6 +207,41 @@ describe('model options — one list, two selectors', () => {
 			assert.ok(m.description.length > 0, `${m.value} has no description`);
 			assert.ok(m.short.length > 0, `${m.value} has no short name`);
 		}
+	});
+});
+
+describe('extension options — the Allowed Extensions filter', () => {
+	it('offers a wide curated list rather than a handful', () => {
+		assert.ok(KNOWN_EXTENSIONS.length > 100, `only ${KNOWN_EXTENSIONS.length} extensions offered`);
+	});
+
+	it('has no duplicates', () => {
+		assert.equal(new Set(KNOWN_EXTENSIONS).size, KNOWN_EXTENSIONS.length);
+	});
+
+	it('every value is a bare lowercase extension, matching what extensionOf() produces', () => {
+		for (const value of KNOWN_EXTENSIONS) {
+			assert.match(value, /^[a-z0-9]+$/, `${value} is not a bare lowercase extension`);
+		}
+	});
+
+	it('covers every extension mime.ts knows how to route', () => {
+		// The invariant that stops the two from drifting: if the router can name a type, the filter
+		// must be able to select it. Otherwise a user can be handed a file they have no way to
+		// filter on, and the only escape is turning the filter off entirely.
+		const missing = ROUTABLE_EXTENSIONS.filter((e) => !KNOWN_EXTENSIONS.includes(e));
+		assert.deepEqual(
+			missing,
+			[],
+			`mime.ts routes these but Allowed Extensions cannot name them: ${missing.join(', ')}`,
+		);
+	});
+
+	it('is used by the Allowed Extensions field', () => {
+		const field = collectionFields('additionalOptions').find((f) => f.name === 'allowedExtensions');
+		assert.equal(field?.type, 'multiOptions');
+		assert.deepEqual(field?.default, []);
+		assert.equal(field?.options, EXTENSION_OPTIONS);
 	});
 });
 

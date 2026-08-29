@@ -58,6 +58,10 @@ function readAttachmentSpec(
 		inlineTextLimitKb: additional.inlineTextLimitKb ?? ATTACHMENT_DEFAULTS.inlineTextLimitKb,
 		maxAttachmentMb: additional.maxAttachmentMb ?? ATTACHMENT_DEFAULTS.maxAttachmentMb,
 		maxAttachmentCount: additional.maxAttachmentCount ?? ATTACHMENT_DEFAULTS.maxAttachmentCount,
+		// No default beyond empty, and empty means "no filter". Unlike the size knobs this one has
+		// no sensible non-empty default: any list we picked would silently drop file types the
+		// user never asked us to drop.
+		allowedExtensions: additional.allowedExtensions ?? [],
 	};
 }
 

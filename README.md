@@ -210,6 +210,38 @@ needs with `Read`, and can `grep` a 40 MB log rather than swallowing it.
 
 The temporary directory is removed when the item finishes — on success, on error, and on a timeout.
 
+### Narrowing by file type
+
+**Allowed Extensions** in Additional Options is a multi-select of ~120 extensions. Leave it empty —
+the default — and every file is considered. Select some and only those are sent; anything else on
+the item is **skipped and the run continues**.
+
+That is deliberately different from the failures below. A size cap or a property that is not on the
+item is a refusal of something you asked for, so it stops the item. The extension filter is you
+saying which types you want, so not sending the rest is doing what you asked — it never fails
+anything.
+
+It pairs with **Attach All Binaries** being on: attach everything, then narrow to the types that
+matter.
+
+```
+Attach All Binaries   [x]
+Allowed Extensions    PNG, CSV, PDF
+
+item carries  shot.png, export.csv, archive.zip
+              →  shot.png and export.csv sent
+              →  archive.zip skipped, reported, run continues
+```
+
+Two details worth knowing. The filter runs on the **derived** filename, so a binary that arrives
+with no filename at all is still judged on the extension its MIME type implies. And it runs before
+the count and size checks, so a file you told it to ignore can never be what trips **Max Attachment
+Count**.
+
+Everything skipped is listed under `diagnostics.attachments.skipped` with the property name, the
+derived filename and the extension — because "ignore and continue" is exactly the pattern that goes
+wrong quietly, and you should be able to see it did.
+
 ### Choosing the text limit
 
 This is the one size knob that is a real trade rather than an API limit. An attached file sits in the
@@ -236,12 +268,15 @@ model never saw. `Continue On Fail` still applies, and routes the item to the er
 
 ### What the run reports
 
-When at least one attachment was sent, `diagnostics.attachments` says what happened:
+When at least one attachment was sent **or skipped**, `diagnostics.attachments` says what happened:
 
 ```json
 {
   "count": 2,
   "totalBytes": 42123456,
+  "skipped": [
+    { "propName": "data_3", "fileName": "archive.zip", "extension": "zip" }
+  ],
   "inline": [
     { "name": "shot.png", "mimeType": "image/png", "bytes": 245760, "as": "image" }
   ],
@@ -252,8 +287,11 @@ When at least one attachment was sent, `diagnostics.attachments` says what happe
 }
 ```
 
-`staged` is `null` when everything was attached directly. The key is absent entirely on a run with no
-attachments, which is why this feature needed no new node version.
+`count` is what was **sent** — a skipped file is reported separately rather than folded in, because
+"3 attachments" meaning "2 sent and 1 dropped" is how a wrong answer gets missed. `skipped` is always
+present so an expression can read `.skipped.length` without guarding, and `staged` is `null` when
+everything was attached directly. The whole key is absent on a run with no attachments and no skips,
+which is why this feature needed no new node version.
 
 ## Timeouts
 
@@ -738,7 +776,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 631 tests — node:test, no framework, no extra dependencies
+npm test    # 656 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.

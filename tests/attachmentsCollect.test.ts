@@ -10,6 +10,7 @@ const spec = (over: Partial<AttachmentSpec> = {}): AttachmentSpec => ({
 	inlineTextLimitKb: 256,
 	maxAttachmentMb: 50,
 	maxAttachmentCount: 16,
+	allowedExtensions: [],
 	...over,
 });
 
@@ -34,6 +35,79 @@ const problemOf = async (binaries: Binaries, over: Partial<AttachmentSpec> = {})
 	assert.ok('problem' in outcome, 'expected a problem, got attachments');
 	return outcome.problem;
 };
+
+describe('collectAttachments — the extension filter', () => {
+	const png = () => binaryProperty('x', { fileName: 'shot.png', mimeType: 'image/png' });
+	const zip = () => binaryProperty('x', { fileName: 'dump.zip', mimeType: 'application/zip' });
+
+	const skippedOf = async (binaries: Binaries, over: Partial<AttachmentSpec>) => {
+		const outcome = await collect(binaries, over);
+		assert.ok('attachments' in outcome);
+		return outcome.skipped;
+	};
+
+	it('is inert when empty — every file is considered', async () => {
+		const found = await ok({ a: png(), b: zip() }, { all: true });
+		assert.equal(found.length, 2);
+		assert.deepEqual(await skippedOf({ a: png(), b: zip() }, { all: true }), []);
+	});
+
+	it('keeps only the listed extensions, and reports what it dropped', async () => {
+		const found = await ok({ a: png(), b: zip() }, { all: true, allowedExtensions: ['png'] });
+		assert.deepEqual(
+			found.map((f) => f.fileName),
+			['shot.png'],
+		);
+		assert.deepEqual(
+			await skippedOf({ a: png(), b: zip() }, { all: true, allowedExtensions: ['png'] }),
+			[{ propName: 'b', fileName: 'dump.zip', extension: 'zip' }],
+		);
+	});
+
+	it('applies to a named list too, not only to Attach All', async () => {
+		const found = await ok({ b: zip() }, { names: ['b'], allowedExtensions: ['png'] });
+		assert.deepEqual(found, []);
+	});
+
+	it('never fails the item — a filtered file is a choice, not a refusal', async () => {
+		const outcome = await collect({ b: zip() }, { names: ['b'], allowedExtensions: ['png'] });
+		assert.ok('attachments' in outcome, 'the filter must not produce a Problem');
+	});
+
+	it('judges the DERIVED name, so a file with no extension is still filtered on its type', async () => {
+		// No fileName at all: deriveFileName gives `data.csv` from the MIME type.
+		const meta = binaryProperty('a,b\n', { mimeType: 'text/csv' });
+		assert.equal(
+			(await ok({ data: meta }, { names: ['data'], allowedExtensions: ['csv'] })).length,
+			1,
+		);
+		assert.equal(
+			(await ok({ data: meta }, { names: ['data'], allowedExtensions: ['png'] })).length,
+			0,
+		);
+	});
+
+	it('tolerates a leading dot and uppercase in the configured list', async () => {
+		const found = await ok({ a: png() }, { names: ['a'], allowedExtensions: ['.PNG'] });
+		assert.equal(found.length, 1);
+	});
+
+	it('runs BEFORE the count check — an ignored file cannot trip the cap', async () => {
+		// Three zips and one png, cap of 1. Filtered to just the png, the count passes.
+		const outcome = await collect(
+			{ a: png(), b: zip(), c: zip(), d: zip() },
+			{ all: true, allowedExtensions: ['png'], maxAttachmentCount: 1 },
+		);
+		assert.ok('attachments' in outcome, 'the cap must see the filtered list, not the raw one');
+		assert.equal(outcome.attachments.length, 1);
+		assert.equal(outcome.skipped.length, 3);
+	});
+
+	it('leaves a missing property to the existence check rather than silently dropping it', async () => {
+		const problem = await problemOf({ a: png() }, { names: ['nope'], allowedExtensions: ['png'] });
+		assert.match(problem.message, /no binary property named "nope"/);
+	});
+});
 
 describe('collectAttachments — nothing to do', () => {
 	it('returns an empty list when nothing is selected, without reading the item', async () => {

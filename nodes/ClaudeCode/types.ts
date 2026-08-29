@@ -58,6 +58,7 @@ export type AdditionalOptions = {
 	inlineTextLimitKb?: number;
 	maxAttachmentMb?: number;
 	maxAttachmentCount?: number;
+	allowedExtensions?: string[];
 };
 
 /** Everything read off the node's parameters for one input item. The only thing produced by

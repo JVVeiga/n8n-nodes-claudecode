@@ -43,7 +43,16 @@ describe('readParams — the attachment spec', () => {
 			inlineTextLimitKb: 256,
 			maxAttachmentMb: 50,
 			maxAttachmentCount: 16,
+			allowedExtensions: [],
 		});
+	});
+
+	it('reads Allowed Extensions, and empty means no filter', () => {
+		assert.deepEqual(spec().allowedExtensions, []);
+		assert.deepEqual(
+			spec({ additionalOptions: { allowedExtensions: ['png', 'csv'] } }).allowedExtensions,
+			['png', 'csv'],
+		);
 	});
 
 	it('reads the toggle and the list', () => {

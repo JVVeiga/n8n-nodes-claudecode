@@ -171,6 +171,7 @@ describe('buildDiagnostics — the attachments field', () => {
 	const report = {
 		count: 1,
 		totalBytes: 42,
+		skipped: [],
 		inline: [{ name: 'a.csv', mimeType: 'text/csv', bytes: 42, as: 'document-text' as const }],
 		staged: null,
 	};

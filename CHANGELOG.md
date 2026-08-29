@@ -10,6 +10,7 @@ Additional Options bound it.
 |---|---|---|
 | **Attach All Binaries** | top level, under Project Path | `true` |
 | **Binary Properties** | top level, shown when the above is off | `''` |
+| **Allowed Extensions** | Additional Options | `[]` (no filter) |
 | **Inline Text Size Limit (KB)** | Additional Options | `256` |
 | **Max Attachment Size (MB)** | Additional Options | `50` |
 | **Max Attachment Count** | Additional Options | `16` |
@@ -21,12 +22,22 @@ with no tool enabled and no filesystem involved. Anything larger, or of a type n
 `additionalDirectories`, and the prompt says what is there. That directory is removed when the item
 finishes — on success, on error, and on a timeout.
 
-A file that cannot be sent — a property that is not on the item, one over the size cap, or too many
-of them — fails that item with a message naming the property, rather than letting the run answer
-about evidence it never received. `Continue On Fail` still applies.
+**Allowed Extensions** narrows what is considered at all: a multi-select of ~120 extensions, empty
+by default. Select some and only those go; anything else on the item is skipped and the run
+continues. It runs on the *derived* filename, so a binary with no filename is still judged on the
+extension its MIME type implies, and it runs before the count and size checks, so a file you told it
+to ignore can never trip **Max Attachment Count**.
 
-When at least one attachment was sent, `diagnostics.attachments` reports the count, the total bytes,
-how each inlined file was sent, and the staged directory and its files.
+That is deliberately not a failure. A property that is not on the item, one over the size cap, or
+too many of them **fails that item** with a message naming the property, rather than letting the run
+answer about evidence it never received — those are refusals of something you asked for. The
+extension filter is you saying which types you want. Every skip is still reported, because "ignore
+and continue" is the pattern that goes wrong quietly. `Continue On Fail` still applies to the
+failures.
+
+When at least one attachment was sent or skipped, `diagnostics.attachments` reports the count of
+what was **sent**, the total bytes, what was skipped and why, how each inlined file was sent, and the
+staged directory and its files.
 
 See [Attachments](README.md#attachments) for the routing table and the two things that will bite you.
 

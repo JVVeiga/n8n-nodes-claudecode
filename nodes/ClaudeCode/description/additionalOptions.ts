@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { EXTENSION_OPTIONS } from './extensionOptions';
 import { FALLBACK_MODEL_OPTIONS } from './models';
 
 /**
@@ -79,6 +80,17 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 			typeOptions: { minValue: 0, maxValue: 600 },
 			description:
 				'Seconds reserved at the end of the Timeout for Claude to stop and summarise what it did. Taken out of the Timeout, not added to it, so a run never exceeds the Timeout. Interrupting this way is what makes the SDK report the tokens, cost and session ID of a timed-out run — a plain kill reports none of it. Set to 0 to kill the process at the Timeout instead. Defaults to 60 on node version 1.1 and to 0 on version 1.',
+		},
+		{
+			displayName: 'Allowed Extensions',
+			name: 'allowedExtensions',
+			type: 'multiOptions',
+			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+			// Sorted by extension in description/extensionOptions.ts.
+			options: EXTENSION_OPTIONS,
+			default: [],
+			description:
+				'Only send binary properties whose file extension is selected here. Anything else on the item is skipped and the run continues without it — this filters what is considered, it does not reject a request, so nothing fails because of it. Leave empty to consider every file. What was skipped is reported under diagnostics.attachments.skipped.',
 		},
 		{
 			displayName: 'Inline Text Size Limit (KB)',

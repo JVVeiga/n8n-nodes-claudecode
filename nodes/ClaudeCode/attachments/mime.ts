@@ -221,6 +221,18 @@ export function routeFor(mime: string, bytes: number, spec: AttachmentSpec): Rou
 	return { kind: 'staged', reason: 'no-inline-route' };
 }
 
+/**
+ * Every extension either table understands — what `EXT_TO_MIME` can resolve plus what
+ * `MIME_TO_EXT` can name.
+ *
+ * Exported so the Allowed Extensions option list can be checked against it: if the router can name
+ * a type, the filter has to be able to select it, or a user gets handed a file they have no way to
+ * filter on and the only escape is turning the filter off entirely. A test asserts the containment.
+ */
+export const ROUTABLE_EXTENSIONS: string[] = [
+	...new Set([...Object.keys(EXT_TO_MIME), ...Object.values(MIME_TO_EXT)]),
+].sort();
+
 /** The ceilings, exported so a test pins them rather than restating the numbers. */
 export const INLINE_CEILINGS = {
 	imageBytes: IMAGE_INLINE_MAX_BYTES,

@@ -162,6 +162,7 @@ describe('node attachments — inline', () => {
 		assert.deepEqual(diagnostics.attachments, {
 			count: 1,
 			totalBytes: 4,
+			skipped: [],
 			inline: [{ name: 'export.csv', mimeType: 'text/csv', bytes: 4, as: 'document-text' }],
 			staged: null,
 		});
@@ -176,6 +177,70 @@ describe('node attachments — inline', () => {
 		assert.deepEqual((start?.meta as { attachmentRoutes: unknown }).attachmentRoutes, {
 			'export.csv': 'document-text',
 		});
+	});
+});
+
+describe('node attachments — the extension filter', () => {
+	const mixed = () =>
+		itemWithBinary({
+			a_shot: binaryProperty('png-bytes', { fileName: 'shot.png', mimeType: 'image/png' }),
+			b_dump: binaryProperty('PK-bytes', { fileName: 'dump.zip', mimeType: 'application/zip' }),
+		});
+
+	const onlyPng = { attachAllBinaries: true, additionalOptions: { allowedExtensions: ['png'] } };
+
+	it('sends only the allowed extension, and the run continues', async () => {
+		const { calls, items } = await exec({ items: [mixed()], params: onlyPng });
+		const [turn] = await turnsOf(calls[0]);
+		assert.ok(Array.isArray(turn));
+		// naming block + image + prompt. No zip, and no staging for it either.
+		assert.deepEqual(
+			turn.map((b) => b.type),
+			['text', 'image', 'text'],
+		);
+		assert.equal((items[0].json as { success: boolean }).success, true);
+	});
+
+	it('reports the skip rather than swallowing it', async () => {
+		const { items } = await exec({ items: [mixed()], params: onlyPng });
+		const a = (items[0].json as { diagnostics: { attachments: { skipped: unknown[] } } })
+			.diagnostics.attachments;
+		assert.deepEqual(a.skipped, [{ propName: 'b_dump', fileName: 'dump.zip', extension: 'zip' }]);
+	});
+
+	it('never stages a file the filter excluded', async () => {
+		const { calls } = await exec({ items: [mixed()], params: onlyPng });
+		const options = (calls[0] as { options: { additionalDirectories?: string[] } }).options;
+		assert.equal(options.additionalDirectories, undefined);
+	});
+
+	it('still reports when EVERY file was filtered out, and the run goes ahead', async () => {
+		const { items, calls } = await exec({
+			items: [mixed()],
+			params: { attachAllBinaries: true, additionalOptions: { allowedExtensions: ['pdf'] } },
+		});
+		// The prompt goes as a plain string — nothing was attached.
+		const [turn] = await turnsOf(calls[0]);
+		assert.equal(typeof turn, 'string');
+		const a = (
+			items[0].json as { diagnostics: { attachments: { count: number; skipped: unknown[] } } }
+		).diagnostics.attachments;
+		assert.equal(a.count, 0);
+		assert.equal(a.skipped.length, 2);
+	});
+
+	it('logs the skips when debug is on', async () => {
+		const { fake } = await exec({
+			items: [mixed()],
+			params: {
+				attachAllBinaries: true,
+				additionalOptions: { allowedExtensions: ['png'], debug: true },
+			},
+		});
+		const start = fake.logsFor('debug').find((l) => l.message.includes('Starting'));
+		assert.deepEqual((start?.meta as { attachmentSkippedFiles: unknown }).attachmentSkippedFiles, [
+			'dump.zip (.zip)',
+		]);
 	});
 });
 

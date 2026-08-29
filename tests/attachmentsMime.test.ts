@@ -18,6 +18,7 @@ const spec = (over: Partial<AttachmentSpec> = {}): AttachmentSpec => ({
 	inlineTextLimitKb: 256,
 	maxAttachmentMb: 50,
 	maxAttachmentCount: 16,
+	allowedExtensions: [],
 	...over,
 });
 

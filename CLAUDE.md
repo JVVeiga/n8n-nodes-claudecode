@@ -112,6 +112,7 @@ nodes/
 | Add a model | `description/models.ts` — both selectors generate from it |
 | Expose a new SDK option | one entry in the `APPLIERS` table in `config.ts` |
 | Support a new file type, or change a route | `attachments/mime.ts` — the tables are the policy |
+| Offer a new extension in the Allowed Extensions filter | `description/extensionOptions.ts` |
 | Change what the model is told about staged files | `attachments/plan.ts` (`stagedHintBlock`) |
 | Change what a run reports | `diagnostics.ts` |
 | Change the output shape | `output/v12.ts` — **never** `output/legacy.ts` |
@@ -141,6 +142,16 @@ nodes/
 - **`attachments/collect.ts` is the only module that reads a buffer**, the same role `readUsage.ts`
   plays for the Usage node. `mime.ts` and `plan.ts` never touch n8n or a disk, which is why the
   routing policy and the exact blocks sent are unit-testable.
+- **A skip and a failure are different things, on purpose.** A size cap or a missing property
+  refuses something the user asked for, so it fails the item. The **Allowed Extensions** filter is
+  the user saying which types they want, so excluding the rest is obedience, not silence — it never
+  fails anything. What keeps that honest is that every skip lands in
+  `diagnostics.attachments.skipped` and in the debug log. The filter also runs on metadata *before*
+  any buffer is read and *before* the count check, so an ignored file is neither loaded into memory
+  nor able to trip `maxAttachmentCount`.
+- **`ROUTABLE_EXTENSIONS` in `mime.ts` must stay a subset of `EXTENSION_OPTIONS`.** A test asserts
+  it. If the router can name a type, the filter has to be able to select it — otherwise a user is
+  handed a file they have no way to filter on and the only escape is turning the filter off.
 - **Nodes cannot be constructor-injected.** n8n calls `execute.call(executionContext)`, so `this`
   is the context and instance fields are unreachable. Dependencies go through the exported
   `runItems(ctx, deps)` / `readUsageItems(ctx, deps)` — that is the seam tests use.
@@ -162,7 +173,7 @@ an existing version emits**; add a new one.
 ## Testing
 
 ```bash
-npm test                                    # 631 tests, node:test, no framework
+npm test                                    # 656 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```

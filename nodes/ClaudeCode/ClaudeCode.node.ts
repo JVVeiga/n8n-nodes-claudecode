@@ -104,7 +104,7 @@ export async function runItems(
 			if ('problem' in collected) {
 				throw fail(collected.problem.message, collected.problem.description);
 			}
-			const plan = planAttachments(collected.attachments, params.attachments);
+			const plan = planAttachments(collected.attachments, params.attachments, collected.skipped);
 			if (plan.toStage.length > 0) {
 				staged = stageAttachments(plan.toStage);
 				if (plan.report?.staged) plan.report.staged.dir = staged.dir;

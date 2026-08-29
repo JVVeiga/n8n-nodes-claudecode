@@ -9,6 +9,7 @@ const spec = (over: Partial<AttachmentSpec> = {}): AttachmentSpec => ({
 	inlineTextLimitKb: 256,
 	maxAttachmentMb: 50,
 	maxAttachmentCount: 16,
+	allowedExtensions: [],
 	...over,
 });
 
@@ -214,6 +215,55 @@ describe('planAttachments — the diagnostics report', () => {
 			dir: '',
 			files: [{ name: 'a.zip', mimeType: 'application/zip', bytes: 7 }],
 		});
+	});
+});
+
+describe('planAttachments — the extension filter it did not apply', () => {
+	// The filter runs in collect.ts, not here; plan.ts only has to carry its result through.
+	it('reports skipped, and still builds a report when EVERYTHING was filtered out', () => {
+		const plan = planAttachments([], spec(), [
+			{ propName: 'b', fileName: 'dump.zip', extension: 'zip' },
+		]);
+		assert.deepEqual(plan.blocks, []);
+		assert.deepEqual(plan.toStage, []);
+		// Not null: an item where every file was dropped is exactly the case a person needs told.
+		assert.equal(plan.report?.count, 0);
+		assert.deepEqual(plan.report?.skipped, [
+			{ propName: 'b', fileName: 'dump.zip', extension: 'zip' },
+		]);
+	});
+
+	it('carries an empty skipped list so a downstream expression needs no guard', () => {
+		const plan = planAttachments(
+			[attachment({ mimeType: 'text/plain', buffer: Buffer.from('x') })],
+			spec(),
+		);
+		assert.deepEqual(plan.report?.skipped, []);
+	});
+
+	it('counts only what was sent — a skipped file is never folded into count', () => {
+		const plan = planAttachments(
+			[attachment({ fileName: 'a.csv', mimeType: 'text/csv', buffer: Buffer.alloc(10) })],
+			spec(),
+			[{ propName: 'b', fileName: 'b.zip', extension: 'zip' }],
+		);
+		assert.equal(plan.report?.count, 1);
+		assert.equal(plan.report?.totalBytes, 10);
+		assert.equal(plan.report?.skipped.length, 1);
+	});
+
+	it('notes the skips for the debug log, and omits the keys when nothing was skipped', () => {
+		const withSkips = planAttachments([], spec(), [
+			{ propName: 'b', fileName: 'dump.zip', extension: 'zip' },
+		]);
+		assert.equal(withSkips.notes.attachmentSkipped, 1);
+		assert.deepEqual(withSkips.notes.attachmentSkippedFiles, ['dump.zip (.zip)']);
+
+		const clean = planAttachments(
+			[attachment({ mimeType: 'text/plain', buffer: Buffer.from('x') })],
+			spec(),
+		);
+		assert.equal('attachmentSkipped' in clean.notes, false);
 	});
 });
 

@@ -7,6 +7,7 @@ import type {
 	AttachmentSpec,
 	InlineKind,
 	Route,
+	SkippedAttachment,
 } from './types';
 
 /**
@@ -97,11 +98,19 @@ export function stagedHintBlock(
 const inlineKindOf = (route: Route): InlineKind | null =>
 	route.kind === 'staged' ? null : route.kind;
 
-export function planAttachments(attachments: Attachment[], spec: AttachmentSpec): AttachmentPlan {
+export function planAttachments(
+	attachments: Attachment[],
+	spec: AttachmentSpec,
+	skipped: SkippedAttachment[] = [],
+): AttachmentPlan {
 	// The empty case matters: it is what guarantees a run with no attachments configured builds no
 	// blocks, makes no filesystem call, and emits no `attachments` key in diagnostics — which is
 	// what keeps the 48 golden fixtures byte-identical.
-	if (attachments.length === 0) {
+	//
+	// `skipped` is checked too: an item whose every file the extension filter excluded still has
+	// something to report, and reporting it is the whole reason a skip is allowed to be silent in
+	// the run itself.
+	if (attachments.length === 0 && skipped.length === 0) {
 		return { blocks: [], toStage: [], report: null, notes: {} };
 	}
 
@@ -138,8 +147,11 @@ export function planAttachments(attachments: Attachment[], spec: AttachmentSpec)
 	}
 
 	const report: AttachmentDiagnostics = {
+		// The count of what was SENT. A skipped file is reported separately rather than folded in,
+		// because "3 attachments" meaning "2 sent and 1 dropped" is how a wrong answer gets missed.
 		count: attachments.length,
 		totalBytes: attachments.reduce((sum, a) => sum + a.bytes, 0),
+		skipped,
 		inline,
 		// The directory is unknown until stage.ts runs, so the node fills it in. Null here means
 		// "nothing to stage", which is a different thing and is what the node leaves alone.
@@ -165,6 +177,12 @@ export function planAttachments(attachments: Attachment[], spec: AttachmentSpec)
 			attachmentRoutes: routes,
 			attachmentInlineBlocks: blocks.length,
 			attachmentStaged: toStage.length,
+			...(skipped.length > 0
+				? {
+						attachmentSkipped: skipped.length,
+						attachmentSkippedFiles: skipped.map((sk) => `${sk.fileName} (.${sk.extension})`),
+					}
+				: {}),
 		},
 	};
 }

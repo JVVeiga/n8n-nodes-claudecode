@@ -25,6 +25,11 @@ export type AttachmentSpec = {
 	/** Hard per-file cap. Over it is a Problem, not a staging decision. */
 	maxAttachmentMb: number;
 	maxAttachmentCount: number;
+	/** File extensions to consider, lowercase and without the dot. Empty means no filter — every
+	 * binary property is considered. A property whose extension is not listed is skipped and
+	 * reported, never an error: this narrows what counts as an attachment, it does not reject a
+	 * request the way a size cap does. */
+	allowedExtensions: string[];
 };
 
 /** One binary property, resolved to bytes and named. */
@@ -75,9 +80,20 @@ export type AttachmentPlan = {
 
 export type InlineKind = 'image' | 'document-pdf' | 'document-text';
 
+/** A binary property the extension filter excluded. Reported so "ignore and continue" cannot
+ * become "answered without the evidence and nobody noticed". */
+export type SkippedAttachment = {
+	propName: string;
+	fileName: string;
+	extension: string;
+};
+
 export type AttachmentDiagnostics = {
 	count: number;
 	totalBytes: number;
+	/** Always present when the attachments key is — an empty array means nothing was filtered out,
+	 * so a downstream expression can read `.skipped.length` without guarding. */
+	skipped: SkippedAttachment[];
 	inline: { name: string; mimeType: string; bytes: number; as: InlineKind }[];
 	/** Null when everything went inline. */
 	staged: {

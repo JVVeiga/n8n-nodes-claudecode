@@ -1,8 +1,8 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import type { Problem } from '../../shared/problem';
-import { effectiveMime } from './mime';
-import { resolveFileName } from './name';
-import type { Attachment, AttachmentSpec } from './types';
+import { effectiveMime, extensionOf } from './mime';
+import { deriveFileName, resolveFileName } from './name';
+import type { Attachment, AttachmentSpec, SkippedAttachment } from './types';
 
 /**
  * Turning n8n binary properties into bytes.
@@ -20,7 +20,9 @@ import type { Attachment, AttachmentSpec } from './types';
  * proper `NodeOperationError`, and returning keeps this testable against a fake context.
  */
 
-export type CollectOutcome = { attachments: Attachment[] } | { problem: Problem };
+export type CollectOutcome =
+	| { attachments: Attachment[]; skipped: SkippedAttachment[] }
+	| { problem: Problem };
 
 const MB = 1024 * 1024;
 
@@ -35,6 +37,50 @@ function selectPropertyNames(spec: AttachmentSpec, binary: Record<string, unknow
 	return spec.names;
 }
 
+/**
+ * Apply Allowed Extensions.
+ *
+ * This runs on metadata alone, before any buffer is read, so a 40 MB file the filter excludes is
+ * never pulled into memory. It also runs before the count check: a file the user asked to ignore
+ * must not be what pushes the item over Max Attachment Count.
+ *
+ * A skip is not a failure. The size cap and a missing property are refusals of something the user
+ * asked for; this is the user having said which types they want. Every skip is still reported, so
+ * "ignore and continue" cannot quietly become "answered without the evidence".
+ *
+ * It applies to a named list as well as to Attach All — one rule, whichever way the property was
+ * selected.
+ */
+function applyExtensionFilter(
+	propNames: string[],
+	binary: Record<string, { fileName?: string; fileExtension?: string; mimeType?: string }>,
+	spec: AttachmentSpec,
+): { kept: string[]; skipped: SkippedAttachment[] } {
+	if (spec.allowedExtensions.length === 0) return { kept: propNames, skipped: [] };
+
+	const allowed = new Set(spec.allowedExtensions.map((e) => e.replace(/^\./, '').toLowerCase()));
+	const kept: string[] = [];
+	const skipped: SkippedAttachment[] = [];
+
+	for (const propName of propNames) {
+		const meta = binary[propName];
+		// A name that is not on the item at all is not this function's problem — leave it for the
+		// existence check, which reports it properly.
+		if (!meta) {
+			kept.push(propName);
+			continue;
+		}
+		// The DERIVED name, so a property whose file has no extension of its own is still judged
+		// on the one its MIME type implies.
+		const fileName = deriveFileName(meta, propName);
+		const extension = extensionOf(fileName);
+		if (allowed.has(extension)) kept.push(propName);
+		else skipped.push({ propName, fileName, extension });
+	}
+
+	return { kept, skipped };
+}
+
 export async function collectAttachments(
 	ctx: IExecuteFunctions,
 	itemIndex: number,
@@ -46,8 +92,12 @@ export async function collectAttachments(
 		{ fileName?: string; fileExtension?: string; mimeType?: string }
 	>;
 
-	const propNames = selectPropertyNames(spec, binary);
-	if (propNames.length === 0) return { attachments: [] };
+	const selected = selectPropertyNames(spec, binary);
+	if (selected.length === 0) return { attachments: [], skipped: [] };
+
+	// Filter before counting and before reading anything. See applyExtensionFilter.
+	const { kept: propNames, skipped } = applyExtensionFilter(selected, binary, spec);
+	if (propNames.length === 0) return { attachments: [], skipped };
 
 	// Count first, so a 40-property item says "too many attachments" rather than naming whichever
 	// file happened to be oversized. The count is the thing the user has to fix.
@@ -105,5 +155,5 @@ export async function collectAttachments(
 		});
 	}
 
-	return { attachments };
+	return { attachments, skipped };
 }
