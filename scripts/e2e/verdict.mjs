@@ -158,6 +158,44 @@ const checks = [
     const d = det(get('case47'));
     return (d.total_cost_usd ?? 0) === 0 && !d.session_id;
   }],
+  ['48 allowed extensions keeps the listed types and skips the rest', () => {
+    const j = get('case48')?.itemJson;
+    if (!j || j.success !== true) return false;   // a skip must never fail the item
+    const a = j.diagnostics?.attachments;
+    return /412/.test(String(j.result))
+      && a?.count === 2
+      && a.staged === null                        // the zip was skipped, NOT staged
+      && a.skipped?.length === 1
+      && a.skipped[0].propName === 'c_blob'
+      && a.skipped[0].extension === 'zip';
+  }],
+  ['48 a filtered file is never staged — no temp dir is created for it', () => {
+    // staged === null is asserted above; this pins the other half, that the run did not quietly
+    // fall back to putting the excluded file on disk where the agent could still read it.
+    const a = get('case48')?.itemJson?.diagnostics?.attachments;
+    return !!a && a.inline?.length === 2 && a.inline.every((i) => i.name !== 'c_blob.zip');
+  }],
+  ['49 filtering everything out still runs, and still reports why', () => {
+    const j = get('case49')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    return a?.count === 0 && a.inline?.length === 0 && a.staged === null && a.skipped?.length === 3;
+  }],
+  ['51 a 1.3 node left on Auto does attach', () => {
+    const j = get('case51')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // Same workflow as case50 but pinned at 1.3. The pair is the whole proof that `auto` is
+    // version-aware: neither case alone distinguishes "auto works" from "auto is stuck".
+    return a?.count === 3 && /412/.test(String(j.result));
+  }],
+  ['50 a workflow saved before the parameter does not start attaching on upgrade', () => {
+    const j = get('case50')?.itemJson;
+    if (!j || j.success !== true) return false;
+    // The whole claim: the schema default is true, the node fallback is false, and n8n uses the
+    // fallback for a key the stored workflow does not have. No key means nothing was collected.
+    return !('attachments' in (j.diagnostics ?? {}));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

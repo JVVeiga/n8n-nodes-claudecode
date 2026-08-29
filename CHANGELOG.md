@@ -8,7 +8,7 @@ Additional Options bound it.
 
 | Parameter | Where | Default |
 |---|---|---|
-| **Attach All Binaries** | top level, under Project Path | `true` |
+| **Attach All Binaries** | top level, under Project Path | `Auto` |
 | **Binary Properties** | top level, shown when the above is off | `''` |
 | **Allowed Extensions** | Additional Options | `[]` (no filter) |
 | **Inline Text Size Limit (KB)** | Additional Options | `256` |
@@ -41,15 +41,23 @@ staged directory and its files.
 
 See [Attachments](README.md#attachments) for the routing table and the two things that will bite you.
 
-### No breaking changes, and no new node version
+### No breaking changes, and one new node version
 
-- **A package upgrade changes nothing in a stored workflow.** **Attach All Binaries** defaults to
-  `true` in the schema, so a newly added node has it on — but n8n resolves a parameter with
-  `get(node.parameters, name, fallbackValue)` and never consults the schema at run time, so a node
-  saved before this release has no such key and falls through to the node's own fallback, which is
-  `false`. The mismatch is deliberate and commented in both places. A run with nothing attached
-  makes no filesystem call, builds no content blocks, and sends the prompt as the plain string it
-  always did.
+**typeVersion 1.3** exists for exactly one thing: **Attach All Binaries** on `Auto` means *on* from
+1.3 and *off* below it. A node keeps the version it was created with, so a newly added node attaches
+by default while every workflow you already built does not. Nothing else changed — 1.3 emits the
+same envelope as 1.2.
+
+That indirection is not decoration. A schema default cannot be made version-aware: n8n's `Workflow`
+constructor writes every schema default into `node.parameters` *before* execution
+(`NodeHelpers.getNodeParameters`), so a parameter absent from a stored workflow still arrives
+carrying the schema's value. An earlier draft used a plain boolean defaulting to `true` on the
+theory that the run-time lookup would fall through to the node's own fallback. It does not, and an
+E2E case built to prove the claim disproved it instead: a workflow with no such key attached all
+three of its files. `Auto` moves the decision into code, where it can read the typeVersion.
+
+- To turn it on in a node you already have, set it to **On** — that works on any version, the same
+  way **Output Envelope** lets an older node opt into the 1.2 shape.
 - An item carrying no binary data is unaffected either way: nothing is collected and nothing is sent.
 - `diagnostics.attachments` is **absent** — not `null` — on a run with no attachments. All 48 golden
   fixtures for typeVersions 1 and 1.1 are byte-identical and were not regenerated, so no existing

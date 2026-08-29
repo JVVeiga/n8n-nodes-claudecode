@@ -1,13 +1,43 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parseBinaryPropertyNames, readParams } from '../nodes/ClaudeCode/params';
+import {
+	attachAllByDefault,
+	parseBinaryPropertyNames,
+	readParams,
+	resolveAttachAll,
+} from '../nodes/ClaudeCode/params';
 import { claudeCodeParams, createFakeContext, type ParamMap } from './helpers/executeFunctions';
 
 /** The attachment slice of readParams. The rest of the function is covered in params.test.ts. */
-const spec = (over: ParamMap = {}) => {
-	const { ctx } = createFakeContext({ params: claudeCodeParams(over) });
+const spec = (over: ParamMap = {}, typeVersion = 1.3) => {
+	const { ctx } = createFakeContext({ typeVersion, params: claudeCodeParams(over) });
 	return readParams(ctx, 0).attachments;
 };
+
+describe('resolveAttachAll — why auto exists', () => {
+	// A schema default cannot be version-aware: the Workflow constructor writes every schema
+	// default into node.parameters before execution, so a parameter absent from a stored workflow
+	// still arrives carrying the schema's value. E2E case50 proved a plain `default: true` switched
+	// attachments on in a workflow saved before the feature existed. `auto` moves the decision here.
+	it('auto is ON from 1.3 and OFF below it', () => {
+		assert.equal(attachAllByDefault(1.3), true);
+		assert.equal(attachAllByDefault(1.2), false);
+		assert.equal(attachAllByDefault(1.1), false);
+		assert.equal(attachAllByDefault(1), false);
+	});
+
+	it('a future version keeps it on', () => {
+		assert.equal(attachAllByDefault(1.4), true);
+		assert.equal(attachAllByDefault(2), true);
+	});
+
+	it('on and off ignore the version entirely', () => {
+		for (const version of [1, 1.1, 1.2, 1.3]) {
+			assert.equal(resolveAttachAll('on', version), true, `on at ${version}`);
+			assert.equal(resolveAttachAll('off', version), false, `off at ${version}`);
+		}
+	});
+});
 
 describe('parseBinaryPropertyNames', () => {
 	it('splits on commas, spaces, and both together', () => {
@@ -28,40 +58,40 @@ describe('parseBinaryPropertyNames', () => {
 });
 
 describe('readParams — the attachment spec', () => {
-	it('is OFF when the parameter is absent — a workflow saved before it existed', () => {
-		// This is the upgrade-safety case, and it works because `claudeCodeParams()` does not
-		// include `attachAllBinaries` at all: the fake resolves a missing key to the fallback,
-		// exactly as n8n does with `get(node.parameters, name, fallbackValue)`.
-		//
-		// The schema default is `true`, deliberately different. n8n never consults the schema at
-		// run time — it is only what the editor writes into a NEWLY added node — so a stored
-		// workflow lands here, on `false`, and a package upgrade cannot start attaching files in
-		// a workflow that already carries binary data.
-		assert.deepEqual(spec(), {
-			all: false,
-			names: [],
-			inlineTextLimitKb: 256,
-			maxAttachmentMb: 50,
-			maxAttachmentCount: 16,
-			allowedExtensions: [],
-		});
+	it('a 1.2 node left on Auto does not attach — the upgrade-safety case', () => {
+		// The exact situation e2e case50 exercises: a workflow built before this feature, whose
+		// node is pinned at 1.2, carrying binary data. It must stay off.
+		assert.equal(spec({}, 1.2).all, false);
+		assert.equal(spec({ attachAllBinaries: 'auto' }, 1.2).all, false);
 	});
 
-	it('reads Allowed Extensions, and empty means no filter', () => {
-		assert.deepEqual(spec().allowedExtensions, []);
-		assert.deepEqual(
-			spec({ additionalOptions: { allowedExtensions: ['png', 'csv'] } }).allowedExtensions,
-			['png', 'csv'],
-		);
+	it('a 1.3 node left on Auto does attach', () => {
+		assert.equal(spec({}, 1.3).all, true);
+	});
+
+	it('an explicit On works on an old node, so 1.2 can opt in without being recreated', () => {
+		assert.equal(spec({ attachAllBinaries: 'on' }, 1.2).all, true);
+	});
+
+	it('an explicit Off works on a new node', () => {
+		assert.equal(spec({ attachAllBinaries: 'off' }, 1.3).all, false);
+	});
+
+	it('falls back to auto when the parameter is not in the schema at all', () => {
+		// `claudeCodeParams()` omits attachAllBinaries, so this exercises the getNodeParameter
+		// fallback rather than the schema default. It resolves to `auto`, which then resolves
+		// against the version — which is why the two tests above pin 1.2 and 1.3 separately.
+		assert.equal(spec({}, 1.2).all, false);
+		assert.equal(spec({}, 1.3).all, true);
 	});
 
 	it('reads the toggle and the list', () => {
-		assert.equal(spec({ attachAllBinaries: true }).all, true);
+		assert.equal(spec({ attachAllBinaries: 'on' }).all, true);
 		assert.deepEqual(spec({ binaryProperties: 'data, shot' }).names, ['data', 'shot']);
 	});
 
 	it('keeps the list even when all is on, so nothing depends on read order', () => {
-		const s = spec({ attachAllBinaries: true, binaryProperties: 'data' });
+		const s = spec({ attachAllBinaries: 'on', binaryProperties: 'data' });
 		assert.equal(s.all, true);
 		assert.deepEqual(s.names, ['data']);
 	});
@@ -81,6 +111,6 @@ describe('readParams — the attachment spec', () => {
 	});
 
 	it('is read for the continue operation too, not just query', () => {
-		assert.equal(spec({ operation: 'continue', attachAllBinaries: true }).all, true);
+		assert.equal(spec({ operation: 'continue', attachAllBinaries: 'on' }).all, true);
 	});
 });

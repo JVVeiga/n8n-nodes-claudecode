@@ -38,14 +38,14 @@ describe('node description — identity', () => {
 		assert.equal(claudeCodeDescription.displayName, 'Claude Code');
 	});
 
-	it('declares versions 1, 1.1 and 1.2, defaulting to 1.2', () => {
+	it('declares versions 1 through 1.3, defaulting to 1.3', () => {
 		// A node keeps the version it was created with, so raising the default moves new nodes only.
-		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2]);
-		assert.equal(claudeCodeDescription.defaultVersion, 1.2);
+		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2, 1.3]);
+		assert.equal(claudeCodeDescription.defaultVersion, 1.3);
 	});
 
 	it('never drops a version — an existing workflow pinned to it would stop loading', () => {
-		for (const version of [1, 1.1]) {
+		for (const version of [1, 1.1, 1.2]) {
 			assert.ok(
 				(claudeCodeDescription.version as number[]).includes(version),
 				`typeVersion ${version} disappeared`,
@@ -72,7 +72,7 @@ describe('node description — top-level parameters', () => {
 		['maxTurns', 'number', undefined],
 		['timeout', 'number', undefined],
 		['projectPath', 'string', ''],
-		['attachAllBinaries', 'boolean', undefined],
+		['attachAllBinaries', 'options', 'auto'],
 		['binaryProperties', 'string', ''],
 		['outputFormat', 'options', undefined],
 		['allowedTools', 'multiOptions', undefined],
@@ -104,16 +104,28 @@ describe('node description — top-level parameters', () => {
 		assert.equal(byName('prompt').required, true);
 	});
 
-	it('attachAllBinaries defaults ON in the schema — what a NEW node gets', () => {
-		// Asserted separately from the table above because the table's `undefined` means "do not
-		// check", and this default is load-bearing: it is the only one in the schema that differs
-		// from the fallback params.ts passes. See the next test for why.
-		assert.equal(byName('attachAllBinaries').default, true);
+	it('attachAllBinaries offers auto/on/off and defaults to auto', () => {
+		// It is `options`, not `boolean`, precisely so the default can stay version-neutral: the
+		// Workflow constructor writes schema defaults into every stored workflow before execution,
+		// so a boolean defaulting to true would have switched attachments on everywhere. `auto` is
+		// resolved against the node version in params.ts instead.
+		const field = byName('attachAllBinaries');
+		assert.equal(field.type, 'options');
+		assert.equal(field.default, 'auto');
+		assert.deepEqual(
+			optionsOf(field).map((o) => o.value),
+			['auto', 'on', 'off'],
+		);
 	});
 
-	it('binaryProperties hides while Attach All Binaries is on', () => {
+	it('binaryProperties shows only when Attach All Binaries is explicitly Off', () => {
+		// This is a behaviour contract, not cosmetics. n8n strips a parameter whose display
+		// condition is not met before the node reads anything, so with Attach All on Auto the named
+		// list is not merely hidden — it resolves empty and nothing is attached. Naming properties
+		// therefore requires Off. E2E case40/41 caught this; no unit test could, because the fake
+		// context does not model displayOptions.
 		assert.deepEqual(byName('binaryProperties').displayOptions, {
-			show: { attachAllBinaries: [false] },
+			show: { attachAllBinaries: ['off'] },
 		});
 	});
 });

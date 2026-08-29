@@ -396,7 +396,7 @@ function attachmentWorkflow({
 	files,
 	prompt,
 	binaryProperties,
-	attachAllBinaries = false,
+	attachAllBinaries = 'auto',
 	additionalOptions = {},
 	onError,
 	readFields = [],
@@ -404,6 +404,9 @@ function attachmentWorkflow({
 	// Empty means the full built-in tool set. A non-empty list is what makes the stagedAttachments
 	// applier's Read-injection branch reachable at all — see case45.
 	restrictTools = [],
+	// 1.2 by default so these cases keep exercising the version most stored workflows are on.
+	// case51 pins 1.3 to prove the other half of what `auto` means.
+	version = 1.2,
 }) {
 	const entries = Object.entries(files)
 		.map(
@@ -419,7 +422,7 @@ function attachmentWorkflow({
 		claude: { prompt, timeout, additionalOptions },
 		onError,
 		readFields,
-		version: 1.2,
+		version,
 	});
 
 	// Splice the Code node in between the trigger and Claude Code, and rewire.
@@ -443,7 +446,16 @@ function attachmentWorkflow({
 	};
 
 	const claude = wf.nodes.find((node) => node.name === 'Claude Code');
-	claude.parameters.attachAllBinaries = attachAllBinaries;
+	// `null` omits the key entirely, which is how a workflow saved before the parameter existed
+	// looks on disk. n8n then resolves it through the node's own fallback rather than the schema
+	// default — see case50.
+	// Binary Properties only DISPLAYS when Attach All Binaries is Off, and n8n strips a parameter
+	// whose display condition is not met before the node ever sees it — so a case naming properties
+	// while Attach All is on Auto reads an empty list and attaches nothing. That is the real UI
+	// contract, not a workaround: naming properties means "not all of them".
+	const attachAll =
+		attachAllBinaries === 'auto' && binaryProperties ? 'off' : attachAllBinaries;
+	if (attachAll !== null) claude.parameters.attachAllBinaries = attachAll;
 	claude.parameters.binaryProperties = binaryProperties ?? '';
 	// Attachments are the point of these cases; the agent must not be able to "solve" them by
 	// reading the fixture project instead.
@@ -585,7 +597,7 @@ cases.push(
 			b_small: { base64: b64('sku,qty\nSMALL-1,771\n'), mimeType: 'text/csv', fileName: 'b_small.csv' },
 			c_big: { base64: b64(BIG_CSV), mimeType: 'text/csv', fileName: 'c_big.csv' },
 		},
-		attachAllBinaries: true,
+		attachAllBinaries: 'on',
 		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
 		prompt:
 			'Answer with exactly two numbers separated by a space, nothing else: first the qty of SKU SMALL-1, then the qty of SKU NEEDLE-5150. One of the files is on disk; read it.',
@@ -650,6 +662,85 @@ cases.push(
 		prompt: FAST_PROMPT,
 		onError: 'continueErrorOutput',
 		readFields: ['error', 'message'],
+	}),
+);
+
+// ---------------------------------------------------------------------------------------------
+// Allowed Extensions, and the upgrade-safety claim behind the new Attach All default.
+// ---------------------------------------------------------------------------------------------
+
+const MIXED_FILES = {
+	a_shot: { base64: SEA_GREEN_PNG.toString('base64'), mimeType: 'image/png', fileName: 'a_shot.png' },
+	b_data: { base64: b64(MARKER_CSV), mimeType: 'text/csv', fileName: 'b_data.csv' },
+	c_blob: {
+		// Real zip bytes: 'PK\x03\x04' then padding. Never routable inline, so without the filter
+		// it would be staged — which is exactly what the filter has to prevent.
+		base64: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64)]).toString('base64'),
+		mimeType: 'application/zip',
+		fileName: 'c_blob.zip',
+	},
+};
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case48 attachment - allowed extensions keeps some and skips the rest',
+		notes:
+			'Attach All with a PNG, a CSV and a ZIP, and Allowed Extensions set to png + csv. EXPECT ' +
+			'the run to SUCCEED (a skip is not a failure), result 412 from the csv, ' +
+			'diagnostics.attachments.count 2, staged null — the zip must NOT be staged — and ' +
+			'skipped holding exactly c_blob/c_blob.zip/zip. If the zip were staged instead of ' +
+			'skipped, additionalDirectories would be set and staged would not be null.',
+		files: MIXED_FILES,
+		attachAllBinaries: 'on',
+		additionalOptions: { debug: true, allowedExtensions: ['png', 'csv'] },
+		prompt:
+			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document?',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case49 attachment - every file filtered out still runs and still reports',
+		notes:
+			'Same three files, Allowed Extensions set to pdf only, so nothing matches. EXPECT the run ' +
+			'to SUCCEED with no attachment at all: count 0, skipped holding all three, staged null. ' +
+			'This is the case that proves a filter can empty the set without failing the item, and ' +
+			'that the report still exists to say so.',
+		files: MIXED_FILES,
+		attachAllBinaries: 'on',
+		additionalOptions: { debug: true, allowedExtensions: ['pdf'] },
+		prompt: FAST_PROMPT,
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case50 attachment - a workflow saved before the parameter does not start attaching',
+		notes:
+			'The upgrade-safety case. The workflow JSON has NO attachAllBinaries key and NO ' +
+			'binaryProperties value, exactly like a node saved before this release, but the item does ' +
+			'carry binary data. The schema default is true; the node fallback is false. n8n resolves ' +
+			'with get(node.parameters, name, fallbackValue) and never consults the schema at run ' +
+			'time, so EXPECT nothing attached: diagnostics must have NO attachments key at all. If ' +
+			'that key appears, upgrading the package silently changed every stored workflow.',
+		files: MIXED_FILES,
+		attachAllBinaries: null,
+		prompt: FAST_PROMPT,
+		readFields: ['result'],
+	}),
+);
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case51 attachment - a 1.3 node on Auto does attach',
+		notes:
+			'The other half of case50. Identical workflow — no attachAllBinaries key, binary data on ' +
+			'the item — but the node is pinned at typeVersion 1.3. The schema default `auto` resolves ' +
+			'against the version in params.ts, so EXPECT it to attach: diagnostics.attachments present ' +
+			'with count 3. Together the two cases prove auto means off below 1.3 and on from 1.3, ' +
+			'which is what lets the feature default on for new nodes without touching stored ones.',
+		files: MIXED_FILES,
+		attachAllBinaries: null,
+		version: 1.3,
+		prompt:
+			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document?',
+		readFields: ['result'],
 	}),
 );
 

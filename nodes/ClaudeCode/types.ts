@@ -28,6 +28,13 @@ export type OutputFormat = 'structured' | 'messages' | 'text';
 
 export type Operation = 'query' | 'continue';
 
+/**
+ * The Attach All Binaries selector. `auto` is resolved against the node version in params.ts,
+ * because a schema default is written into every stored workflow before execution and therefore
+ * cannot be made version-aware. See the comment on the parameter itself.
+ */
+export type AttachAllSelection = 'auto' | 'on' | 'off';
+
 /** The Thinking selector's values. Mapped onto the SDK's `ThinkingConfig` in config.ts. */
 export type ThinkingSelection = 'default' | 'disabled' | 'adaptive' | 'summarized';
 

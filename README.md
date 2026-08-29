@@ -174,21 +174,23 @@ Two parameters select what goes:
 
 | Parameter | |
 |---|---|
-| **Attach All Binaries** | send every binary property on the item, ordered by property name — **on by default** |
-| **Binary Properties** | a comma-separated list, when you want only some of them |
+| **Attach All Binaries** | send every binary property on the item, ordered by property name — `Auto` / `On` / `Off`, defaulting to `Auto` |
+| **Binary Properties** | a comma-separated list, when you want only some of them — **available only when Attach All Binaries is `Off`** |
 
 Both sit under **Project Path**, since they describe what goes into the request rather than how it
 runs.
 
-**Attach All Binaries is on by default**, because an item that carries a file usually carries it for
-a reason, and because the property names often come from upstream and vary — Monday emits `data_0`,
-`data_1`, `data_2` with no fixed count. An item with no binary data is unaffected: nothing is
-collected and nothing is sent. Turn it off and name properties instead when you want to leave a
-heavy attachment out and not pay tokens for it, or off with an empty list for a text-only request.
+**Attach All Binaries defaults to `Auto`, which is on for a node you add now** — an item that
+carries a file usually carries it for a reason, and the property names often come from upstream and
+vary, since Monday emits `data_0`, `data_1`, `data_2` with no fixed count. An item with no binary
+data is unaffected: nothing is collected and nothing is sent. Set it to `Off` and name properties
+instead when you want to leave a heavy attachment out and not pay tokens for it, or `Off` with an
+empty list for a text-only request.
 
-If you are upgrading, nothing changes in a workflow you already built: n8n reads a parameter from
-the stored workflow and falls back to the node's own value, never to the schema default, so a node
-saved before this release keeps the feature off until you turn it on.
+**Upgrading changes nothing in a workflow you already built.** `Auto` means on from node version
+1.3 and off below it, and a node keeps the version it was created with — so an existing node stays
+off until you say otherwise. To turn it on there without recreating it, set it to `On`, which
+overrides the version either way.
 
 ### Attached directly, or staged on disk
 
@@ -776,7 +778,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 656 tests — node:test, no framework, no extra dependencies
+npm test    # 662 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -793,7 +795,7 @@ fixture moved and why. Fixes to old behaviour belong in a new node version, not 
 marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
 `v12.ts`.
 
-There is also a Docker suite that runs real n8n with the node installed and asserts 34 named
+There is also a Docker suite that runs real n8n with the node installed and asserts 39 named
 behaviours against real executions — including that an attached image, PDF or document actually
 reaches the model, which no unit test can prove. It lives in `scripts/e2e/`, which **is** versioned;
 only what it generates (`workflows/`, `results.json`, `run-*.log`, `.pack/`) is gitignored. It costs

@@ -142,7 +142,7 @@ describe('node attachments — inline', () => {
 			b: binaryProperty('bee', { fileName: 'b.csv', mimeType: 'text/csv' }),
 			a: binaryProperty('ay', { fileName: 'a.csv', mimeType: 'text/csv' }),
 		});
-		const { calls } = await exec({ items: [item], params: { attachAllBinaries: true } });
+		const { calls } = await exec({ items: [item], params: { attachAllBinaries: 'on' } });
 		const [turn] = await turnsOf(calls[0]);
 		assert.ok(Array.isArray(turn));
 		// Sorted by property name, so a.csv comes first regardless of item key order.
@@ -187,7 +187,7 @@ describe('node attachments — the extension filter', () => {
 			b_dump: binaryProperty('PK-bytes', { fileName: 'dump.zip', mimeType: 'application/zip' }),
 		});
 
-	const onlyPng = { attachAllBinaries: true, additionalOptions: { allowedExtensions: ['png'] } };
+	const onlyPng = { attachAllBinaries: 'on', additionalOptions: { allowedExtensions: ['png'] } };
 
 	it('sends only the allowed extension, and the run continues', async () => {
 		const { calls, items } = await exec({ items: [mixed()], params: onlyPng });
@@ -217,7 +217,7 @@ describe('node attachments — the extension filter', () => {
 	it('still reports when EVERY file was filtered out, and the run goes ahead', async () => {
 		const { items, calls } = await exec({
 			items: [mixed()],
-			params: { attachAllBinaries: true, additionalOptions: { allowedExtensions: ['pdf'] } },
+			params: { attachAllBinaries: 'on', additionalOptions: { allowedExtensions: ['pdf'] } },
 		});
 		// The prompt goes as a plain string — nothing was attached.
 		const [turn] = await turnsOf(calls[0]);
@@ -233,7 +233,7 @@ describe('node attachments — the extension filter', () => {
 		const { fake } = await exec({
 			items: [mixed()],
 			params: {
-				attachAllBinaries: true,
+				attachAllBinaries: 'on',
 				additionalOptions: { allowedExtensions: ['png'], debug: true },
 			},
 		});
