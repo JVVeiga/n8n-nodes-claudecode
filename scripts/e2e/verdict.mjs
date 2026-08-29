@@ -66,6 +66,136 @@ const checks = [
     const profileReadable = off.account?.tokenSource !== 'CLAUDE_CODE_OAUTH_TOKEN';
     return profileReadable ? typeof on.account?.email === 'string' : !('email' in (on.account ?? {}));
   }],
+  // Attachments. These are the only checks that prove a file reaches the model at all — the unit
+  // tests prove which blocks get built, not that the API and CLI accept them.
+  ['40 an image reaches the model directly, with no tool involved', () => {
+    const j = get('case40')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // The answer has to come from the pixels: nothing in the prompt says what colour it is.
+    return /green/i.test(String(j.result)) && !/NO_IMAGE/.test(String(j.result))
+      && a?.count === 1 && a.staged === null && a.inline?.[0]?.as === 'image';
+  }],
+  ['41 a csv reaches the model as a document block', () => {
+    const j = get('case41')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // 412 exists nowhere but in the attached bytes.
+    return /412/.test(String(j.result)) && a?.inline?.[0]?.as === 'document-text' && a.staged === null;
+  }],
+  ['42 an oversized file is staged, and the agent reads it off disk', () => {
+    const j = get('case42')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // 8823 is on the LAST row, so the hint block alone cannot produce it — this is what proves
+    // additionalDirectories worked and the temp dir was reachable from inside the container.
+    return /8823/.test(String(j.result))
+      && a?.inline?.length === 0
+      && typeof a.staged?.dir === 'string' && a.staged.dir.length > 0
+      && a.staged.files?.[0]?.name === 'dump.csv';
+  }],
+  ['43 a missing binary property fails the item on the error branch, naming it', () => {
+    const c = get('case43');
+    if (!c) return false;
+    const j = c.itemJson ?? {};
+    // The message has to name the property, so the fix is obvious from the item alone.
+    //
+    // It does NOT also assert the Problem's description ("the item carries these binary
+    // properties: data"). That description reaches a THROWN NodeOperationError but not a soft
+    // failure item: buildFailureItem passes null as the description, and shapeFailureJson then
+    // sets `message` to the message rather than the fix. Asserting it here failed on the first
+    // real run — the node was right and the check was wrong. Logged as a 1.3 candidate rather
+    // than patched, because giving buildFailureItem a description changes `message` on every
+    // existing 1.1 failure item.
+    return /no binary property named "screenshot"/.test(String(j.error ?? j.message))
+      && String(det(c).errorType) === 'execution_error';
+  }],
+  ['43 a rejected attachment costs nothing — the agent never ran', () => {
+    const d = det(get('case43'));
+    // No session, no turns: collectAttachments fails before query() is called.
+    return (d.total_cost_usd ?? 0) === 0 && !d.session_id;
+  }],
+  ['44 attach-all sends several files, in property-name order', () => {
+    const a = get('case44')?.itemJson?.diagnostics?.attachments;
+    if (!a || a.count !== 3) return false;
+    // Sorted by property name (a_shot, b_small, c_big), not by item key order — the guarantee is
+    // that the model sees the same sequence on every run over the same data.
+    return a.inline?.length === 2
+      && a.inline[0].name === 'a_shot.png' && a.inline[0].as === 'image'
+      && a.inline[1].name === 'b_small.csv' && a.inline[1].as === 'document-text'
+      && a.staged?.files?.length === 1 && a.staged.files[0].name === 'c_big.csv';
+  }],
+  ['44 inline and staged reach the model in the SAME request', () => {
+    const j = get('case44')?.itemJson;
+    // 771 is in the attached csv, 8823 on the last row of the staged one. Both present means the
+    // two routes coexist in one turn — the only case that proves it.
+    return j?.success === true && /771/.test(String(j.result)) && /8823/.test(String(j.result));
+  }],
+  ['45 a tool restriction omitting Read cannot silently defeat staging', () => {
+    const j = get('case45')?.itemJson;
+    if (!j || j.success !== true) return false;
+    // Restrict Built-in Tools was ['Bash','Grep']. Without the applier adding Read the agent
+    // cannot open the staged file and answers without it while still reporting success — a green
+    // run with a wrong answer. 8823 is only obtainable by reading the file.
+    return /8823/.test(String(j.result)) && !/CANNOT_READ/.test(String(j.result))
+      && typeof j.diagnostics?.attachments?.staged?.dir === 'string';
+  }],
+  ['46 a pdf reaches the model as a base64 document block', () => {
+    const j = get('case46')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // 3947 exists only inside the generated PDF.
+    return /3947/.test(String(j.result)) && a?.inline?.[0]?.as === 'document-pdf';
+  }],
+  ['47 a file over the size cap fails the item, naming it and the limit', () => {
+    const c = get('case47');
+    if (!c) return false;
+    const j = c.itemJson ?? {};
+    const msg = String(j.error ?? j.message);
+    return /"huge"/.test(msg) && /2\.0 MB/.test(msg) && /limit of 1 MB/.test(msg);
+  }],
+  ['47 a file rejected by the cap costs nothing', () => {
+    const d = det(get('case47'));
+    return (d.total_cost_usd ?? 0) === 0 && !d.session_id;
+  }],
+  ['48 allowed extensions keeps the listed types and skips the rest', () => {
+    const j = get('case48')?.itemJson;
+    if (!j || j.success !== true) return false;   // a skip must never fail the item
+    const a = j.diagnostics?.attachments;
+    return /412/.test(String(j.result))
+      && a?.count === 2
+      && a.staged === null                        // the zip was skipped, NOT staged
+      && a.skipped?.length === 1
+      && a.skipped[0].propName === 'c_blob'
+      && a.skipped[0].extension === 'zip';
+  }],
+  ['48 a filtered file is never staged — no temp dir is created for it', () => {
+    // staged === null is asserted above; this pins the other half, that the run did not quietly
+    // fall back to putting the excluded file on disk where the agent could still read it.
+    const a = get('case48')?.itemJson?.diagnostics?.attachments;
+    return !!a && a.inline?.length === 2 && a.inline.every((i) => i.name !== 'c_blob.zip');
+  }],
+  ['49 filtering everything out still runs, and still reports why', () => {
+    const j = get('case49')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    return a?.count === 0 && a.inline?.length === 0 && a.staged === null && a.skipped?.length === 3;
+  }],
+  ['51 a 1.3 node left on Auto does attach', () => {
+    const j = get('case51')?.itemJson;
+    if (!j || j.success !== true) return false;
+    const a = j.diagnostics?.attachments;
+    // Same workflow as case50 but pinned at 1.3. The pair is the whole proof that `auto` is
+    // version-aware: neither case alone distinguishes "auto works" from "auto is stuck".
+    return a?.count === 3 && /412/.test(String(j.result));
+  }],
+  ['50 a workflow saved before the parameter does not start attaching on upgrade', () => {
+    const j = get('case50')?.itemJson;
+    if (!j || j.success !== true) return false;
+    // The whole claim: the schema default is true, the node fallback is false, and n8n uses the
+    // fallback for a key the stored workflow does not have. No key means nothing was collected.
+    return !('attachments' in (j.diagnostics ?? {}));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

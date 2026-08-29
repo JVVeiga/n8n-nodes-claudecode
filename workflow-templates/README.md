@@ -15,6 +15,12 @@ Ready-to-use workflow templates that showcase the power of Claude Code in n8n au
 
 **Perfect for**: Teams wanting to automate bug fixes for common issues
 
+**Worth adding when your reports carry files**: this template feeds Claude the issue text only. If
+the bug reports come from a tracker that attaches evidence — a screenshot of the broken screen, a CSV
+of the failing rows, an HTML capture — set **Binary Properties** (or **Attach All Binaries**) on the
+Claude Code node and the files reach the model with the prompt. Images go in as images, so it can
+read a screenshot. See [Attachments](../README.md#attachments).
+
 ---
 
 ### 2. 📚 [Documentation Generator](./codebase-documentation-generator.json)

@@ -1,3 +1,72 @@
+## Unreleased
+
+### Attachments — send the files already on the item
+
+Binary data on the incoming n8n item can now go to Claude with the prompt: a Monday screenshot, a
+CSV export, an HTML capture, a PDF. Two new top-level parameters select what goes, and three in
+Additional Options bound it.
+
+| Parameter | Where | Default |
+|---|---|---|
+| **Attach All Binaries** | top level, under Project Path | `Auto` |
+| **Binary Properties** | top level, shown when the above is off | `''` |
+| **Allowed Extensions** | Additional Options | `[]` (no filter) |
+| **Inline Text Size Limit (KB)** | Additional Options | `256` |
+| **Max Attachment Size (MB)** | Additional Options | `50` |
+| **Max Attachment Count** | Additional Options | `16` |
+
+Files take one of two routes. Images (PNG/JPEG/GIF/WebP up to 5 MB), PDFs (up to 20 MB) and text
+under the inline limit are **attached to the request itself**, as content blocks — so vision works
+with no tool enabled and no filesystem involved. Anything larger, or of a type no block can carry
+(`.xlsx`, `.zip`, `.heic`), is **written to a temporary directory** exposed to the agent via
+`additionalDirectories`, and the prompt says what is there. That directory is removed when the item
+finishes — on success, on error, and on a timeout.
+
+**Allowed Extensions** narrows what is considered at all: a multi-select of ~120 extensions, empty
+by default. Select some and only those go; anything else on the item is skipped and the run
+continues. It runs on the *derived* filename, so a binary with no filename is still judged on the
+extension its MIME type implies, and it runs before the count and size checks, so a file you told it
+to ignore can never trip **Max Attachment Count**.
+
+That is deliberately not a failure. A property that is not on the item, one over the size cap, or
+too many of them **fails that item** with a message naming the property, rather than letting the run
+answer about evidence it never received — those are refusals of something you asked for. The
+extension filter is you saying which types you want. Every skip is still reported, because "ignore
+and continue" is the pattern that goes wrong quietly. `Continue On Fail` still applies to the
+failures.
+
+When at least one attachment was sent or skipped, `diagnostics.attachments` reports the count of
+what was **sent**, the total bytes, what was skipped and why, how each inlined file was sent, and the
+staged directory and its files.
+
+See [Attachments](README.md#attachments) for the routing table and the two things that will bite you.
+
+### No breaking changes, and one new node version
+
+**typeVersion 1.3** exists for exactly one thing: **Attach All Binaries** on `Auto` means *on* from
+1.3 and *off* below it. A node keeps the version it was created with, so a newly added node attaches
+by default while every workflow you already built does not. Nothing else changed — 1.3 emits the
+same envelope as 1.2.
+
+That indirection is not decoration. A schema default cannot be made version-aware: n8n's `Workflow`
+constructor writes every schema default into `node.parameters` *before* execution
+(`NodeHelpers.getNodeParameters`), so a parameter absent from a stored workflow still arrives
+carrying the schema's value. An earlier draft used a plain boolean defaulting to `true` on the
+theory that the run-time lookup would fall through to the node's own fallback. It does not, and an
+E2E case built to prove the claim disproved it instead: a workflow with no such key attached all
+three of its files. `Auto` moves the decision into code, where it can read the typeVersion.
+
+- To turn it on in a node you already have, set it to **On** — that works on any version, the same
+  way **Output Envelope** lets an older node opt into the 1.2 shape.
+- An item carrying no binary data is unaffected either way: nothing is collected and nothing is sent.
+- `diagnostics.attachments` is **absent** — not `null` — on a run with no attachments. All 48 golden
+  fixtures for typeVersions 1 and 1.1 are byte-identical and were not regenerated, so no existing
+  workflow's output moved. That is why this needed no typeVersion 1.3.
+- One thing to know if you changed **Permission Mode** away from the default: reading a *staged*
+  file is a `Read` call, and under `default` or `dontAsk` an unapproved call is denied. Add `Read` to
+  **Allowed Tools** if so. A tool *restriction* is handled automatically — when files are staged and
+  **Restrict Built-in Tools** is non-empty, `Read` is added to it.
+
 ## [0.12.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.11.0...v0.12.0) (2026-08-22)
 
 ### No breaking changes

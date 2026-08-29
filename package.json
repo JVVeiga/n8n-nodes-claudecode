@@ -1,7 +1,7 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
   "version": "0.12.0",
-  "description": "Two n8n nodes for Claude Code v2 via the Claude Agent SDK: the agent — with effort, thinking, Ultracode, tool restriction, a spend cap, graceful timeouts and run diagnostics — plus a free usage read for plan limits and reset windows",
+  "description": "Two n8n nodes for Claude Code v2 via the Claude Agent SDK: the agent — with file attachments from n8n binary data (images, PDFs, CSV), effort, thinking, Ultracode, tool restriction, a spend cap, graceful timeouts and run diagnostics — plus a free usage read for plan limits and reset windows",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -11,6 +11,9 @@
     "anthropic",
     "mcp",
     "model-context-protocol",
+    "attachments",
+    "vision",
+    "binary-data",
     "rate-limits",
     "usage"
   ],

@@ -3,6 +3,7 @@
 // plus a Set node reading the payload fields the case is about, so the assertion is visible in the
 // UI without digging through JSON.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 
 const OUT = new URL('./workflows/', import.meta.url).pathname;
 rmSync(OUT, { recursive: true, force: true });
@@ -327,6 +328,419 @@ cases.push(
 			'Same read with Include Account Email on. EXPECT account.email present here and absent in ' +
 			'case30 — it is personal data, so the default must not leak it.',
 		options: { includeAccountEmail: true },
+	}),
+);
+
+// ---------------------------------------------------------------------------------------------
+// Attachment cases. These are the only ones whose input is binary data, so they need a node in
+// front of Claude Code that produces some. A Code node is used rather than a fixture file in the
+// container: the bytes are generated here, so the assertion and the data it asserts on live in
+// one place, and nothing binary is committed.
+// ---------------------------------------------------------------------------------------------
+
+/** A solid-colour PNG, built byte by byte. Same generator as the spike that proved image blocks
+ * reach the model at all — see .specs/features/attachments/spikes/. */
+function solidPng(size, [r, g, b]) {
+	const crcTable = [];
+	for (let i = 0; i < 256; i++) {
+		let c = i;
+		for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+		crcTable[i] = c >>> 0;
+	}
+	const crc32 = (buf) => {
+		let crc = 0xffffffff;
+		for (const byte of buf) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+		return (crc ^ 0xffffffff) >>> 0;
+	};
+	const chunk = (type, data) => {
+		const len = Buffer.alloc(4);
+		len.writeUInt32BE(data.length);
+		const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+		const crc = Buffer.alloc(4);
+		crc.writeUInt32BE(crc32(body));
+		return Buffer.concat([len, body, crc]);
+	};
+
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(size, 0);
+	ihdr.writeUInt32BE(size, 4);
+	ihdr[8] = 8; // bit depth
+	ihdr[9] = 2; // colour type: truecolour
+	const raw = Buffer.alloc(size * (1 + size * 3));
+	for (let y = 0; y < size; y++) {
+		const row = y * (1 + size * 3);
+		raw[row] = 0; // filter: none
+		for (let x = 0; x < size; x++) {
+			raw[row + 1 + x * 3] = r;
+			raw[row + 2 + x * 3] = g;
+			raw[row + 3 + x * 3] = b;
+		}
+	}
+	return Buffer.concat([
+		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		chunk('IHDR', ihdr),
+		chunk('IDAT', deflateSync(raw)),
+		chunk('IEND', Buffer.alloc(0)),
+	]);
+}
+
+/**
+ * manualTrigger -> Code (produces the binary) -> Claude Code -> Set.
+ *
+ * The Code node returns `binary` with base64 `data`, which is exactly the shape an upstream
+ * HTTP Request or Monday node produces, so this exercises `getBinaryDataBuffer` for real.
+ */
+function attachmentWorkflow({
+	name,
+	notes,
+	files,
+	prompt,
+	binaryProperties,
+	attachAllBinaries = 'auto',
+	additionalOptions = {},
+	onError,
+	readFields = [],
+	timeout = 120,
+	// Empty means the full built-in tool set. A non-empty list is what makes the stagedAttachments
+	// applier's Read-injection branch reachable at all — see case45.
+	restrictTools = [],
+	// 1.2 by default so these cases keep exercising the version most stored workflows are on.
+	// case51 pins 1.3 to prove the other half of what `auto` means.
+	version = 1.2,
+}) {
+	const entries = Object.entries(files)
+		.map(
+			([prop, f]) =>
+				`    ${JSON.stringify(prop)}: { data: ${JSON.stringify(f.base64)}, mimeType: ${JSON.stringify(f.mimeType)}, fileName: ${JSON.stringify(f.fileName)} }`,
+		)
+		.join(',\n');
+	const code = `return [{\n  json: {},\n  binary: {\n${entries}\n  },\n}];`;
+
+	const wf = workflow({
+		name,
+		notes,
+		claude: { prompt, timeout, additionalOptions },
+		onError,
+		readFields,
+		version,
+	});
+
+	// Splice the Code node in between the trigger and Claude Code, and rewire.
+	wf.nodes.splice(1, 0, {
+		parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: code },
+		id: nextId(),
+		name: 'Make binary',
+		type: 'n8n-nodes-base.code',
+		typeVersion: 2,
+		position: [180, 0],
+	});
+	wf.nodes.find((node) => node.name === 'Claude Code').position = [400, 0];
+	const readPayload = wf.nodes.find((node) => node.name === 'Read payload');
+	if (readPayload) readPayload.position = [640, onError === 'continueErrorOutput' ? 160 : 0];
+
+	wf.connections['When clicking Execute'] = {
+		main: [[{ node: 'Make binary', type: 'main', index: 0 }]],
+	};
+	wf.connections['Make binary'] = {
+		main: [[{ node: 'Claude Code', type: 'main', index: 0 }]],
+	};
+
+	const claude = wf.nodes.find((node) => node.name === 'Claude Code');
+	// `null` omits the key entirely, which is how a workflow saved before the parameter existed
+	// looks on disk. n8n then resolves it through the node's own fallback rather than the schema
+	// default — see case50.
+	// Binary Properties only DISPLAYS when Attach All Binaries is Off, and n8n strips a parameter
+	// whose display condition is not met before the node ever sees it — so a case naming properties
+	// while Attach All is on Auto reads an empty list and attaches nothing. That is the real UI
+	// contract, not a workaround: naming properties means "not all of them".
+	const attachAll =
+		attachAllBinaries === 'auto' && binaryProperties ? 'off' : attachAllBinaries;
+	if (attachAll !== null) claude.parameters.attachAllBinaries = attachAll;
+	claude.parameters.binaryProperties = binaryProperties ?? '';
+	// Attachments are the point of these cases; the agent must not be able to "solve" them by
+	// reading the fixture project instead.
+	claude.parameters.projectPath = PROJECT;
+	claude.parameters.restrictTools = restrictTools;
+
+	return wf;
+}
+
+const SEA_GREEN_PNG = solidPng(64, [0x2e, 0x8b, 0x57]);
+const MARKER_CSV = 'sku,qty\nWIDGET-7741,412\nGIZMO-9,3\n';
+// Over the 1 KB inline limit set on case42, with the answer buried past the first row so a model
+// that guessed from the hint block rather than reading the file would get it wrong.
+const BIG_CSV = `sku,qty\n${'FILLER-000,1\n'.repeat(400)}NEEDLE-5150,8823\n`;
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case40 attachment - image inline, vision with no tools',
+		notes:
+			'A 64x64 solid sea-green PNG on binary property "shot", sent as an image content block. ' +
+			'EXPECT the result to name the colour (green). diagnostics.attachments.inline[0].as must ' +
+			'be "image" and staged must be null. This is the case that proves an image reaches the ' +
+			'model directly — no filesystem, no Read tool.',
+		files: {
+			shot: {
+				base64: SEA_GREEN_PNG.toString('base64'),
+				mimeType: 'image/png',
+				fileName: 'shot.png',
+			},
+		},
+		binaryProperties: 'shot',
+		prompt:
+			'Answer in one word only. What colour fills the attached image? If you cannot see an image, answer exactly NO_IMAGE.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case41 attachment - csv inline as a document block',
+		notes:
+			'A 3-row CSV on binary property "data". EXPECT the result to be 412 — a value that exists ' +
+			'nowhere but in the attached file. diagnostics.attachments.inline[0].as must be ' +
+			'"document-text".',
+		files: {
+			data: {
+				base64: Buffer.from(MARKER_CSV, 'utf8').toString('base64'),
+				mimeType: 'text/csv',
+				fileName: 'export.csv',
+			},
+		},
+		binaryProperties: 'data',
+		prompt:
+			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document? If you see no document, answer NO_DOC.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case42 attachment - oversized text staged to disk and read',
+		notes:
+			'A ~5 KB CSV with Inline Text Size Limit set to 1 KB, so it is staged instead of attached. ' +
+			'EXPECT diagnostics.attachments.staged.dir to be populated, inline to be empty, and the ' +
+			'result to be 8823 — which is on the LAST row, so the agent had to actually Read the file ' +
+			'rather than infer from the hint block. Also proves additionalDirectories works and the ' +
+			'temp dir is reachable from inside the container.',
+		files: {
+			dump: {
+				base64: Buffer.from(BIG_CSV, 'utf8').toString('base64'),
+				mimeType: 'text/csv',
+				fileName: 'dump.csv',
+			},
+		},
+		binaryProperties: 'dump',
+		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
+		prompt:
+			'Answer with the number only. What qty does SKU NEEDLE-5150 have? The file is staged on disk; read it. If you cannot find it, answer NOT_FOUND.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case43 attachment - a named property that is not on the item fails the item',
+		notes:
+			'Binary Properties names "screenshot", the item carries only "data". EXPECT branch 1 (the ' +
+			'error output) with a message naming "screenshot" and listing what the item does have, and ' +
+			'NO spend — query is never called. Silently answering without the evidence is the failure ' +
+			'mode this guards against.',
+		files: {
+			data: {
+				base64: Buffer.from(MARKER_CSV, 'utf8').toString('base64'),
+				mimeType: 'text/csv',
+				fileName: 'export.csv',
+			},
+		},
+		binaryProperties: 'screenshot',
+		prompt: FAST_PROMPT,
+		onError: 'continueErrorOutput',
+		readFields: ['error', 'message'],
+	}),
+);
+
+// The first four cases each exercise one route with one file, a named property list, and no tool
+// restriction. These four cover what that leaves: the toggle, several files at once, the two routes
+// meeting in one item, the third block type, the size cap, and — the one that matters most — the
+// guard that stops a tool restriction from silently defeating staging.
+
+/** A one-page PDF with correct xref offsets, built here so no binary is committed. Same generator
+ * as the spike that proved base64 PDF blocks reach the model. */
+function onePagePdf(text) {
+	const content = `BT /F1 24 Tf 72 700 Td (${text}) Tj ET\n`;
+	const objs = [
+		'<< /Type /Catalog /Pages 2 0 R >>',
+		'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+		'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+		`<< /Length ${content.length} >>\nstream\n${content}endstream`,
+		'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+	];
+	let pdf = '%PDF-1.4\n';
+	const offsets = [];
+	objs.forEach((body, i) => {
+		offsets.push(pdf.length);
+		pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+	});
+	const xrefAt = pdf.length;
+	pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+	for (const off of offsets) pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
+	pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+	return Buffer.from(pdf, 'latin1');
+}
+
+const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case44 attachment - attach all, several files, inline and staged together',
+		notes:
+			'Attach All Binaries with three properties and no name list: a PNG, a small CSV, and a CSV ' +
+			'over the 1 KB inline limit. EXPECT diagnostics.attachments.count 3, inline holding the ' +
+			'image and the small csv IN PROPERTY-NAME ORDER (a_shot.png then b_small.csv), and staged ' +
+			'holding c_big.csv. The result must contain BOTH 771 (small csv, attached) and 8823 (last ' +
+			'row of the staged csv, so it had to Read). This is the only case where the two routes meet ' +
+			'in one request, and the only one that proves the toggle and multi-file ordering at all.',
+		files: {
+			a_shot: { base64: SEA_GREEN_PNG.toString('base64'), mimeType: 'image/png', fileName: 'a_shot.png' },
+			b_small: { base64: b64('sku,qty\nSMALL-1,771\n'), mimeType: 'text/csv', fileName: 'b_small.csv' },
+			c_big: { base64: b64(BIG_CSV), mimeType: 'text/csv', fileName: 'c_big.csv' },
+		},
+		attachAllBinaries: 'on',
+		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
+		prompt:
+			'Answer with exactly two numbers separated by a space, nothing else: first the qty of SKU SMALL-1, then the qty of SKU NEEDLE-5150. One of the files is on disk; read it.',
+		readFields: ['result'],
+		timeout: 180,
+	}),
+	attachmentWorkflow({
+		name: 'case45 attachment - a tool restriction cannot silently defeat staging',
+		notes:
+			'A staged file with Restrict Built-in Tools set to Bash and Grep, which OMITS Read. Without ' +
+			'the stagedAttachments applier adding Read, the agent cannot open the file and answers ' +
+			'without the evidence while still reporting success — a green run with a wrong answer, ' +
+			'which is the exact failure this guard exists to prevent. EXPECT result 8823 and ' +
+			'diagnostics.attachments.staged populated. This is the only requirement whose whole purpose ' +
+			'is preventing a false green, and the only one that can only break in a real container.',
+		files: {
+			dump: { base64: b64(BIG_CSV), mimeType: 'text/csv', fileName: 'dump.csv' },
+		},
+		binaryProperties: 'dump',
+		restrictTools: ['Bash', 'Grep'],
+		additionalOptions: { debug: true, inlineTextLimitKb: 1 },
+		prompt:
+			'Answer with the number only. What qty does SKU NEEDLE-5150 have? The file is on disk; read it. If you cannot open it, answer CANNOT_READ.',
+		readFields: ['result'],
+		timeout: 180,
+	}),
+	attachmentWorkflow({
+		name: 'case46 attachment - pdf inline as a base64 document block',
+		notes:
+			'A one-page PDF built byte by byte. EXPECT result 3947 — a value that exists only inside ' +
+			'the PDF — and inline[0].as === "document-pdf". The third and last block type; the other ' +
+			'two are covered by case40 and case41. Proven against the real API by a spike before this ' +
+			'was built, but never through the container until now.',
+		files: {
+			invoice: {
+				base64: onePagePdf('Invoice ZX-88: total 3947 EUR').toString('base64'),
+				mimeType: 'application/pdf',
+				fileName: 'invoice.pdf',
+			},
+		},
+		binaryProperties: 'invoice',
+		prompt:
+			'Answer with the number only. What is the total in the attached PDF? If you see no PDF, answer NO_PDF.',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case47 attachment - a file over the size cap fails the item',
+		notes:
+			'A 2 MB file with Max Attachment Size set to 1 MB. EXPECT the error branch with a message ' +
+			'naming the property, its size and the limit, and NO spend — the cap is checked before ' +
+			'query() is called. Distinct from case43, which covers a property that is not on the item ' +
+			'at all: this one covers a property that is there and too big.',
+		files: {
+			huge: {
+				base64: Buffer.alloc(2 * 1024 * 1024, 0x41).toString('base64'),
+				mimeType: 'text/plain',
+				fileName: 'huge.txt',
+			},
+		},
+		binaryProperties: 'huge',
+		additionalOptions: { debug: true, maxAttachmentMb: 1 },
+		prompt: FAST_PROMPT,
+		onError: 'continueErrorOutput',
+		readFields: ['error', 'message'],
+	}),
+);
+
+// ---------------------------------------------------------------------------------------------
+// Allowed Extensions, and the upgrade-safety claim behind the new Attach All default.
+// ---------------------------------------------------------------------------------------------
+
+const MIXED_FILES = {
+	a_shot: { base64: SEA_GREEN_PNG.toString('base64'), mimeType: 'image/png', fileName: 'a_shot.png' },
+	b_data: { base64: b64(MARKER_CSV), mimeType: 'text/csv', fileName: 'b_data.csv' },
+	c_blob: {
+		// Real zip bytes: 'PK\x03\x04' then padding. Never routable inline, so without the filter
+		// it would be staged — which is exactly what the filter has to prevent.
+		base64: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(64)]).toString('base64'),
+		mimeType: 'application/zip',
+		fileName: 'c_blob.zip',
+	},
+};
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case48 attachment - allowed extensions keeps some and skips the rest',
+		notes:
+			'Attach All with a PNG, a CSV and a ZIP, and Allowed Extensions set to png + csv. EXPECT ' +
+			'the run to SUCCEED (a skip is not a failure), result 412 from the csv, ' +
+			'diagnostics.attachments.count 2, staged null — the zip must NOT be staged — and ' +
+			'skipped holding exactly c_blob/c_blob.zip/zip. If the zip were staged instead of ' +
+			'skipped, additionalDirectories would be set and staged would not be null.',
+		files: MIXED_FILES,
+		attachAllBinaries: 'on',
+		additionalOptions: { debug: true, allowedExtensions: ['png', 'csv'] },
+		prompt:
+			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document?',
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case49 attachment - every file filtered out still runs and still reports',
+		notes:
+			'Same three files, Allowed Extensions set to pdf only, so nothing matches. EXPECT the run ' +
+			'to SUCCEED with no attachment at all: count 0, skipped holding all three, staged null. ' +
+			'This is the case that proves a filter can empty the set without failing the item, and ' +
+			'that the report still exists to say so.',
+		files: MIXED_FILES,
+		attachAllBinaries: 'on',
+		additionalOptions: { debug: true, allowedExtensions: ['pdf'] },
+		prompt: FAST_PROMPT,
+		readFields: ['result'],
+	}),
+	attachmentWorkflow({
+		name: 'case50 attachment - a workflow saved before the parameter does not start attaching',
+		notes:
+			'The upgrade-safety case. The workflow JSON has NO attachAllBinaries key and NO ' +
+			'binaryProperties value, exactly like a node saved before this release, but the item does ' +
+			'carry binary data. The schema default is true; the node fallback is false. n8n resolves ' +
+			'with get(node.parameters, name, fallbackValue) and never consults the schema at run ' +
+			'time, so EXPECT nothing attached: diagnostics must have NO attachments key at all. If ' +
+			'that key appears, upgrading the package silently changed every stored workflow.',
+		files: MIXED_FILES,
+		attachAllBinaries: null,
+		prompt: FAST_PROMPT,
+		readFields: ['result'],
+	}),
+);
+
+cases.push(
+	attachmentWorkflow({
+		name: 'case51 attachment - a 1.3 node on Auto does attach',
+		notes:
+			'The other half of case50. Identical workflow — no attachAllBinaries key, binary data on ' +
+			'the item — but the node is pinned at typeVersion 1.3. The schema default `auto` resolves ' +
+			'against the version in params.ts, so EXPECT it to attach: diagnostics.attachments present ' +
+			'with count 3. Together the two cases prove auto means off below 1.3 and on from 1.3, ' +
+			'which is what lets the feature default on for new nodes without touching stored ones.',
+		files: MIXED_FILES,
+		attachAllBinaries: null,
+		version: 1.3,
+		prompt:
+			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document?',
+		readFields: ['result'],
 	}),
 );
 

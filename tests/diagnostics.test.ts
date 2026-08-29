@@ -166,3 +166,49 @@ describe('buildDiagnostics — the degenerate cases every error path hits', () =
 		assert.equal(build([]).resolvedModel, null);
 	});
 });
+
+describe('buildDiagnostics — the attachments field', () => {
+	const report = {
+		count: 1,
+		totalBytes: 42,
+		skipped: [],
+		inline: [{ name: 'a.csv', mimeType: 'text/csv', bytes: 42, as: 'document-text' as const }],
+		staged: null,
+	};
+
+	const withAttachments = (attachments: typeof report | null | undefined) =>
+		buildDiagnostics({
+			messages: streams.success(),
+			params: paramsFor(),
+			permissionMode: 'bypassPermissions',
+			appliedEffort: null,
+			attachments,
+		});
+
+	it('is absent as an own property when there were no attachments', () => {
+		// Not `undefined` — absent. A deep-equal against a golden fixture sees the difference, and
+		// that is what lets this feature ship without a new typeVersion.
+		assert.equal('attachments' in withAttachments(null), false);
+		assert.equal('attachments' in withAttachments(undefined), false);
+	});
+
+	it('is absent when the field is not passed at all', () => {
+		assert.equal('attachments' in build(streams.success()), false);
+	});
+
+	it('serialises to exactly the same JSON as before the feature, with no attachments', () => {
+		const json = JSON.stringify(build(streams.success()));
+		assert.equal(json.includes('attachments'), false);
+	});
+
+	it('carries the report through verbatim when there were attachments', () => {
+		assert.deepEqual(withAttachments(report).attachments, report);
+	});
+
+	it('does not disturb any other diagnostics field', () => {
+		const without = build(streams.success());
+		const { attachments, ...rest } = withAttachments(report);
+		assert.ok(attachments);
+		assert.deepEqual(rest, without);
+	});
+});

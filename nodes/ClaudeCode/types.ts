@@ -5,6 +5,7 @@ import type {
 	SDKMessage,
 	SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { AttachmentSpec } from './attachments/types';
 import type { TerminationReason } from './timeout';
 
 /**
@@ -26,6 +27,13 @@ export type EffortSelection = EffortLevel | 'ultracode';
 export type OutputFormat = 'structured' | 'messages' | 'text';
 
 export type Operation = 'query' | 'continue';
+
+/**
+ * The Attach All Binaries selector. `auto` is resolved against the node version in params.ts,
+ * because a schema default is written into every stored workflow before execution and therefore
+ * cannot be made version-aware. See the comment on the parameter itself.
+ */
+export type AttachAllSelection = 'auto' | 'on' | 'off';
 
 /** The Thinking selector's values. Mapped onto the SDK's `ThinkingConfig` in config.ts. */
 export type ThinkingSelection = 'default' | 'disabled' | 'adaptive' | 'summarized';
@@ -54,6 +62,10 @@ export type AdditionalOptions = {
 	thinking?: ThinkingSelection;
 	outputEnvelope?: OutputEnvelope;
 	wrapUpGraceSeconds?: number;
+	inlineTextLimitKb?: number;
+	maxAttachmentMb?: number;
+	maxAttachmentCount?: number;
+	allowedExtensions?: string[];
 };
 
 /** Everything read off the node's parameters for one input item. The only thing produced by
@@ -71,6 +83,9 @@ export type ClaudeCodeParams = {
 	allowedTools: string[];
 	disallowedTools: string[];
 	restrictTools: string[];
+	/** Which binary properties to send and under what limits. Resolved in params.ts so every
+	 * consumer takes one plain value rather than five. */
+	attachments: AttachmentSpec;
 	additional: AdditionalOptions;
 	nodeVersion: number;
 	itemIndex: number;

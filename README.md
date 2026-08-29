@@ -46,6 +46,12 @@ alert before hitting the wall. A `CLAUDE_CODE_OAUTH_TOKEN` session — the usual
 read that endpoint at all, so there is an opt-in fallback that reads the two main windows off
 inference response headers for about $0.001. See [Usage & Plan Limits](#usage--plan-limits).
 
+**Files, not descriptions of files.** Attach the binary data already on the n8n item — a Monday
+screenshot, a CSV export, an HTML capture, a PDF — and the model receives the file itself. Images go
+in as images, so vision works without any tool being enabled; a file too large or of a type no
+content block can carry is written to a temporary directory the agent can read from instead. See
+[Attachments](#attachments).
+
 **Sessions you can resume.** A **Session ID** on Continue, so concurrent executions stop sharing
 one conversation.
 
@@ -56,7 +62,7 @@ sections you get. See [Output Formats](#output-formats).
 
 **Start here** — [Install](#install) · [Your First Workflow](#your-first-workflow) · [Templates](./workflow-templates/) · [What people build with it](#what-people-build-with-it)
 
-**Reference** — [Features](#features) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
+**Reference** — [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
 
 **Also** — [Notes worth knowing](#notes-worth-knowing) · [Development & Contributing](#development--contributing) · [Credits](#credits)
 
@@ -158,6 +164,137 @@ The node does not configure MCP itself. It loads whatever the target directory a
 works unchanged here — database access, GitHub, Slack, or anything custom. See
 [`examples/project-with-mcp/`](./examples/project-with-mcp/).
 
+## Attachments
+
+Binary data on the incoming item can go to Claude with the prompt. The typical case is fixing a bug
+from evidence: a Monday item arrives carrying a screenshot of the broken screen, a CSV export of the
+failing rows and an HTML capture of the response, and all three reach the model in the same request.
+
+Two parameters select what goes:
+
+| Parameter | |
+|---|---|
+| **Attach All Binaries** | send every binary property on the item, ordered by property name — `Auto` / `On` / `Off`, defaulting to `Auto` |
+| **Binary Properties** | a comma-separated list, when you want only some of them — **available only when Attach All Binaries is `Off`** |
+
+Both sit under **Project Path**, since they describe what goes into the request rather than how it
+runs.
+
+**Attach All Binaries defaults to `Auto`, which is on for a node you add now** — an item that
+carries a file usually carries it for a reason, and the property names often come from upstream and
+vary, since Monday emits `data_0`, `data_1`, `data_2` with no fixed count. An item with no binary
+data is unaffected: nothing is collected and nothing is sent. Set it to `Off` and name properties
+instead when you want to leave a heavy attachment out and not pay tokens for it, or `Off` with an
+empty list for a text-only request.
+
+**Upgrading changes nothing in a workflow you already built.** `Auto` means on from node version
+1.3 and off below it, and a node keeps the version it was created with — so an existing node stays
+off until you say otherwise. To turn it on there without recreating it, set it to `On`, which
+overrides the version either way.
+
+### Attached directly, or staged on disk
+
+Each file takes one of two routes, decided by its type and its size.
+
+**Attached directly** — the file is part of the request. The model has it immediately, no tool is
+involved, and it works even with **Restrict Built-in Tools** set to something that excludes `Read`.
+
+| Type | Ceiling |
+|---|---|
+| `image/png`, `image/jpeg`, `image/gif`, `image/webp` | 5 MB — an API limit |
+| `application/pdf` | 20 MB — an API limit |
+| `text/*`, plus JSON, XML, YAML, SVG, SQL, JS/TS | **Inline Text Size Limit (KB)**, default 256 |
+
+**Staged on disk** — everything else: a file over one of those ceilings, or a type with no matching
+block (`.xlsx`, `.zip`, `.heic`, `.docx`). It is written to a temporary directory, that directory is
+made readable to the agent, and the prompt tells it which files are there. The agent reads what it
+needs with `Read`, and can `grep` a 40 MB log rather than swallowing it.
+
+The temporary directory is removed when the item finishes — on success, on error, and on a timeout.
+
+### Narrowing by file type
+
+**Allowed Extensions** in Additional Options is a multi-select of ~120 extensions. Leave it empty —
+the default — and every file is considered. Select some and only those are sent; anything else on
+the item is **skipped and the run continues**.
+
+That is deliberately different from the failures below. A size cap or a property that is not on the
+item is a refusal of something you asked for, so it stops the item. The extension filter is you
+saying which types you want, so not sending the rest is doing what you asked — it never fails
+anything.
+
+It pairs with **Attach All Binaries** being on: attach everything, then narrow to the types that
+matter.
+
+```
+Attach All Binaries   [x]
+Allowed Extensions    PNG, CSV, PDF
+
+item carries  shot.png, export.csv, archive.zip
+              →  shot.png and export.csv sent
+              →  archive.zip skipped, reported, run continues
+```
+
+Two details worth knowing. The filter runs on the **derived** filename, so a binary that arrives
+with no filename at all is still judged on the extension its MIME type implies. And it runs before
+the count and size checks, so a file you told it to ignore can never be what trips **Max Attachment
+Count**.
+
+Everything skipped is listed under `diagnostics.attachments.skipped` with the property name, the
+derived filename and the extension — because "ignore and continue" is exactly the pattern that goes
+wrong quietly, and you should be able to see it did.
+
+### Choosing the text limit
+
+This is the one size knob that is a real trade rather than an API limit. An attached file sits in the
+context on **every turn**, so 256 KB of CSV is roughly 64k tokens per turn. A staged file costs
+nothing until the agent reads it — but the agent has to decide to read it, and might not.
+
+Attach when the file is the point of the request. Stage when it is reference material the agent
+should search. Set the limit to `0` to stage every text file.
+
+### Two things that will bite you
+
+**A permission mode other than `bypassPermissions` can make a staged file unreachable.** Reading from
+the staged directory is a `Read` call, and under `default` or `dontAsk` a call that is not
+pre-approved is denied — n8n runs headless and cannot answer a prompt. The node's default is
+`bypassPermissions`, so this only applies if you changed it; if you did, add `Read` to **Allowed
+Tools**. A tool *restriction* is handled for you: when files are staged and **Restrict Built-in
+Tools** is non-empty, `Read` is added to it, because staging a file the agent cannot read means the
+run answers without the evidence and still reports green.
+
+**A file that cannot be sent fails the item.** A binary property that is not on the item, a file over
+**Max Attachment Size (MB)**, or more attachments than **Max Attachment Count** each stop that item
+with a message naming the property. This is deliberate: the alternative is an answer about a file the
+model never saw. `Continue On Fail` still applies, and routes the item to the error output.
+
+### What the run reports
+
+When at least one attachment was sent **or skipped**, `diagnostics.attachments` says what happened:
+
+```json
+{
+  "count": 2,
+  "totalBytes": 42123456,
+  "skipped": [
+    { "propName": "data_3", "fileName": "archive.zip", "extension": "zip" }
+  ],
+  "inline": [
+    { "name": "shot.png", "mimeType": "image/png", "bytes": 245760, "as": "image" }
+  ],
+  "staged": {
+    "dir": "/tmp/n8n-claude-9f3c1a7b2e5d4088",
+    "files": [{ "name": "dump.csv", "mimeType": "text/csv", "bytes": 41877696 }]
+  }
+}
+```
+
+`count` is what was **sent** — a skipped file is reported separately rather than folded in, because
+"3 attachments" meaning "2 sent and 1 dropped" is how a wrong answer gets missed. `skipped` is always
+present so an expression can read `.skipped.length` without guarding, and `staged` is `null` when
+everything was attached directly. The whole key is absent on a run with no attachments and no skips,
+which is why this feature needed no new node version.
+
 ## Timeouts
 
 A long agentic run that hits its **Timeout** used to report nothing but a string:
@@ -213,7 +350,9 @@ changes an existing workflow. New nodes start on the current default, `1.2`.
 | Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 |
 | Output shape | one per format | one per format | [one envelope](#output-formats) |
 
-All three get the diagnostics, the session ID and the self-describing error message.
+All three get the diagnostics, the session ID and the self-describing error message. Nothing else is
+version-gated: [Attachments](#attachments) work identically on all three, because they change what
+goes *in* rather than what comes out.
 
 To give an existing node the newer output shape without recreating it, set **Output Envelope** to
 `Unified` in Additional Options. It defaults to `Auto`, which routes by version and changes nothing.
@@ -639,7 +778,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 465 tests — node:test, no framework, no extra dependencies
+npm test    # 662 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -656,9 +795,12 @@ fixture moved and why. Fixes to old behaviour belong in a new node version, not 
 marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
 `v12.ts`.
 
-There is also a Docker suite that runs real n8n with the node installed and asserts 23 named
-behaviours against real executions. It lives in `scripts/e2e/` and is untracked — a working
-instrument rather than a deliverable. `CLAUDE.md` has the details.
+There is also a Docker suite that runs real n8n with the node installed and asserts 39 named
+behaviours against real executions — including that an attached image, PDF or document actually
+reaches the model, which no unit test can prove. It lives in `scripts/e2e/`, which **is** versioned;
+only what it generates (`workflows/`, `results.json`, `run-*.log`, `.pack/`) is gitignored. It costs
+real API spend, so it is not part of the gate. `scripts/e2e/README.md` has the details, including
+which cases to re-run before believing a failure.
 
 ### Release Process
 

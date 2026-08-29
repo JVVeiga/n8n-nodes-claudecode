@@ -8,6 +8,11 @@ import {
 	MODEL_OPTIONS,
 } from '../nodes/ClaudeCode/description/models';
 import { BUILT_IN_TOOL_OPTIONS } from '../nodes/ClaudeCode/description/toolOptions';
+import {
+	EXTENSION_OPTIONS,
+	KNOWN_EXTENSIONS,
+} from '../nodes/ClaudeCode/description/extensionOptions';
+import { ROUTABLE_EXTENSIONS } from '../nodes/ClaudeCode/attachments/mime';
 
 const props = claudeCodeDescription.properties;
 const byName = (name: string): INodeProperties => {
@@ -33,14 +38,14 @@ describe('node description — identity', () => {
 		assert.equal(claudeCodeDescription.displayName, 'Claude Code');
 	});
 
-	it('declares versions 1, 1.1 and 1.2, defaulting to 1.2', () => {
+	it('declares versions 1 through 1.3, defaulting to 1.3', () => {
 		// A node keeps the version it was created with, so raising the default moves new nodes only.
-		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2]);
-		assert.equal(claudeCodeDescription.defaultVersion, 1.2);
+		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2, 1.3]);
+		assert.equal(claudeCodeDescription.defaultVersion, 1.3);
 	});
 
 	it('never drops a version — an existing workflow pinned to it would stop loading', () => {
-		for (const version of [1, 1.1]) {
+		for (const version of [1, 1.1, 1.2]) {
 			assert.ok(
 				(claudeCodeDescription.version as number[]).includes(version),
 				`typeVersion ${version} disappeared`,
@@ -67,6 +72,8 @@ describe('node description — top-level parameters', () => {
 		['maxTurns', 'number', undefined],
 		['timeout', 'number', undefined],
 		['projectPath', 'string', ''],
+		['attachAllBinaries', 'options', 'auto'],
+		['binaryProperties', 'string', ''],
 		['outputFormat', 'options', undefined],
 		['allowedTools', 'multiOptions', undefined],
 		['disallowedTools', 'multiOptions', undefined],
@@ -96,6 +103,31 @@ describe('node description — top-level parameters', () => {
 	it('prompt stays required', () => {
 		assert.equal(byName('prompt').required, true);
 	});
+
+	it('attachAllBinaries offers auto/on/off and defaults to auto', () => {
+		// It is `options`, not `boolean`, precisely so the default can stay version-neutral: the
+		// Workflow constructor writes schema defaults into every stored workflow before execution,
+		// so a boolean defaulting to true would have switched attachments on everywhere. `auto` is
+		// resolved against the node version in params.ts instead.
+		const field = byName('attachAllBinaries');
+		assert.equal(field.type, 'options');
+		assert.equal(field.default, 'auto');
+		assert.deepEqual(
+			optionsOf(field).map((o) => o.value),
+			['auto', 'on', 'off'],
+		);
+	});
+
+	it('binaryProperties shows only when Attach All Binaries is explicitly Off', () => {
+		// This is a behaviour contract, not cosmetics. n8n strips a parameter whose display
+		// condition is not met before the node reads anything, so with Attach All on Auto the named
+		// list is not merely hidden — it resolves empty and nothing is attached. Naming properties
+		// therefore requires Off. E2E case40/41 caught this; no unit test could, because the fake
+		// context does not model displayOptions.
+		assert.deepEqual(byName('binaryProperties').displayOptions, {
+			show: { attachAllBinaries: ['off'] },
+		});
+	});
 });
 
 describe('node description — additionalOptions collection', () => {
@@ -106,6 +138,10 @@ describe('node description — additionalOptions collection', () => {
 		'allowPlanExecution',
 		'includeTranscript',
 		'wrapUpGraceSeconds',
+		'allowedExtensions',
+		'inlineTextLimitKb',
+		'maxAttachmentMb',
+		'maxAttachmentCount',
 		'maxBudgetUsd',
 		'fallbackModel',
 		'thinking',
@@ -183,6 +219,41 @@ describe('model options — one list, two selectors', () => {
 			assert.ok(m.description.length > 0, `${m.value} has no description`);
 			assert.ok(m.short.length > 0, `${m.value} has no short name`);
 		}
+	});
+});
+
+describe('extension options — the Allowed Extensions filter', () => {
+	it('offers a wide curated list rather than a handful', () => {
+		assert.ok(KNOWN_EXTENSIONS.length > 100, `only ${KNOWN_EXTENSIONS.length} extensions offered`);
+	});
+
+	it('has no duplicates', () => {
+		assert.equal(new Set(KNOWN_EXTENSIONS).size, KNOWN_EXTENSIONS.length);
+	});
+
+	it('every value is a bare lowercase extension, matching what extensionOf() produces', () => {
+		for (const value of KNOWN_EXTENSIONS) {
+			assert.match(value, /^[a-z0-9]+$/, `${value} is not a bare lowercase extension`);
+		}
+	});
+
+	it('covers every extension mime.ts knows how to route', () => {
+		// The invariant that stops the two from drifting: if the router can name a type, the filter
+		// must be able to select it. Otherwise a user can be handed a file they have no way to
+		// filter on, and the only escape is turning the filter off entirely.
+		const missing = ROUTABLE_EXTENSIONS.filter((e) => !KNOWN_EXTENSIONS.includes(e));
+		assert.deepEqual(
+			missing,
+			[],
+			`mime.ts routes these but Allowed Extensions cannot name them: ${missing.join(', ')}`,
+		);
+	});
+
+	it('is used by the Allowed Extensions field', () => {
+		const field = collectionFields('additionalOptions').find((f) => f.name === 'allowedExtensions');
+		assert.equal(field?.type, 'multiOptions');
+		assert.deepEqual(field?.default, []);
+		assert.equal(field?.options, EXTENSION_OPTIONS);
 	});
 });
 

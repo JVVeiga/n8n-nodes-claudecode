@@ -1,4 +1,4 @@
-import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 
 /**
  * A test double for the slice of `IExecuteFunctions` these two nodes actually touch.
@@ -51,7 +51,7 @@ const NOT_IMPLEMENTED = (name: string) => () => {
 };
 
 export function createFakeContext(options: FakeContextOptions = {}): FakeContext {
-	const items = options.items ?? [{ json: {} }];
+	const items: INodeExecutionData[] = options.items ?? [{ json: {} }];
 	const params: ParamMap = { ...(options.params ?? {}) };
 	const typeVersion = options.typeVersion ?? 1.1;
 	const nodeName = options.nodeName ?? 'Claude Code';
@@ -114,9 +114,29 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 		getWorkflow: NOT_IMPLEMENTED('getWorkflow'),
 		getCredentials: NOT_IMPLEMENTED('getCredentials'),
 		helpers: new Proxy(
-			{},
 			{
-				get: (_t, prop) => NOT_IMPLEMENTED(`helpers.${String(prop)}`),
+				/**
+				 * The real helper hides whether n8n stored the bytes inline as base64 or on a
+				 * filesystem, which is why the node calls it instead of reading `.data`. The double
+				 * models the inline case, because that is the one a test can build — and it decodes
+				 * `.data` rather than taking a separate buffer map, so a fixture item looks like the
+				 * item an upstream node actually produces.
+				 */
+				getBinaryDataBuffer: async (itemIndex: number, propName: string): Promise<Buffer> => {
+					const entry = items[itemIndex]?.binary?.[propName];
+					if (!entry) {
+						throw new Error(
+							`FakeExecuteFunctions: item ${itemIndex} has no binary property '${propName}'.`,
+						);
+					}
+					return Buffer.from(entry.data, 'base64');
+				},
+			},
+			{
+				get: (target, prop) =>
+					prop in target
+						? (target as Record<string | symbol, unknown>)[prop]
+						: NOT_IMPLEMENTED(`helpers.${String(prop)}`),
 			},
 		),
 	} as unknown as IExecuteFunctions;
@@ -140,6 +160,25 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
  * test can say `additional({ debug: true })` instead of restating eleven fields.
  */
 export const additional = (over: Record<string, unknown> = {}) => ({ ...over });
+
+/**
+ * One binary property as n8n delivers it: base64 bytes plus the metadata the node reads to name and
+ * route the file. `mimeType` is deliberately optional — an upstream HTTP Request node routinely
+ * reports `application/octet-stream` or nothing at all.
+ */
+export const binaryProperty = (
+	content: string | Buffer,
+	meta: { fileName?: string; fileExtension?: string; mimeType?: string } = {},
+) => ({
+	data: (typeof content === 'string' ? Buffer.from(content, 'utf8') : content).toString('base64'),
+	...meta,
+});
+
+/** An input item carrying binary properties, keyed by property name. */
+export const itemWithBinary = (
+	binary: Record<string, ReturnType<typeof binaryProperty>>,
+	json: IDataObject = {},
+): INodeExecutionData => ({ json, binary: binary as never });
 
 /** A parameter map for a minimal, valid Claude Code node. */
 export const claudeCodeParams = (over: ParamMap = {}): ParamMap => ({

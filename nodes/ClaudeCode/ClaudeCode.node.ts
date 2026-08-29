@@ -7,6 +7,10 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
+import { collectAttachments } from './attachments/collect';
+import { planAttachments, stagedHintBlock } from './attachments/plan';
+import { stageAttachments } from './attachments/stage';
+import type { StagedAttachments } from './attachments/types';
 import { buildQueryOptions } from './config';
 import { claudeCodeDescription } from './description/properties';
 import { buildDiagnostics } from './diagnostics';
@@ -20,7 +24,7 @@ import {
 } from './errors';
 import { buildOutputItem } from './output';
 import { checkPrompt, readParams } from './params';
-import { createPromptStream } from './promptStream';
+import { createPromptStream, type PromptContent } from './promptStream';
 import { runQuery } from './runner';
 
 /**
@@ -68,6 +72,10 @@ export async function runItems(
 		const messages: SDKMessage[] = [];
 		let timeoutSeconds = 300;
 		let timedOut = false;
+		// Declared out here for the same reason as the rest: the temp directory holding staged
+		// attachments has to be removed on every exit path, and the `finally` below is the only
+		// place that sees all four of them.
+		let staged: StagedAttachments | null = null;
 
 		const fail = (message: string, description?: string, type?: string) =>
 			new NodeOperationError(ctx.getNode(), message, {
@@ -92,14 +100,37 @@ export async function runItems(
 			// output discarded.
 			ctx.onExecutionCancellation(() => abortController.abort());
 
+			const collected = await collectAttachments(ctx, itemIndex, params.attachments);
+			if ('problem' in collected) {
+				throw fail(collected.problem.message, collected.problem.description);
+			}
+			const plan = planAttachments(collected.attachments, params.attachments, collected.skipped);
+			if (plan.toStage.length > 0) {
+				staged = stageAttachments(plan.toStage);
+				if (plan.report?.staged) plan.report.staged.dir = staged.dir;
+			}
+
+			// Attachments first, prompt last: content before the question is Anthropic's guidance
+			// for documents, and it reads as "here are the files, here is what I want". With no
+			// attachments this stays the plain string it has always been — no blocks, no fs call.
+			const promptContent: PromptContent =
+				plan.blocks.length === 0 && staged === null
+					? params.prompt
+					: [
+							...plan.blocks,
+							...(staged ? [stagedHintBlock(staged.dir, plan.report?.staged?.files ?? [])] : []),
+							{ type: 'text' as const, text: params.prompt },
+						];
+
 			// A stream, not a string: control requests such as interrupt() only exist in streaming
 			// input mode, and interrupt() is what makes a timed-out run report its real cost.
-			const promptStream = createPromptStream(params.prompt);
+			const promptStream = createPromptStream(promptContent);
 
 			let appliedEffort: string | undefined;
 			const outcome = buildQueryOptions(params, {
 				abortController,
 				promptStream,
+				stagedDir: staged?.dir,
 				onEffort: (level) => {
 					appliedEffort = level;
 				},
@@ -123,6 +154,7 @@ export async function runItems(
 				disallowedTools: params.disallowedTools,
 				fallbackModel: params.additional.fallbackModel || 'none',
 				appliedOptions: outcome.config.applied,
+				...plan.notes,
 				...outcome.config.notes,
 			});
 
@@ -143,6 +175,7 @@ export async function runItems(
 				params,
 				permissionMode: queryOptions.options.permissionMode as string,
 				appliedEffort: run.appliedEffort,
+				attachments: plan.report,
 			}) as unknown as Record<string, unknown>;
 
 			const failure: FailureContext = {
@@ -253,6 +286,12 @@ export async function runItems(
 			}
 
 			throw fail(userFacingMessage(errorMessage, timedOut, timeoutSeconds), errorMessage);
+		} finally {
+			// Runs on all four exits: success, the timeout branch's `continue`, a thrown
+			// NodeOperationError, and the catch's own `continue` under continueOnFail. A `finally`
+			// on the try that already exists, rather than a nested try/catch — which is what keeps
+			// execute() readable.
+			staged?.cleanup();
 		}
 	}
 

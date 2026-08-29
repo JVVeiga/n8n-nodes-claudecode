@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { EXTENSION_OPTIONS } from './extensionOptions';
 import { FALLBACK_MODEL_OPTIONS } from './models';
 
 /**
@@ -79,6 +80,44 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 			typeOptions: { minValue: 0, maxValue: 600 },
 			description:
 				'Seconds reserved at the end of the Timeout for Claude to stop and summarise what it did. Taken out of the Timeout, not added to it, so a run never exceeds the Timeout. Interrupting this way is what makes the SDK report the tokens, cost and session ID of a timed-out run — a plain kill reports none of it. Set to 0 to kill the process at the Timeout instead. Defaults to 60 on node version 1.1 and to 0 on version 1.',
+		},
+		{
+			displayName: 'Allowed Extensions',
+			name: 'allowedExtensions',
+			type: 'multiOptions',
+			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+			// Sorted by extension in description/extensionOptions.ts.
+			options: EXTENSION_OPTIONS,
+			default: [],
+			description:
+				'Only send binary properties whose file extension is selected here. Anything else on the item is skipped and the run continues without it — this filters what is considered, it does not reject a request, so nothing fails because of it. Leave empty to consider every file. What was skipped is reported under diagnostics.attachments.skipped.',
+		},
+		{
+			displayName: 'Inline Text Size Limit (KB)',
+			name: 'inlineTextLimitKb',
+			type: 'number',
+			default: 256,
+			typeOptions: { minValue: 0 },
+			description:
+				'How large a text file (CSV, HTML, JSON, Markdown, plain text) may be before it is written to a temporary directory instead of being attached to the request. An attached file is in the context on every turn, so 256 KB is roughly 64k tokens per turn; a staged file costs nothing until Claude reads it, but Claude has to choose to read it. Set to 0 to stage every text file. Image and PDF ceilings are fixed by the API and are not configurable.',
+		},
+		{
+			displayName: 'Max Attachment Size (MB)',
+			name: 'maxAttachmentMb',
+			type: 'number',
+			default: 50,
+			typeOptions: { minValue: 1 },
+			description:
+				'Hard per-file cap. A binary property larger than this fails the item rather than being attached or staged. This is a guard against an unbounded upstream node, not a routing decision.',
+		},
+		{
+			displayName: 'Max Attachment Count',
+			name: 'maxAttachmentCount',
+			type: 'number',
+			default: 16,
+			typeOptions: { minValue: 1 },
+			description:
+				'Maximum number of binary properties to send from one item. More than this fails the item. Mainly relevant with Attach All Binaries, where the count comes from upstream rather than from you.',
 		},
 		{
 			displayName: 'Max Budget (USD)',
