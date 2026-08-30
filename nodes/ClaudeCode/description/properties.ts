@@ -3,6 +3,7 @@ import { NodeConnectionType } from 'n8n-workflow';
 import { MODEL_OPTIONS } from './models';
 import { BUILT_IN_TOOL_OPTIONS } from './toolOptions';
 import { ADDITIONAL_OPTIONS } from './additionalOptions';
+import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../../shared/authDescription';
 
 /**
  * The node's declarative schema: ~350 lines of pure data with no branching in it. It lived inside
@@ -39,6 +40,7 @@ export const claudeCodeDescription: INodeTypeDescription = {
 	},
 	inputs: [{ type: NodeConnectionType.Main }],
 	outputs: [{ type: NodeConnectionType.Main }],
+	credentials: AUTHENTICATION_CREDENTIALS,
 	properties: [
 		{
 			displayName: 'Operation',
@@ -61,6 +63,7 @@ export const claudeCodeDescription: INodeTypeDescription = {
 			],
 			default: 'query',
 		},
+		AUTHENTICATION_PROPERTY,
 		{
 			displayName: 'Prompt',
 			name: 'prompt',

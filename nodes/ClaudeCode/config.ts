@@ -1,4 +1,5 @@
 import type { PromptStream } from './promptStream';
+import { buildAuthEnv, type AuthSelection } from '../shared/auth';
 import type { Problem } from '../shared/problem';
 import { checkProjectPath, isDirectory } from '../shared/projectPath';
 import { effectiveEffort, isUltracode } from './params';
@@ -23,6 +24,11 @@ export type ConfigDeps = {
 	onEffort: (level: string) => void;
 	/** Injected so config tests need no filesystem. */
 	pathExists?: (path: string) => boolean;
+	/** Which account this execution authenticates as. A runtime fact, like `stagedDir` — it comes
+	 * from an async `getCredentials()` call that `readParams` cannot make. Absent means host. */
+	auth?: AuthSelection;
+	/** Injected so config tests never read the real process environment. */
+	processEnv?: NodeJS.ProcessEnv;
 	/** The temp directory holding staged attachments, when there were any. A runtime fact rather
 	 * than a parameter, which is why it arrives here alongside the AbortController. */
 	stagedDir?: string;
@@ -122,6 +128,22 @@ const APPLIERS: Applier[] = [
 			const path = params.additional.pathToClaudeCodeExecutable?.trim();
 			if (!path) return false;
 			options.pathToClaudeCodeExecutable = path;
+			return true;
+		},
+	},
+	{
+		// `Options.env` REPLACES the subprocess environment rather than merging into it, so host
+		// mode has to leave the option absent: a spread copy of process.env would behave the same
+		// today while making the default path structurally different from the one every existing
+		// workflow runs on. buildAuthEnv returns undefined for host, which is what expresses that.
+		name: 'authEnv',
+		apply: ({ options, deps, note }) => {
+			const auth = deps.auth ?? { mode: 'host' as const };
+			const env = buildAuthEnv(auth, deps.processEnv ?? process.env);
+			if (!env) return false;
+			options.env = env;
+			// The mode, never the secret. This note reaches the debug log verbatim.
+			note('authMode', auth.mode);
 			return true;
 		},
 	},

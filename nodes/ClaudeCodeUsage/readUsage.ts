@@ -42,6 +42,12 @@ export type UsageReadOptions = {
 	/** Value for `CLAUDE_CODE_OAUTH_SCOPES` in the spawned CLI's environment. */
 	oauthScopes?: string;
 	/**
+	 * The complete environment to spawn the CLI with, from `buildAuthEnv` — already a scrubbed copy
+	 * of `process.env` carrying one credential. Absent means read as the host account, and then the
+	 * `env` option is left off entirely so the subprocess inherits what it always did.
+	 */
+	authEnv?: Record<string, string | undefined>;
+	/**
 	 * Send this prompt and wait for its result before asking for usage, so the CLI has rate-limit
 	 * response headers to seed from. Costs a real (tiny) inference — see {@link PROBE_PROMPT}.
 	 */
@@ -123,8 +129,16 @@ export async function readUsage(options: UsageReadOptions): Promise<UsageReadRes
 			...(options.pathToClaudeCodeExecutable
 				? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
 				: {}),
-			...(options.oauthScopes
-				? { env: { ...process.env, CLAUDE_CODE_OAUTH_SCOPES: options.oauthScopes } }
+			// `env` REPLACES the subprocess environment rather than merging, so it is composed once
+			// here: the scrubbed credential environment when there is one, otherwise process.env,
+			// with the scopes laid on top. With neither the option stays absent.
+			...(options.authEnv || options.oauthScopes
+				? {
+						env: {
+							...(options.authEnv ?? process.env),
+							...(options.oauthScopes ? { CLAUDE_CODE_OAUTH_SCOPES: options.oauthScopes } : {}),
+						},
+					}
 				: {}),
 			...(options.probePrompt ? { model: PROBE_MODEL, tools: [] } : {}),
 		},

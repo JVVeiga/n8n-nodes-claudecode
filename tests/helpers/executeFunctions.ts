@@ -18,6 +18,11 @@ export type FakeContextOptions = {
 	params?: ParamMap;
 	/** `getNode().typeVersion`. Drives the version-aware branches. */
 	typeVersion?: number;
+	/**
+	 * Decrypted credentials by type name, as `getCredentials()` would return them. A name absent
+	 * from the map throws, which is what n8n itself does when no credential is selected.
+	 */
+	credentials?: Record<string, Record<string, unknown>>;
 	nodeName?: string;
 	continueOnFail?: boolean;
 };
@@ -56,6 +61,7 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 	const typeVersion = options.typeVersion ?? 1.1;
 	const nodeName = options.nodeName ?? 'Claude Code';
 	const continueOnFail = options.continueOnFail ?? false;
+	const credentials = options.credentials ?? {};
 
 	const logs: LogEntry[] = [];
 	const reads: string[] = [];
@@ -110,9 +116,18 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 			error: log('error'),
 		},
 
+		// Throwing on an unknown name is the real behaviour, not a shortcut: n8n throws when the
+		// node asks for a credential the user never selected, and readAuth turns that into a
+		// Problem. A double that returned undefined would hide the path that matters.
+		getCredentials: async (name: string) => {
+			if (!(name in credentials)) {
+				throw new Error(`Node does not have any credentials set for "${name}".`);
+			}
+			return credentials[name];
+		},
+
 		// Everything else the interface declares but these nodes never call.
 		getWorkflow: NOT_IMPLEMENTED('getWorkflow'),
-		getCredentials: NOT_IMPLEMENTED('getCredentials'),
 		helpers: new Proxy(
 			{
 				/**

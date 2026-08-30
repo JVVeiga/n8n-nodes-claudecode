@@ -6,7 +6,9 @@ import type {
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AuthSelection } from '../shared/auth';
 import { createDebugLogger } from '../shared/debug';
+import { readAuth } from '../shared/readAuth';
 import { collectAttachments } from './attachments/collect';
 import { planAttachments, stagedHintBlock } from './attachments/plan';
 import { stageAttachments } from './attachments/stage';
@@ -92,6 +94,15 @@ export async function runItems(
 			const promptProblem = checkPrompt(params.prompt);
 			if (promptProblem) throw fail(promptProblem.message, promptProblem.description);
 
+			// Read before anything is spawned or staged: a credential that is missing or empty
+			// should cost nothing, and an execution must never fall back to the host account it was
+			// explicitly pointed away from.
+			const authOutcome = await readAuth(ctx, itemIndex);
+			if ('problem' in authOutcome) {
+				throw fail(authOutcome.problem.message, authOutcome.problem.description);
+			}
+			const auth: AuthSelection = authOutcome.auth;
+
 			// The timers are armed inside runQuery, so a rejected prompt cannot leak a pending
 			// handle.
 			const abortController = new AbortController();
@@ -131,6 +142,7 @@ export async function runItems(
 				abortController,
 				promptStream,
 				stagedDir: staged?.dir,
+				auth,
 				onEffort: (level) => {
 					appliedEffort = level;
 				},
@@ -176,6 +188,7 @@ export async function runItems(
 				permissionMode: queryOptions.options.permissionMode as string,
 				appliedEffort: run.appliedEffort,
 				attachments: plan.report,
+				authMode: auth.mode,
 			}) as unknown as Record<string, unknown>;
 
 			const failure: FailureContext = {
