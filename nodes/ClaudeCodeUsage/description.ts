@@ -1,5 +1,6 @@
 import type { INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
+import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../shared/authDescription';
 
 /**
  * The Usage node's declarative schema. Split out for the same reason the Claude Code node's was:
@@ -22,6 +23,7 @@ export const claudeCodeUsageDescription: INodeTypeDescription = {
 	},
 	inputs: [{ type: NodeConnectionType.Main }],
 	outputs: [{ type: NodeConnectionType.Main }],
+	credentials: AUTHENTICATION_CREDENTIALS,
 	properties: [
 		{
 			displayName: 'Operation',
@@ -38,6 +40,7 @@ export const claudeCodeUsageDescription: INodeTypeDescription = {
 			],
 			default: 'getUsage',
 		},
+		AUTHENTICATION_PROPERTY,
 		{
 			displayName: 'Project Path',
 			name: 'projectPath',

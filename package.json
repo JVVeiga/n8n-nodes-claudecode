@@ -36,13 +36,13 @@
   "main": "index.js",
   "scripts": {
     "build": "npm run format:check && npx rimraf dist && tsc && gulp build:icons",
-    "format:check": "prettier nodes tests --check",
+    "format:check": "prettier nodes credentials tests --check",
     "dev": "tsc --watch",
-    "format": "prettier nodes tests --write",
+    "format": "prettier nodes credentials tests --write",
     "test": "tsc -p tsconfig.test.json && node --test \".tmp/tests/tests/**/*.test.js\"",
-    "lint": "eslint nodes package.json",
-    "lintfix": "eslint nodes package.json --fix",
-    "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes package.json",
+    "lint": "eslint nodes credentials package.json",
+    "lintfix": "eslint nodes credentials package.json --fix",
+    "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes credentials package.json",
     "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/n8n-up.sh is missing. It is versioned — restore it with: git checkout scripts/e2e' >&2; exit 1; }",
     "e2e:up": "npm run e2e:guard && bash scripts/e2e/n8n-up.sh",
     "e2e:run": "npm run e2e:guard && node scripts/e2e/run-cases.mjs",
@@ -55,6 +55,10 @@
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/ClaudeCodeApi.credentials.js",
+      "dist/credentials/ClaudeCodeOAuthTokenApi.credentials.js"
+    ],
     "nodes": [
       "dist/nodes/ClaudeCode/ClaudeCode.node.js",
       "dist/nodes/ClaudeCodeUsage/ClaudeCodeUsage.node.js"

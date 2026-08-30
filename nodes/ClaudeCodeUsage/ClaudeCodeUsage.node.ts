@@ -14,6 +14,9 @@ import {
 	type UsageReadResult,
 } from './readUsage';
 import { normalizeUsage, shouldRetryWithProfileScope, type UsageReport } from './usage';
+import { createHash } from 'crypto';
+import { buildAuthEnv } from '../shared/auth';
+import { readAuth } from '../shared/readAuth';
 import { checkProjectPath } from '../shared/projectPath';
 import { createDebugLogger } from '../shared/debug';
 import { claudeCodeUsageDescription } from './description';
@@ -83,8 +86,27 @@ export async function readUsageItems(
 			});
 		}
 
+		const authOutcome = await readAuth(ctx, itemIndex);
+		if ('problem' in authOutcome) {
+			throw new NodeOperationError(ctx.getNode(), authOutcome.problem.message, {
+				itemIndex,
+				description: authOutcome.problem.description,
+			});
+		}
+		const authEnv = buildAuthEnv(authOutcome.auth, process.env);
+
 		const declareProfileScope = options.declareProfileScope !== false;
 		const probeIfUnavailable = options.probeIfUnavailable === true;
+
+		// Two items on different credentials describe different accounts, so the read cache has to
+		// partition on the credential as well. The secret is reduced to a digest rather than put in
+		// the key: nothing needs to read it back, and a value that never exists in full cannot be
+		// leaked by something that later decides to log a cache key.
+		const authKey = authEnv
+			? `${authOutcome.auth.mode}:${createHash('sha256')
+					.update((authOutcome.auth as { secret: string }).secret)
+					.digest('hex')}`
+			: 'host';
 
 		// Serialised rather than concatenated: a separator character could appear inside a path.
 		const cacheKey = JSON.stringify([
@@ -93,6 +115,7 @@ export async function readUsageItems(
 			timeout,
 			declareProfileScope,
 			probeIfUnavailable,
+			authKey,
 		]);
 		let pending = readsByPath.get(cacheKey);
 		const reusedRead = pending !== undefined;
@@ -101,6 +124,7 @@ export async function readUsageItems(
 				timeoutMs: Math.max(1, timeout) * 1000,
 				...(projectPath ? { cwd: projectPath } : {}),
 				...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
+				...(authEnv ? { authEnv } : {}),
 			};
 
 			// The escalation lives inside the cached promise so a batch pays for it once, and every

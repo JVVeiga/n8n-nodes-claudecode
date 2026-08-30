@@ -69,7 +69,7 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 
 | File | Runs where | Purpose |
 |---|---|---|
-| `n8n-up.sh` | host | build → pack → install in container → start n8n → import cases |
+| `n8n-up.sh` | host | build → pack → install in container → start n8n → import credentials → import cases |
 | `gen-workflows.mjs` | host | generates one workflow JSON per case into `workflows/` |
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
@@ -88,6 +88,38 @@ files, not the six 2.5k-line files an earlier version of this file claimed. Meas
 under that floor. Paired with the 45–60s timeouts they originally had, the prompt *finished* and four
 cases asserted a timeout that never happened. Keep the timeouts tight, or re-measure when the fixture
 or the model changes.
+
+## The authentication cases
+
+`case52`–`case54` cover the Authentication parameter, and they are the only checks that prove a
+credential's environment variable actually reaches the CLI and **overrides** the host login. The unit
+tests prove which environment gets built; they cannot prove the CLI honours it.
+
+`n8n-up.sh` imports the credentials they reference before importing the workflows. Three of them:
+
+| Credential | Id | Source |
+|---|---|---|
+| `E2E Decoy API Key (invalid on purpose)` | `e2ecreddecoy0000` | hardcoded, worthless, always imported |
+| `E2E Claude Code OAuth Token` | `e2ecredoauth0000` | `$CLAUDE_CODE_OAUTH_TOKEN`, when exported |
+| `E2E Claude Code API Key` | `e2ecredapikey000` | `$ANTHROPIC_API_KEY`, when exported and no token |
+
+The ids are fixed and duplicated in `gen-workflows.mjs`'s `CREDENTIALS`. A workflow references a
+credential **by id**, so a generated id on one side and a random one on the other imports cleanly and
+then fails at run time with "credentials not found".
+
+`n8n import:credentials` needs a file, so the operator's token is written inside the container (piped
+in on stdin, `umask 077`) and deleted in the same command. It never reaches the host filesystem, an
+image layer or the repo.
+
+**`case53` is the load-bearing one.** The container is logged in and every other case runs on that
+login, so a run that fails to authenticate on a deliberately invalid credential can only have been
+running on the credential — which means the credential replaced the host's. A passing `case52` on its
+own would not distinguish "the credential worked" from "the credential was ignored and the host
+answered". `case52` is generated **only when the shell running `gen-workflows.mjs` can supply a real
+credential**, and the generator says so loudly when it cannot. That matters because
+`n8n import:workflow` never deletes: regenerating without the token drops `case52` from
+`workflows/` while leaving the previous one in the database, and the verdict then reports SKIP as if
+the rig had a gap rather than the generator having been run in the wrong shell.
 
 ## The attachment cases
 

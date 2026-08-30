@@ -347,6 +347,8 @@ describe('buildQueryOptions — the applier table', () => {
 			'effortCapture',
 			'systemPrompt',
 			'executablePath',
+			// Next to executablePath: both configure the subprocess itself, not the conversation.
+			'authEnv',
 			'projectPath',
 			'restrictTools',
 			// After restrictTools, so it amends a tool set that already exists on the options.
@@ -387,9 +389,14 @@ describe('buildQueryOptions — the applier table', () => {
 					maxBudgetUsd: 3,
 				},
 			},
-			// stagedAttachments is the one applier driven by a runtime fact rather than a
-			// parameter, so "fully loaded" has to include a staged directory.
-			deps({ stagedDir: '/tmp/n8n-claude-abc' }),
+			// stagedAttachments and authEnv are the two appliers driven by runtime facts rather
+			// than parameters, so "fully loaded" has to include a staged directory and a
+			// credential.
+			deps({
+				stagedDir: '/tmp/n8n-claude-abc',
+				auth: { mode: 'apiKey', secret: 'sk-ant-test' },
+				processEnv: { PATH: '/usr/bin' },
+			}),
 		);
 		assert.deepEqual(names, APPLIER_NAMES);
 	});

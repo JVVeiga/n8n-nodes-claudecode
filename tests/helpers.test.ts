@@ -124,7 +124,15 @@ describe('createFakeContext — logger', () => {
 describe('createFakeContext — unmodelled members', () => {
 	it('throws a directive error rather than returning undefined', () => {
 		const { ctx } = createFakeContext();
-		assert.throws(() => ctx.getCredentials('anything'), /is not implemented/);
+		assert.throws(() => ctx.getWorkflow(), /is not implemented/);
+	});
+
+	it('throws for a credential the test never declared, as n8n itself does', async () => {
+		const { ctx } = createFakeContext();
+		await assert.rejects(
+			() => ctx.getCredentials('claudeCodeApi'),
+			/does not have any credentials set/,
+		);
 	});
 });
 

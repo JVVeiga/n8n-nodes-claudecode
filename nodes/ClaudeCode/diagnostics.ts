@@ -1,5 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { countContent, countToolUses, findInit, findResult } from '../shared/sdkMessage';
+import type { AuthMode } from '../shared/auth';
 import type { AttachmentDiagnostics } from './attachments/types';
 import { effectiveEffort, isUltracode } from './params';
 import type { ClaudeCodeParams } from './types';
@@ -39,6 +40,14 @@ export type Diagnostics = {
 	 * without a new typeVersion.
 	 */
 	attachments?: AttachmentDiagnostics;
+	/**
+	 * Which credential the run authenticated on. Present ONLY when it was not the host's — the same
+	 * conditional-spread trick as `attachments`, and for the same reason: a host-mode run has to
+	 * serialise to exactly the bytes it did before this feature existed.
+	 *
+	 * The mode, never the secret. This object reaches the workflow's output.
+	 */
+	auth?: Exclude<AuthMode, 'host'>;
 };
 
 export type DiagnosticsInput = {
@@ -51,10 +60,12 @@ export type DiagnosticsInput = {
 	/** The attachment report from `plan.ts`, with the staged directory filled in. Null when the
 	 * run had no attachments — which is what keeps the key out of the output entirely. */
 	attachments?: AttachmentDiagnostics | null;
+	/** The mode the run authenticated in. Host — or absent — keeps the key out of the output. */
+	authMode?: AuthMode;
 };
 
 export function buildDiagnostics(input: DiagnosticsInput): Diagnostics {
-	const { messages, params, permissionMode, appliedEffort, attachments } = input;
+	const { messages, params, permissionMode, appliedEffort, attachments, authMode } = input;
 	const init = findInit(messages);
 	const result = findResult(messages);
 
@@ -84,5 +95,6 @@ export function buildDiagnostics(input: DiagnosticsInput): Diagnostics {
 		// `JSON.stringify` dropping it is not the same as it never being there — a deep-equal
 		// assertion in the golden fixture tests sees the difference.
 		...(attachments ? { attachments } : {}),
+		...(authMode && authMode !== 'host' ? { auth: authMode } : {}),
 	};
 }

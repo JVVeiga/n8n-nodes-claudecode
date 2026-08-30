@@ -132,6 +132,33 @@ for f in ids.js list-wf.js last-exec.js last-execs.js activate.js read-exec.js p
 	docker cp "$HERE/$f" "$CONTAINER:/tmp/$f" >/dev/null
 done
 
+# The auth cases (52-54) need credentials in the instance. Ids and names are fixed and must match
+# CREDENTIALS in gen-workflows.mjs — a workflow references a credential by id, so a mismatch imports
+# cleanly and then fails at run time with "credentials not found".
+#
+# `n8n import:credentials` needs a file, so the operator's real token is briefly written inside the
+# container and deleted in the same command. It never touches the host filesystem, an image layer or
+# the repo, and it is never echoed.
+echo "==> importing the E2E credentials"
+CRED_JSON='[{"id":"e2ecreddecoy0000","name":"E2E Decoy API Key (invalid on purpose)","type":"claudeCodeApi","data":{"apiKey":"sk-ant-api03-invalid-e2e-decoy"}}'
+if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+	CRED_JSON="$CRED_JSON,{\"id\":\"e2ecredoauth0000\",\"name\":\"E2E Claude Code OAuth Token\",\"type\":\"claudeCodeOAuthTokenApi\",\"data\":{\"oauthToken\":\"$CLAUDE_CODE_OAUTH_TOKEN\"}}"
+	echo "==> real credential: claudeCodeOAuthTokenApi"
+elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+	CRED_JSON="$CRED_JSON,{\"id\":\"e2ecredapikey000\",\"name\":\"E2E Claude Code API Key\",\"type\":\"claudeCodeApi\",\"data\":{\"apiKey\":\"$ANTHROPIC_API_KEY\"}}"
+	echo "==> real credential: claudeCodeApi"
+fi
+CRED_JSON="$CRED_JSON]"
+# Piped in on stdin rather than passed as an argument, so the token never appears in a process
+# listing inside the container.
+printf '%s' "$CRED_JSON" | docker exec -i "$CONTAINER" sh -c '
+	umask 077
+	cat > /tmp/e2e-creds.json
+	n8n import:credentials --input=/tmp/e2e-creds.json 2>&1 | tail -2
+	rm -f /tmp/e2e-creds.json
+'
+unset CRED_JSON
+
 echo "==> generating the case workflows"
 node "$HERE/gen-workflows.mjs"
 # `docker cp dir container:/path` copies INTO /path when /path already exists, leaving the previous

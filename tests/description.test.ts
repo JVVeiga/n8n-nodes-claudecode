@@ -65,6 +65,7 @@ describe('node description — top-level parameters', () => {
 	// which is the point: the UI contract should not change by accident.
 	const EXPECTED = [
 		['operation', 'options', 'query'],
+		['authSource', 'options', 'host'],
 		['prompt', 'string', ''],
 		['sessionId', 'string', ''],
 		['model', 'options', 'sonnet'],

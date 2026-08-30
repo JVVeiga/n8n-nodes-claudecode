@@ -40,7 +40,7 @@ describe('Usage node description — identity', () => {
 });
 
 describe('Usage node description — parameters', () => {
-	const EXPECTED = ['operation', 'projectPath', 'timeout', 'usageOptions'];
+	const EXPECTED = ['operation', 'authSource', 'projectPath', 'timeout', 'usageOptions'];
 
 	it('has exactly the expected parameters, in order', () => {
 		assert.deepEqual(
