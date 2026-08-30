@@ -1,3 +1,64 @@
+## [1.1.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v1.0.0...v1.1.0) (2026-08-30)
+
+Not a breaking release, and not a new typeVersion. Nothing an existing workflow emits or does
+changes — the new parameter defaults to the behaviour every stored workflow already has, and the 48
+golden fixtures are byte-identical and unregenerated. That is the evidence, not the argument.
+
+### Authentication — one credential per execution, instead of one per instance
+
+Both nodes authenticated exactly one way: whatever the n8n host was logged in as. One identity for
+the whole instance — one bill, one set of plan limits, one account to rotate — so three workflows
+could not run on three accounts, and a per-workflow key meant touching the container.
+
+**Authentication** now picks per execution, on both nodes.
+
+| Mode | Runs as | Credential |
+|---|---|---|
+| **Host** (default) | the account the n8n container is logged in as | none |
+| **API Key** | an Anthropic API key, billed as API usage | *Claude Code API* |
+| **OAuth Token** | a Claude Code OAuth token, billed against that account's Claude plan | *Claude Code OAuth Token API* |
+
+**It genuinely overrides the host.** The credential reaches the Claude Code CLI through its
+subprocess environment, and the CLI only falls back to the host's `~/.claude/.credentials.json` when
+neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN` is set. The host login is never read,
+written or refreshed for that execution.
+
+**Every other auth variable is cleared first** — all seven the SDK recognises, including
+`ANTHROPIC_AUTH_TOKEN` and the Bedrock, Vertex and Foundry keys. A container that exports
+`ANTHROPIC_API_KEY` globally cannot leak it into a run you pointed at an OAuth token. Setting only
+the chosen variable would have let that run *succeed* on the wrong account, which is the worst shape
+the bug could take. Everything that is not authentication — `PATH`, `HOME`, proxy variables — passes
+through untouched.
+
+**A run that used a credential says so**, in `diagnostics.auth`. A host run has no such field at
+all: it is added by a conditional spread, which is exactly what keeps the output of every existing
+workflow unchanged own-property for own-property, and why this needed no new typeVersion.
+
+**A selected credential that is empty fails the item.** It does not fall back to the host — running
+on an account you explicitly pointed away from is worse than stopping.
+
+### What is *not* per-credential
+
+The credential changes **who pays and who is rate-limited**, not what the agent can do. `~/.claude`
+stays the host's, so `settings.json`, MCP servers and plugins apply to every run whichever
+credential it uses, and the **session store is shared**: `Continue` with no Session ID still
+resolves "the most recent conversation in this directory" across every execution on the instance,
+exactly as before. Set an explicit Session ID for concurrent runs.
+
+### Two things that will bite you
+
+**A rejected credential takes minutes to say so.** The CLI retries a 401 with backoff rather than
+giving up. Measured: with the default 300s Timeout the run fails at ~184s with a clear
+`Failed to authenticate. API Error: 401 API key is invalid.`; with a Timeout shorter than the retry
+window your own timer fires first and the run reports *0 assistant turns* and an unknown cost,
+naming nothing. A credentialed run that times out with no turns is a credential to check.
+
+**The OAuth Token credential has no Test button.** Those tokens have no documented HTTP endpoint to
+test against — a test built on a guess would put a red cross on working credentials. The API Key
+credential has one. The first run is the test.
+
+See [Authentication](README.md#authentication).
+
 ## [1.0.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v0.12.0...v1.0.0) (2026-08-29)
 
 **Why 1.0.0.** `1.0.0` was reserved two releases ago for the first feature built *on* the refactored
