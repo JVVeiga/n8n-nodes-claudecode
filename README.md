@@ -62,7 +62,7 @@ sections you get. See [Output Formats](#output-formats).
 
 **Start here** — [Install](#install) · [Your First Workflow](#your-first-workflow) · [Templates](./workflow-templates/) · [What people build with it](#what-people-build-with-it)
 
-**Reference** — [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
+**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
 
 **Also** — [Notes worth knowing](#notes-worth-knowing) · [Development & Contributing](#development--contributing) · [Credits](#credits)
 
@@ -124,6 +124,68 @@ docker run -it --rm \
 **Note**: For Docker, you'll need to ensure Claude Code CLI is installed inside the container. Consider creating a custom Dockerfile.
 
 📦 **NPM Package**: [@joaoveiga/n8n-nodes-claudecode](https://www.npmjs.com/package/@joaoveiga/n8n-nodes-claudecode)
+
+## Authentication
+
+By default both nodes run as whoever the **n8n host** is logged in as — the account behind
+`claude login` on that machine, or an `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` exported into
+the container. That is one identity for the whole instance: one bill, one set of plan limits, and no
+way to run two workflows on two accounts.
+
+The **Authentication** parameter, on both nodes, changes that per execution.
+
+| Mode | What it does | Credential |
+|---|---|---|
+| **Host** (default) | Runs as the account the n8n container itself is logged in as. Exactly what every run did before this parameter existed. | none |
+| **API Key** | Runs this execution on an Anthropic API key, billed as API usage. | *Claude Code API* |
+| **OAuth Token** | Runs this execution on a Claude Code OAuth token (`claude setup-token`), billed against that account's Claude plan. | *Claude Code OAuth Token API* |
+
+Three workflows can therefore run side by side on three different accounts, each with its own
+credential, rotated in n8n rather than in the container.
+
+### How it works, and why it actually overrides the host
+
+The node hands the credential to the Claude Code CLI subprocess through its environment —
+`ANTHROPIC_API_KEY` for a key, `CLAUDE_CODE_OAUTH_TOKEN` for a token — and the CLI only falls back
+to the host's `~/.claude/.credentials.json` when neither of those is set. So the credential wins,
+and the host login is never read, written or refreshed for that execution.
+
+Every other authentication variable the SDK recognises is **removed** from that environment first,
+including `ANTHROPIC_AUTH_TOKEN` and the Bedrock, Vertex and Foundry keys. A container that exports
+`ANTHROPIC_API_KEY` globally cannot leak it into a run you pointed at an OAuth token. Everything
+that is not authentication — `PATH`, `HOME`, proxy variables — is passed through untouched.
+
+A run that used a credential says so, in `diagnostics.auth` (`"apiKey"` or `"oauthToken"`). A
+host-mode run has no such field at all, which is why adding this feature moved no existing
+workflow's output and needed no new node version.
+
+### What is *not* per-credential
+
+The credential changes **who pays and who is rate-limited**. It does not partition anything else:
+
+- `~/.claude` is still the host's, so `settings.json`, MCP servers and plugins apply to every run
+  whichever credential it uses. That is deliberate — a workflow's tools should not change with its
+  billing.
+- The **session store is shared**. `Continue` with no Session ID still resolves "the most recent
+  conversation in this working directory" across every execution on the instance, regardless of
+  credential. Set an explicit Session ID for concurrent runs, as before.
+
+### Notes
+
+- A credential that is selected but empty **fails the item**. It does not fall back to the host —
+  running on an account you explicitly pointed away from is worse than stopping.
+- The **Claude Code API** credential has a Test button. The **Claude Code OAuth Token** credential
+  does not: those tokens have no documented HTTP endpoint to test against, and a test built on a
+  guess would put a red cross on a working credential. The first run is the test.
+- An API key authenticates against the API, not a Claude plan, so the Usage node reports no plan
+  limits for it — see [Usage & Plan Limits](#usage--plan-limits).
+- **A rejected credential takes minutes to say so.** The CLI retries a 401 with backoff rather than
+  giving up. Measured: with the default 300s Timeout the run fails after ~184s with
+  `Failed to authenticate. API Error: 401 API key is invalid.` — clear, but slow. With a Timeout
+  shorter than the retry window (20s, measured) your own timeout fires first and the run reports
+  *0 assistant turns* and an unknown cost, saying nothing about authentication at all. So: a
+  credentialed run that times out with no turns is a credential to check, and **Debug** shows the
+  `authentication_failed` responses in the n8n log either way.
 
 ## Features
 

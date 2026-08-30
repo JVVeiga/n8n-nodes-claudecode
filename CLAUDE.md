@@ -63,9 +63,16 @@ shipped with a lint error that way. If you need to shorten the output, redirect 
 Two n8n nodes over the Claude Agent SDK. Both are thin shells; the work is in named modules.
 
 ```
+credentials/                   the two n8n credential types
+  ClaudeCodeApi.credentials.ts            an Anthropic API key -> ANTHROPIC_API_KEY
+  ClaudeCodeOAuthTokenApi.credentials.ts  a Claude Code token -> CLAUDE_CODE_OAUTH_TOKEN
+
 nodes/
   shared/                      used by both nodes
     projectPath.ts             the cwd check, plus its "mount it in Docker" description
+    auth.ts                    the ENTIRE auth policy — the scrub list and the env it builds
+    readAuth.ts                the only impure half: the selector + getCredentials()
+    authDescription.ts         the Authentication selector and credentials[], shared by both nodes
     debug.ts                   one debug gate — no `if (debug)` blocks in business logic
     sdkMessage.ts              narrowing helpers over SDKMessage; the only casts live here
     problem.ts                 a validation failure, returned rather than thrown
@@ -111,6 +118,7 @@ nodes/
 | Add or change a node parameter | `description/properties.ts` or `description/additionalOptions.ts` |
 | Add a model | `description/models.ts` — both selectors generate from it |
 | Expose a new SDK option | one entry in the `APPLIERS` table in `config.ts` |
+| Add an authentication mode (Bedrock, a gateway) | `shared/auth.ts` — `ENV_VAR_FOR_MODE` — plus one option in `shared/authDescription.ts` and a credential class |
 | Support a new file type, or change a route | `attachments/mime.ts` — the tables are the policy |
 | Offer a new extension in the Allowed Extensions filter | `description/extensionOptions.ts` |
 | Change what the model is told about staged files | `attachments/plan.ts` (`stagedHintBlock`) |
@@ -139,6 +147,28 @@ nodes/
   drops an `undefined` field but a deep-equal sees an own property set to `undefined`, so the field is
   added by a conditional spread. That is what keeps the 48 golden fixtures byte-identical and is why
   attachments needed no new typeVersion.
+- **The auth parameter is called `authSource`, and `authentication` is a name you cannot use.** n8n
+  reserves it: the editor never renders a parameter by that name as an ordinary field, it absorbs it
+  into the credentials UI and builds the dropdown from `credentials[]` — one option per credential
+  type. A mode that maps to no credential (`host`) is not expressible that way, so n8n drew nothing
+  at all and a user could never leave Host from the editor. Every unit test and all three E2E cases
+  passed regardless, because they set the parameter in workflow JSON and none of them goes through
+  the editor. **A node parameter that changes what the editor shows is not covered by this repo's
+  test suite — drive the real UI.**
+- **Authentication is an environment, not a patch.** `Options.env` REPLACES the CLI subprocess's
+  environment rather than merging into it, so host mode leaves the option **absent** — a spread copy
+  of `process.env` would behave identically today while making the default path structurally
+  different from the one every stored workflow runs. Credential mode spreads `process.env`, deletes
+  **all seven** variables in `AUTH_ENV_VARS` (copied from the SDK's own `Tw` constant), then sets
+  one. Deleting only the opposite variable would let a container's global `ANTHROPIC_API_KEY`
+  authenticate a run the user pointed at an OAuth token — and that run would *succeed*, which is the
+  worst shape the bug could take.
+- **`diagnostics.auth` is absent, not null, for a host run** — the same conditional spread as
+  `attachments`, and for the same reason: it is what kept the 48 golden fixtures byte-identical and
+  is why authentication needed no new typeVersion.
+- **`readAuth` is separate from `params.ts` because `readParams` is synchronous.**
+  `getCredentials()` returns a promise. The selection reaches `config.ts` through `deps`, the way
+  `stagedDir` does — a runtime fact rather than a parameter.
 - **`attachments/collect.ts` is the only module that reads a buffer**, the same role `readUsage.ts`
   plays for the Usage node. `mime.ts` and `plan.ts` never touch n8n or a disk, which is why the
   routing policy and the exact blocks sent are unit-testable.
@@ -165,7 +195,8 @@ it was created with, so raising `defaultVersion` only affects newly added nodes.
 |---|---|
 | 1 | the original |
 | 1.1 | Timeout Wrap-Up Grace defaults to 60s; failure items reshaped to reach the error output |
-| 1.2 | one output envelope for all three formats (current default) |
+| 1.2 | one output envelope for all three formats |
+| 1.3 | Attach All Binaries set to Auto means ON (current default) |
 
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
 an existing version emits**; add a new one.
@@ -173,7 +204,7 @@ an existing version emits**; add a new one.
 ## Testing
 
 ```bash
-npm test                                    # 662 tests, node:test, no framework
+npm test                                    # 712 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -196,7 +227,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 39 named behaviours against real executions:
+with the node installed and asserts 46 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
@@ -208,6 +239,24 @@ so a macOS-host install fetches the darwin build and cannot run on linux. `e2e:r
 spend — the timeout cases run real agent turns, budget under US$1 for a full pass.
 
 `readUsage.ts` has no unit tests on purpose: it spawns a real CLI, and this suite covers it.
+
+The three authentication cases (case52-54) are the only checks that prove a credential actually
+overrides the host login. case53 is the load-bearing one: the container **is** logged in, so a run
+that fails to authenticate on a deliberately invalid credential can only have been running on that
+credential. A passing case52 alone would not distinguish "the credential worked" from "the
+credential was ignored and the host answered".
+
+**A 401 does not fail fast, and how it surfaces depends on the Timeout.** The CLI retries an
+`authentication_failed` response with backoff. Measured twice, on the same invalid credential:
+with a 300s timeout the run fails at ~184s with a clean
+`Failed to authenticate. API Error: 401 API key is invalid.`; with case53's 20s timeout the node's
+own timer fires first and the run reports a *timeout* with 0 assistant turns, naming nothing. The
+first reading came from case53 alone and was written up as "a 401 never fails fast", which was
+generalising from one short-timeout sample — the UI runs corrected it.
+
+That is why `run-cases.mjs` counts `"error":"authentication_failed"` out of the raw log into
+`results.json` rather than letting the verdict assert on the error message: the message is only
+present on the slow path, and "it timed out" is also what a network fault looks like.
 
 The four attachment cases (case40-43) are the only checks that prove a file reaches the model at
 all — the unit tests prove which content blocks get built, not that the CLI and API accept them.
