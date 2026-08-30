@@ -32,7 +32,27 @@ const stableId = (name) => {
 	return (slug + 'e2e0000000000000').slice(0, 16);
 };
 
-function workflow({ name, notes, claude, outputFormat = 'structured', onError, readFields = [], version = 1.1 }) {
+/**
+ * The credentials n8n-up.sh imports. The ids are fixed and shared between the two files: a
+ * workflow references a credential by id, so a generated id here and a random one there would
+ * import cleanly and then fail at run time with "credentials not found".
+ */
+const CREDENTIALS = {
+	// The operator's real token, imported only when the matching variable is exported.
+	oauth: { id: 'e2ecredoauth0000', name: 'E2E Claude Code OAuth Token', type: 'claudeCodeOAuthTokenApi' },
+	apiKey: { id: 'e2ecredapikey000', name: 'E2E Claude Code API Key', type: 'claudeCodeApi' },
+	// Always imported, and deliberately worthless. Nothing here is a secret.
+	decoy: { id: 'e2ecreddecoy0000', name: 'E2E Decoy API Key (invalid on purpose)', type: 'claudeCodeApi' },
+};
+
+/** Which real credential the operator's environment can supply. Mirrors n8n-up.sh's own check. */
+const REAL_CREDENTIAL = process.env.CLAUDE_CODE_OAUTH_TOKEN
+	? { mode: 'oauthToken', cred: CREDENTIALS.oauth }
+	: process.env.ANTHROPIC_API_KEY
+		? { mode: 'apiKey', cred: CREDENTIALS.apiKey }
+		: null;
+
+function workflow({ name, notes, claude, outputFormat = 'structured', onError, readFields = [], version = 1.1, auth }) {
 	const triggerId = nextId();
 	const claudeId = nextId();
 	const nodes = [
@@ -58,12 +78,18 @@ function workflow({ name, notes, claude, outputFormat = 'structured', onError, r
 				disallowedTools: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'],
 				restrictTools: [],
 				additionalOptions: { debug: true, ...(claude.additionalOptions ?? {}) },
+				// Absent unless the case is about authentication, so every other workflow stays
+				// byte-identical to the one it generated before this parameter existed.
+				...(auth ? { authSource: auth.mode } : {}),
 			},
 			id: claudeId,
 			name: 'Claude Code',
 			type: '@joaoveiga/n8n-nodes-claudecode.claudeCode',
 			typeVersion: version,
 			position: [220, 0],
+			...(auth?.cred
+				? { credentials: { [auth.cred.type]: { id: auth.cred.id, name: auth.cred.name } } }
+				: {}),
 			...(onError ? { onError } : {}),
 		},
 	];
@@ -741,6 +767,72 @@ cases.push(
 		prompt:
 			'Answer with the number only. What qty does SKU WIDGET-7741 have in the attached document?',
 		readFields: ['result'],
+	}),
+);
+
+// --- Authentication (feature auth-credentials) ---------------------------------------------
+//
+// What only a container can show: that the credential's env var actually reaches the spawned CLI
+// and OVERRIDES the host login. The unit tests prove which environment gets built; they cannot
+// prove the CLI honours it.
+//
+// case53 is the load-bearing one. The container is logged in and every other case runs on that
+// login, so a run that fails to authenticate can only have failed on the credential — which means
+// the credential replaced the host's. A passing case52 alone would not distinguish "the credential
+// worked" from "the credential was ignored and the host answered".
+// Generated only when the shell running THIS script can supply a real credential. Announced,
+// because a case that quietly stops existing is how this rig lost four timeout cases once already:
+// the import never deletes, so a regeneration without the token leaves the previous case52 in the
+// database while dropping it from `workflows/`, and the verdict then reports SKIP as if the rig had
+// a gap rather than the generator having been run in the wrong shell.
+if (!REAL_CREDENTIAL) {
+	console.warn(
+		'\n!! case52 NOT generated: neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set in\n' +
+			'   this shell. Export one and regenerate, or the credential-succeeds case is missing.\n',
+	);
+}
+if (REAL_CREDENTIAL) {
+	cases.push(
+		workflow({
+			name: 'case52 auth - a credential runs the query instead of the host login',
+			notes:
+				'Authentication set to the operator\'s own credential. EXPECT: success, result=pong, and ' +
+				'diagnostics.auth naming the mode. A host-mode run has NO auth key at all — that absence ' +
+				'is what let this ship without a new typeVersion.',
+			claude: { prompt: FAST_PROMPT, timeout: 120, effort: 'low' },
+			auth: { mode: REAL_CREDENTIAL.mode, cred: REAL_CREDENTIAL.cred },
+			readFields: ['result'],
+		}),
+	);
+}
+
+cases.push(
+	workflow({
+		name: 'case53 auth - an invalid credential fails, proving it beat the host login',
+		notes:
+			'A deliberately invalid API key, on a container that IS logged in. EXPECT: red, with an ' +
+			'authentication error from the API. If the run succeeds the credential was ignored and the ' +
+			'host answered — which is the exact bug this feature exists to prevent.\n\n' +
+			'MEASURED: the CLI does not fail fast on a 401 — it retries with backoff, so the run ends ' +
+			'on the node timeout with 0 assistant turns. The first 401 lands at ~600ms, which is why ' +
+			'the timeout here is 20s and not the 120s it was written with: waiting two minutes to ' +
+			'observe something that happened in under a second is pure wall clock.',
+		claude: {
+			prompt: FAST_PROMPT,
+			timeout: 20,
+			effort: 'low',
+			additionalOptions: { debug: true, wrapUpGraceSeconds: 5 },
+		},
+		auth: { mode: 'apiKey', cred: CREDENTIALS.decoy },
+	}),
+	workflow({
+		name: 'case54 auth - a credential mode with nothing selected fails before spawning',
+		notes:
+			'Authentication=apiKey with no credential on the node. EXPECT: red, message "No credential ' +
+			'selected", and no CLI process — the node must not quietly fall back to the host account it ' +
+			'was pointed away from.',
+		claude: { prompt: FAST_PROMPT, timeout: 120, effort: 'low' },
+		auth: { mode: 'apiKey' },
 	}),
 );
 

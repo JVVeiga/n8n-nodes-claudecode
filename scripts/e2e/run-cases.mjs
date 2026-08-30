@@ -146,6 +146,12 @@ for (const { id, name } of ids) {
 	const setItems = runData['Read payload']?.[0]?.data?.main?.[0] ?? [];
 	const nodeError = cc?.error ?? parsed?.data?.resultData?.error ?? null;
 
+	// A credential that cannot authenticate never reaches an item or a node error: the CLI takes a
+	// 401 and RETRIES with backoff until the node's own timeout fires, so the only record of what
+	// went wrong is in the raw log. Counted here rather than asserted on the timeout message,
+	// because "it timed out" is also what a network problem looks like.
+	const authFailures = (raw.match(/"error":"authentication_failed"/g) ?? []).length;
+
 	// The CLI writes the node error to the log even when the JSON blob omits it.
 	const loggedError =
 		raw.match(/NodeOperationError: ([^\n]{0,400})/)?.[1] ??
@@ -164,6 +170,7 @@ for (const { id, name } of ids) {
 		itemJson: items[0]?.json ?? null,
 		hasTopLevelErrorField: items[0] ? Object.prototype.hasOwnProperty.call(items[0], 'error') : null,
 		setItemJson: setItems[0]?.json ?? null,
+		authFailures,
 		errorMessage: nodeError?.message ?? loggedError,
 		errorDescription: nodeError?.description ?? null,
 		errorType: nodeError?.type ?? null,

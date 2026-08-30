@@ -196,6 +196,31 @@ const checks = [
     // fallback for a key the stored workflow does not have. No key means nothing was collected.
     return !('attachments' in (j.diagnostics ?? {}));
   }],
+
+  // Authentication. case53 is the one that proves the claim: the container is logged in, so a run
+  // that cannot authenticate can only have been running on the credential.
+  ['52 a credential runs the query and is named in diagnostics', () => {
+    const j = get('case52')?.itemJson;
+    return !!j && j.success === true && /pong/.test(String(j.result)) &&
+      ['apiKey', 'oauthToken'].includes(j.diagnostics?.auth);
+  }],
+  ['53 an invalid credential fails, so it beat the host login', () => {
+    const c = get('case53');
+    // The container IS logged in, so a 401 can only have come from the credential. The node's own
+    // error is a timeout — the CLI retries a 401 with backoff rather than failing fast — so the
+    // timeout message says nothing about auth and the count from the raw log is the real evidence.
+    return !!c && c.status !== 'success' && c.itemCount === 0 && c.authFailures > 0;
+  }],
+  ['53 the host login did not quietly answer instead', () => {
+    const c = get('case53');
+    // The other half, and the one that would catch a regression where the scrub stops working:
+    // the same prompt on the host login returns "pong" in a couple of seconds (case52 does).
+    return !!c && !/pong/i.test(JSON.stringify(c.itemJson ?? {}));
+  }],
+  ['54 a credential mode with nothing selected fails before spawning', () => {
+    const c = get('case54');
+    return !!c && c.status !== 'success' && /No credential selected/i.test(String(c.errorMessage ?? ''));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
