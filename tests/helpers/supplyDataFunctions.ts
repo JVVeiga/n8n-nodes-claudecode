@@ -17,6 +17,11 @@ export type RunDataEntry = {
 };
 
 export type FakeSupplyContextOptions = FakeContextOptions & {
+	/** Ids reported by getExecutionId/getWorkflow, which end up in a usage report's run_key. */
+	executionId?: string;
+	workflowId?: string;
+	/** Make executeWorkflow reject, to prove a reporting failure never fails the run. */
+	executeWorkflowThrows?: boolean;
 	/** Make `addInputData` throw, the way n8n does outside a real execution (an editor probe).
 	 * The nodes are supposed to degrade to no logging and still work. */
 	addInputDataThrows?: boolean;
@@ -24,12 +29,16 @@ export type FakeSupplyContextOptions = FakeContextOptions & {
 	withoutCancelSignal?: boolean;
 };
 
+export type WorkflowCall = { workflowId: string; payload: unknown; doNotWaitToFinish?: boolean };
+
 export type FakeSupplyContext = FakeContext & {
 	supplyCtx: ISupplyDataFunctions;
 	/** Every addInputData/addOutputData call, in order. */
 	runData: RunDataEntry[];
 	/** The signal handed to `getExecutionCancelSignal`. Abort it to simulate a cancel. */
 	cancelController: AbortController;
+	/** Every executeWorkflow call — how a sub-node reports usage. */
+	workflowCalls: WorkflowCall[];
 };
 
 const NOT_IMPLEMENTED = (name: string) => () => {
@@ -43,6 +52,7 @@ const NOT_IMPLEMENTED = (name: string) => () => {
 export function createFakeSupplyContext(options: FakeSupplyContextOptions = {}): FakeSupplyContext {
 	const base = createFakeContext(options);
 	const runData: RunDataEntry[] = [];
+	const workflowCalls: WorkflowCall[] = [];
 	const cancelController = new AbortController();
 	let nextIndex = 0;
 
@@ -57,6 +67,22 @@ export function createFakeSupplyContext(options: FakeSupplyContextOptions = {}):
 
 		// Supply-data's own surface.
 		getMode: () => 'manual',
+		getExecutionId: () => options.executionId ?? 'exec-1',
+		getWorkflow: () => ({ id: options.workflowId ?? 'wf-1', name: 'Fake', active: false }),
+		executeWorkflow: async (
+			info: { id?: string },
+			inputData?: Array<{ json: unknown }>,
+			_cb?: unknown,
+			execOptions?: { doNotWaitToFinish?: boolean },
+		) => {
+			if (options.executeWorkflowThrows) throw new Error('collector workflow is unavailable');
+			workflowCalls.push({
+				workflowId: info.id ?? '',
+				payload: inputData?.[0]?.json,
+				doNotWaitToFinish: execOptions?.doNotWaitToFinish,
+			});
+			return { data: [], executionId: 'sub-1' };
+		},
 		...(options.withoutCancelSignal
 			? {}
 			: { getExecutionCancelSignal: () => cancelController.signal }),
@@ -88,5 +114,5 @@ export function createFakeSupplyContext(options: FakeSupplyContextOptions = {}):
 		},
 	}) as unknown as ISupplyDataFunctions;
 
-	return { ...base, supplyCtx, runData, cancelController };
+	return { ...base, supplyCtx, runData, cancelController, workflowCalls };
 }

@@ -855,6 +855,7 @@ function agentWorkflow({
 	memorySource, // explicit Conversation Memory value; omitted means the `auto` default
 	taskTool, // { nodeName, toolDescription, projectPath, options } -> the dedicated claudeCodeTaskTool
 	usageTool, // { nodeName, toolDescription } -> the dedicated claudeCodePlanUsageTool
+	twoItems = false, // a two-item Code node between the trigger and the Agent
 }) {
 	const nodes = [
 		{
@@ -873,6 +874,21 @@ function agentWorkflow({
 		connections[from][type][0].push({ node: to, type, index: 0 });
 	};
 
+	if (twoItems) {
+		// The trigger feeds the splitter, which feeds the Agent.
+		connections['When clicking Execute'] = {
+			main: [[{ node: 'Two items', type: 'main', index: 0 }]],
+		};
+		nodes.push({
+			parameters: { jsCode: 'return [{ json: { n: 1 } }, { json: { n: 2 } }];' },
+			id: nextId(),
+			name: 'Two items',
+			type: 'n8n-nodes-base.code',
+			typeVersion: 2,
+			position: [110, 0],
+		});
+	}
+
 	const agentNames = prompts.map((_, i) =>
 		i === prompts.length - 1 ? 'Claude Code Agent' : `Agent step ${i + 1}`,
 	);
@@ -890,7 +906,11 @@ function agentWorkflow({
 			typeVersion: 3,
 			position: [220 + i * 260, 0],
 		});
-		link(i === 0 ? 'When clicking Execute' : agentNames[i - 1], 'main', agentNames[i]);
+		link(
+			i === 0 ? (twoItems ? 'Two items' : 'When clicking Execute') : agentNames[i - 1],
+			'main',
+			agentNames[i],
+		);
 	});
 
 	// Learned the hard way (first case65 attempt): a sub-node's output is NOT on the `main`
@@ -1132,6 +1152,53 @@ cases.push(
 		},
 	}),
 	agentWorkflow({
+		name: 'case71 usage reporting - a sub-node calls the collector workflow itself',
+		notes:
+			'The Chat Model and the Task Tool both report to case71collector. EXPECT: success, and ' +
+			'TWO executions of the collector — one per sub-node call — each carrying process_name, ' +
+			'run_key and the same metrics/diagnostics shape the main node emits. This is the only ' +
+			'proof that executeWorkflow works from a supply context in the middle of an agent loop.',
+		prompts: [
+			'Call the Project_Inspector tool with the task "reply with just the word ok", then reply with exactly: done',
+		],
+		modelOptions: {
+			timeout: 180,
+			maxTurns: 8,
+			disallowedTools: ['Task', 'Bash'],
+			reportUsageTo: 'case71collector0',
+			processName: 'e2e-chat-model',
+		},
+		taskTool: {
+			nodeName: 'Project Inspector',
+			toolDescription:
+				'Runs a task with Claude Code. Input: one clear task in natural language. Returns text.',
+			projectPath: '/workspace',
+			options: {
+				timeout: 120,
+				maxTurns: 5,
+				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+				reportUsageTo: 'case71collector0',
+				processName: 'e2e-task-tool',
+			},
+		},
+	}),
+	agentWorkflow({
+		name: 'case72 usage reporting - TWO items must not share a run_key',
+		notes:
+			'A Code node emits two items into the Agent. EXPECT: two reports whose run_keys differ. ' +
+			'This measures what supplyData\u0027s lifetime actually is — the counter alone starts at 1 ' +
+			'per supplied instance, so if n8n supplies one per item the keys collide unless itemIndex ' +
+			'is in them, and a collector upserting on the key would silently drop the first item.',
+		prompts: ['Reply with exactly the word: pong. Nothing else.'],
+		modelOptions: {
+			timeout: 150,
+			maxTurns: 3,
+			reportUsageTo: 'case71collector0',
+			processName: 'e2e-two-items',
+		},
+		twoItems: true,
+	}),
+	agentWorkflow({
 		name: 'case69 memory mode - the EXPLICIT choice ignores a Session ID and uses the Memory node',
 		notes:
 			'Conversation Memory = n8n Memory Sub-Node, WITH a Session ID also set on the node. Only a ' +
@@ -1223,6 +1290,38 @@ cases.push(
 			'{"type":"object","properties":{"answer":{"type":"string"},"confidence":{"type":"number"}},"required":["answer"]}',
 	}),
 );
+
+// The collector a reporting case points at. Deliberately a single trigger node: what is being
+// proven is that a SUB-NODE can call a workflow at all (executeWorkflow is inherited by the
+// supply context but had never been exercised mid-agent-loop), and its own execution record —
+// with the payload the sub-node sent — is the evidence.
+cases.push({
+	id: 'case71collector0',
+	name: 'collector71 usage collector (called BY a sub-node)',
+	nodes: [
+		{
+			// `passthrough` accepts whatever the caller sends. With the default (declare fields)
+			// the trigger refuses with "At least 1 field is required" and the report is lost —
+			// measured on case71's second run.
+			parameters: { inputSource: 'passthrough' },
+			id: nextId(),
+			name: 'When Executed by Another Workflow',
+			type: 'n8n-nodes-base.executeWorkflowTrigger',
+			typeVersion: 1.1,
+			position: [0, 0],
+		},
+	],
+	connections: {},
+	settings: { executionOrder: 'v1' },
+	// MEASURED: a sub-node's executeWorkflow fails with "Workflow is not active and cannot be
+	// executed" against an inactive target. n8n-up activates this one after importing.
+	active: true,
+	pinData: {},
+	meta: {
+		testCaseNotes:
+			'Target of case71. Named without a "case" prefix so run-cases does not execute it directly.',
+	},
+});
 
 let n = 0;
 for (const wf of cases) {

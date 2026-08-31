@@ -184,6 +184,22 @@ for (const { id, name } of ids) {
 		const response = nodeRuns?.[0]?.data?.ai_tool?.[0]?.[0]?.json?.response;
 		if (response !== undefined) toolRuns[nodeName] = response;
 	}
+	// Payloads the usage collector received during THIS case, read from its own executions. A
+	// sub-node's report leaves the workflow entirely, so nothing in this execution's run data
+	// can show it — the collector's execution record is the only evidence.
+	// Polled, not read once: reports are sent with doNotWaitToFinish, so the collector's
+	// execution row may not exist the instant the caller finishes. Three quick tries beat a
+	// flaky assertion that blames the node for a race in the rig.
+	let usageReports = [];
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			usageReports = JSON.parse(inContainer('read-usage-reports.js', String(started)));
+		} catch {
+			usageReports = [];
+		}
+		if (usageReports.length > 0) break;
+		execFileSync('sleep', ['1']);
+	}
 	// What the chat model reported about itself — `sessionState` is the only evidence that
 	// distinguishes "resumed a session" from "read a flattened memory", and no answer text can
 	// show it.
@@ -228,6 +244,7 @@ for (const { id, name } of ids) {
 		errorContext: nodeError?.context ?? null,
 		toolRuns,
 		modelRuns,
+		usageReports,
 		outputBranchIndex: (() => {
 			const main = cc?.data?.main;
 			if (!Array.isArray(main)) return null;

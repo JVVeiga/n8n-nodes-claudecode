@@ -265,6 +265,29 @@ const checks = [
     const c = get('case66');
     return c.status === 'success' && /FILES=6\b/.test(String(c.itemJson?.output ?? ''));
   }],
+  ['71 a sub-node reports usage by calling a collector workflow', () => {
+    const c = get('case71');
+    // The collector's executions are counted by run-cases: two sub-node calls, two reports,
+    // each carrying the main node's metrics shape.
+    const reports = c?.usageReports ?? [];
+    const byProcess = reports.map((r) => r.process_name).sort();
+    return (
+      c?.status === 'success' &&
+      reports.length >= 2 &&
+      byProcess.includes('e2e-chat-model') &&
+      byProcess.includes('e2e-task-tool') &&
+      reports.every((r) => typeof r.run_key === 'string' && r.run_key.includes(':')) &&
+      reports.every((r) => r.metrics && typeof r.metrics.session_id === 'string') &&
+      reports.every((r) => r.diagnostics && typeof r.diagnostics.requestedModel === 'string')
+    );
+  }],
+  ['72 two input items produce two DISTINCT run_keys', () => {
+    const c = get('case72');
+    const keys = (c?.usageReports ?? []).map((r) => r.run_key);
+    // Whatever supplyData's lifetime turns out to be, the keys must not collide: a collector
+    // upserting on run_key would otherwise drop one item's cost on the floor.
+    return c?.status === 'success' && keys.length >= 2 && new Set(keys).size === keys.length;
+  }],
   ['69 explicit Memory mode uses the Memory node and IGNORES the Session ID', () => {
     const c = get('case69');
     const model = Object.values(c?.modelRuns ?? {})[0];
