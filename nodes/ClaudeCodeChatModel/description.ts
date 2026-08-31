@@ -12,7 +12,9 @@ import {
 	maxBudgetOption,
 	maxThinkingTokensOption,
 	maxTurnsOption,
+	processNameOption,
 	projectPathProperty,
+	reportUsageToOption,
 	restrictToolsOption,
 	systemPromptOption,
 	thinkingOption,
@@ -137,6 +139,8 @@ export const claudeCodeChatModelDescription: INodeTypeDescription = {
 					'Hard spend cap for a single Agent call. The run stops once it is exceeded. Set to 0 to disable.',
 				),
 				maxThinkingTokensOption(),
+				processNameOption(),
+				reportUsageToOption(),
 				maxTurnsOption(
 					'Maximum number of internal Claude Code turns per Agent call. Tool-heavy requests need more.',
 				),

@@ -12,7 +12,9 @@ import {
 	maxBudgetOption,
 	maxThinkingTokensOption,
 	maxTurnsOption,
+	processNameOption,
 	projectPathProperty,
+	reportUsageToOption,
 	restrictToolsOption,
 	systemPromptOption,
 	thinkingOption,
@@ -95,6 +97,8 @@ export const claudeCodeToolDescription: INodeTypeDescription = {
 					'Hard spend cap per task run. The run stops once it is exceeded. Set to 0 to disable.',
 				),
 				maxThinkingTokensOption(),
+				processNameOption(),
+				reportUsageToOption(),
 				maxTurnsOption('Maximum internal Claude Code turns per task run'),
 				restrictToolsOption(
 					'Limit Claude Code to this base set of built-in tools during task runs — everything else is never loaded. Leave empty for the full set.',

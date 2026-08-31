@@ -9,6 +9,8 @@ import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
 import { readAuth } from '../shared/readAuth';
+import { createSequence } from '../shared/usageReport';
+import { usageReporting } from '../shared/reportUsage';
 import { claudeCodeChatModelDescription } from './description';
 import { ClaudeCodeChat, type ChatModelLog } from './model';
 import { readChatModelSettings } from './params';
@@ -104,6 +106,10 @@ export async function supplyChatModel(
 		},
 	};
 
+	// One sequence per supplyData — that is once per execution, so the numbering it produces is
+	// the call number WITHIN this execution, which is exactly what run_key needs.
+	const nextSeq = createSequence();
+
 	const model = new ClaudeCodeChat({
 		params: settings.params,
 		systemPromptMode: settings.systemPromptMode,
@@ -112,6 +118,7 @@ export async function supplyChatModel(
 		debug,
 		log,
 		cancelSignal: ctx.getExecutionCancelSignal?.(),
+		usage: usageReporting(ctx, settings, debug, nextSeq, itemIndex),
 	});
 
 	return { response: model };

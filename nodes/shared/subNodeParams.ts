@@ -36,7 +36,16 @@ export type SubNodeOptions = {
 	systemPrompt?: string;
 	pathToClaudeCodeExecutable?: string;
 	debug?: boolean;
+	/** Workflow that receives { process_name, run_key, …, metrics, diagnostics } after each call.
+	 * A workflowSelector resolves to a resource-locator object, or a bare id string. */
+	reportUsageTo?: string | { value?: string };
+	processName?: string;
 };
+
+/** The workflowSelector parameter resolves to `{ __rl: true, value, mode }` when picked from the
+ * list and to a plain string when typed — both mean the same workflow. */
+export const usageWorkflowId = (value: SubNodeOptions['reportUsageTo']): string =>
+	(typeof value === 'string' ? value : (value?.value ?? '')).trim();
 
 /**
  * Builds the params a sub-node hands to `buildQueryOptions`. `prompt` stays empty on purpose —

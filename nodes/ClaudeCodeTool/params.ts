@@ -1,6 +1,7 @@
 import type { ClaudeCodeParams } from '../ClaudeCode/types';
 import {
 	readSubNodeParams,
+	usageWorkflowId,
 	type SubNodeOptions,
 	type SubNodeReadContext,
 } from '../shared/subNodeParams';
@@ -19,6 +20,8 @@ export type ClaudeCodeToolSettings = {
 	params: ClaudeCodeParams;
 	toolDescription: string;
 	debugEnabled: boolean;
+	usageWorkflowId: string;
+	processName: string;
 };
 
 export function readClaudeCodeToolSettings(
@@ -31,5 +34,7 @@ export function readClaudeCodeToolSettings(
 		params: readSubNodeParams(ctx, itemIndex, options),
 		toolDescription: (ctx.getNodeParameter('toolDescription', itemIndex) as string).trim(),
 		debugEnabled: options.debug === true,
+		usageWorkflowId: usageWorkflowId(options.reportUsageTo),
+		processName: (options.processName ?? '').trim(),
 	};
 }

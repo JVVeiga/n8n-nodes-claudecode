@@ -186,6 +186,31 @@ export const systemPromptOption = (
 	description,
 });
 
+/**
+ * Usage reporting. A sub-node's output is unreachable by expressions, so the numbers leave by
+ * calling a workflow — the same `{ process_name, metrics, diagnostics }` payload the main node's
+ * output carries, so an existing collector consumes it unchanged.
+ */
+export const reportUsageToOption = (): INodeProperties => ({
+	displayName: 'Report Usage to Workflow',
+	name: 'reportUsageTo',
+	type: 'workflowSelector',
+	default: '',
+	description:
+		'After every call, hand { process_name, run_key, caller_workflow_id, caller_execution_id, node_name, metrics, diagnostics } to this workflow. The metrics and diagnostics are byte-for-byte what the main Claude Code node emits, so a collector built for that node needs no changes. The call does not wait for the collector to finish, and a failure there never fails this run.',
+});
+
+export const processNameOption = (): INodeProperties => ({
+	displayName: 'Process Name',
+	name: 'processName',
+	type: 'string',
+	default: '',
+	placeholder: 'e.g. support-assistant',
+	description:
+		'Sent as process_name on every usage report, so rows from different workflows stay apart. Defaults to this node’s name when left empty.',
+	displayOptions: { show: { reportUsageTo: [{ _cnd: { exists: true } }] } },
+});
+
 /** The Model selector and Project Path, which sit outside the collection on every sub-node. */
 export const projectPathProperty = (description: string): INodeProperties => ({
 	displayName: 'Project Path',

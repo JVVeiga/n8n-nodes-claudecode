@@ -10,6 +10,7 @@ import { resolveResultText } from '../ClaudeCode/output/resultText';
 import { createPromptStream } from '../ClaudeCode/promptStream';
 import { runQuery } from '../ClaudeCode/runner';
 import { collectRunMetrics } from '../ClaudeCode/timeout';
+import { reportRun, type UsageReporting } from '../shared/usageReport';
 import type { ClaudeCodeParams } from '../ClaudeCode/types';
 
 /**
@@ -45,6 +46,8 @@ export type ClaudeCodeTaskToolDeps = {
 	cancelSignal?: AbortSignal;
 	/** Injected so tests never read the real process environment. */
 	processEnv?: NodeJS.ProcessEnv;
+	/** Reporting, whole or not at all — see UsageReporting. */
+	usage?: UsageReporting;
 };
 
 /** What the Agent is offered. JSON Schema, for the reason in the module comment. */
@@ -80,12 +83,18 @@ export function buildClaudeCodeTaskTool(deps: ClaudeCodeTaskToolDeps): DynamicSt
 
 			try {
 				const promptStream = createPromptStream(task);
+				// Captured, not discarded: the effort Claude Code actually applied is part of the
+				// diagnostics the main node reports, and a tool's row was the only one always
+				// saying null.
+				let appliedEffort: string | undefined;
 				const outcome = buildQueryOptions(deps.params, {
 					abortController,
 					promptStream,
 					auth: deps.auth,
 					processEnv: deps.processEnv,
-					onEffort: () => {},
+					onEffort: (level) => {
+						appliedEffort = level;
+					},
 				});
 				if ('problem' in outcome) {
 					const { problem } = outcome;
@@ -104,6 +113,19 @@ export function buildClaudeCodeTaskTool(deps: ClaudeCodeTaskToolDeps): DynamicSt
 					query: deps.query,
 					debug: deps.debug,
 					messages,
+					getAppliedEffort: () => appliedEffort,
+				});
+
+				// Reported before the text is shaped, so a timeout reports too — a run that spent
+				// money and ran out of time is exactly the one worth having in the table.
+				await reportRun({
+					usage: deps.usage,
+					messages,
+					durationMs: run.durationMs,
+					params: deps.params,
+					appliedEffort: run.appliedEffort,
+					authMode: deps.auth.mode,
+					debug: deps.debug,
 				});
 
 				const text = resolveResultText(messages).text;

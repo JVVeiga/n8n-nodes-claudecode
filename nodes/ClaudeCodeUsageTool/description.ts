@@ -8,6 +8,12 @@ import { projectPathProperty } from '../shared/runOptions';
  * `claudeCodeUsageTool`, the name n8n USED to synthesize from the Usage node's `usableAsTool`.
  * That flag is gone, so the synthesized type is gone with it — a stored workflow holding one
  * loads as an unrecognized node and must be re-wired to this one.
+ *
+ * **No usage reporting here, deliberately.** The Chat Model and the Task Tool offer it because
+ * they run a Claude Code session and therefore have a session id, turns, tokens and a cost to
+ * report. This tool runs a usage READ: there is no session and no inference, so a row from it
+ * would be a line of zeros in a table of runs. The only money it can spend is the opt-in probe,
+ * and one field is not a reason to file a run that never happened.
  */
 export const claudeCodeUsageToolDescription: INodeTypeDescription = {
 	displayName: 'Claude Code Usage Tool',

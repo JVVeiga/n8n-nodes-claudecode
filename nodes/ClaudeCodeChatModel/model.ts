@@ -19,6 +19,7 @@ import type { ClaudeCodeParams } from '../ClaudeCode/types';
 import { mapMessages } from './messages';
 import { resolveChatOutcome } from './result';
 import { buildToolBridge, type BindableTool } from './toolBridge';
+import { reportRun, type UsageReporting } from '../shared/usageReport';
 
 /**
  * Claude Code, duck-typed as a LangChain chat model.
@@ -54,6 +55,9 @@ export type ChatModelDeps = {
 	cancelSignal?: AbortSignal;
 	/** Injected so tests never read the real process environment. */
 	processEnv?: NodeJS.ProcessEnv;
+	/** Reporting, whole or not at all — see UsageReporting. Absent means the node was not asked
+	 * to report. */
+	usage?: UsageReporting;
 };
 
 type BindToolsArg = Parameters<NonNullable<BaseChatModel['bindTools']>>[0];
@@ -245,6 +249,19 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 						);
 				},
 			});
+			// Reported per ATTEMPT, not per _generate: the resume→create retry runs the CLI twice,
+			// and reporting only the survivor loses the abandoned attempt's tokens — money that
+			// was spent and would never appear in the table. Two attempts, two rows, distinct seq.
+			await reportRun({
+				usage: deps.usage,
+				messages: sdkMessages,
+				durationMs: run.durationMs,
+				params: runParams,
+				appliedEffort: appliedEffort ?? null,
+				authMode: deps.auth.mode,
+				debug: deps.debug,
+			});
+
 			return { run, sdkMessages };
 		};
 

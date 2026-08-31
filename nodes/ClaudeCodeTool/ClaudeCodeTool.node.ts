@@ -9,6 +9,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
 import { readAuth } from '../shared/readAuth';
 import { toolRunLog, toToolName } from '../shared/toolRunLog';
+import { createSequence } from '../shared/usageReport';
+import { usageReporting } from '../shared/reportUsage';
 import { claudeCodeToolDescription } from './description';
 import { readClaudeCodeToolSettings } from './params';
 import { buildClaudeCodeTaskTool } from './tool';
@@ -58,6 +60,7 @@ export async function supplyClaudeCodeTool(
 		debug,
 		log: toolRunLog(ctx),
 		cancelSignal: ctx.getExecutionCancelSignal?.(),
+		usage: usageReporting(ctx, settings, debug, createSequence(), itemIndex),
 	});
 
 	return { response: tool };
