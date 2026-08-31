@@ -66,7 +66,40 @@ const inContainer = (script, ...args) =>
 /** Session id captured from an earlier case, so case08 has something real to resume. */
 let capturedSessionId = null;
 
+/** The chat model's session id from case65a, so case65b has a real session to resume. */
+let capturedChatModelSessionId = null;
+
+const PATCH_CHAT_MODEL_SESSION =
+	"const { DatabaseSync } = require('node:sqlite');" +
+	"const db = new DatabaseSync('/home/node/.n8n/database.sqlite');" +
+	"const row = db.prepare(\"SELECT id, nodes FROM workflow_entity WHERE name LIKE 'case65b%'\").get();" +
+	'const nodes = JSON.parse(row.nodes);' +
+	"const model = nodes.find((n) => String(n.type).includes('claudeCodeChatModel'));" +
+	'model.parameters.sessionId = process.argv[1];' +
+	"db.prepare('UPDATE workflow_entity SET nodes = ? WHERE id = ?').run(JSON.stringify(nodes), row.id);" +
+	"console.log(JSON.stringify({ workflow: row.id, sessionId: process.argv[1] }));";
+
 for (const { id, name } of ids) {
+	// case65b resumes the Claude session case65a's chat model opened, in a SEPARATE execution —
+	// the real round-trip. It must be patched in from outside: a sub-node's output is not on the
+	// `main` chain, so no expression in the workflow can read it (measured — the first case65
+	// attempt died with "No data found from `main` input"). Same pattern as case08 below.
+	if (name.startsWith('case65b')) {
+		if (capturedChatModelSessionId) {
+			const patched = execFileSync(
+				'docker',
+				['exec', CONTAINER, 'node', '-e', PATCH_CHAT_MODEL_SESSION, capturedChatModelSessionId],
+				{ encoding: 'utf8' },
+			).trim();
+			process.stdout.write(`\n    patched case65b session: ${patched}\n`);
+		} else {
+			process.stdout.write(
+				`\n=== ${name}\n    SKIPPED: no chat-model session captured — run case65a in the same pass.\n`,
+			);
+			continue;
+		}
+	}
+
 	// case08 resumes case01's session. The generator can only write a placeholder, so patch the
 	// real id in now — without this the CLI rejects it with "--resume requires a valid session ID".
 	if (name.startsWith('case08')) {
@@ -144,6 +177,23 @@ for (const { id, name } of ids) {
 	const branchIdx = branches.findIndex((b) => Array.isArray(b) && b.length > 0);
 	const items = branchIdx === -1 ? [] : branches[branchIdx];
 	const setItems = runData['Read payload']?.[0]?.data?.main?.[0] ?? [];
+	// What each ai_tool sub-node actually returned, keyed by node name. A tool's own output is
+	// the only evidence that distinguishes "the tool answered" from "the model made it up".
+	const toolRuns = {};
+	for (const [nodeName, nodeRuns] of Object.entries(runData)) {
+		const response = nodeRuns?.[0]?.data?.ai_tool?.[0]?.[0]?.json?.response;
+		if (response !== undefined) toolRuns[nodeName] = response;
+	}
+	// What the chat model reported about itself — `sessionState` is the only evidence that
+	// distinguishes "resumed a session" from "read a flattened memory", and no answer text can
+	// show it.
+	const modelRuns = {};
+	for (const [nodeName, nodeRuns] of Object.entries(runData)) {
+		const json = nodeRuns?.[0]?.data?.ai_languageModel?.[0]?.[0]?.json;
+		if (json?.sessionState !== undefined) {
+			modelRuns[nodeName] = { sessionState: json.sessionState, sessionId: json.sessionId };
+		}
+	}
 	const nodeError = cc?.error ?? parsed?.data?.resultData?.error ?? null;
 
 	// A credential that cannot authenticate never reaches an item or a node error: the CLI takes a
@@ -176,6 +226,8 @@ for (const { id, name } of ids) {
 		errorType: nodeError?.type ?? null,
 		errorContextKeys: nodeError?.context ? Object.keys(nodeError.context).sort() : null,
 		errorContext: nodeError?.context ?? null,
+		toolRuns,
+		modelRuns,
 		outputBranchIndex: (() => {
 			const main = cc?.data?.main;
 			if (!Array.isArray(main)) return null;
@@ -193,6 +245,19 @@ for (const { id, name } of ids) {
 		null;
 	if (sessionFromRun && !name.startsWith('case08')) {
 		capturedSessionId = sessionFromRun;
+	}
+	// The chat model logs its run under a name that deliberately does NOT match /^Claude Code/
+	// (that regex picks the Agent). Its session id lives on the sub-node's ai_languageModel run
+	// data — captured here for case65b, since no expression inside a workflow can reach it.
+	for (const [nodeName, nodeRuns] of Object.entries(runData)) {
+		if (!/^CC Chat Model/.test(nodeName)) continue;
+		const sub = nodeRuns?.[0]?.data?.ai_languageModel?.[0]?.[0]?.json;
+		// Guarded on case65a specifically: capturing from ANY chat-model run meant case65b would
+		// silently resume whichever case ran last if 65a was filtered out — it fails correctly,
+		// but for a misleading reason.
+		if (sub?.sessionId && name.startsWith('case65a')) {
+			capturedChatModelSessionId = sub.sessionId;
+		}
 	}
 
 	process.stdout.write(

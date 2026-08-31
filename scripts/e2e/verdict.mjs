@@ -221,6 +221,88 @@ const checks = [
     const c = get('case54');
     return !!c && c.status !== 'success' && /No credential selected/i.test(String(c.errorMessage ?? ''));
   }],
+
+  // chat-model (cases 60-64): the AI Agent cluster. The asserted node is the Agent, whose item is
+  // { output: ... } — a string normally, an object under Require Specific Output Format.
+  ['60 the Agent accepts the chat model and answers', () => {
+    const c = get('case60');
+    return c.status === 'success' && /pong/i.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['61 an Agent tool runs inside Claude Code, its value reaches the answer', () => {
+    const c = get('case61');
+    return c.status === 'success' && /73194/.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['62 memory carries the first answer into the second call', () => {
+    const c = get('case62');
+    return c.status === 'success' && /chartreuse/i.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['63 an invalid credential on the chat model fails the Agent, 401s in the log', () => {
+    const c = get('case63');
+    return !!c && c.status !== 'success' && c.authFailures > 0 && !/pong/i.test(JSON.stringify(c.itemJson ?? {}));
+  }],
+  ['64 Require Specific Output Format returns the schema-d object (R16)', () => {
+    const c = get('case64');
+    const out = c?.itemJson?.output;
+    return c?.status === 'success' && !!out && typeof out === 'object' && /blue/i.test(String(out.answer ?? ''));
+  }],
+  ['65a the first call opens a session and answers', () => {
+    const c = get('case65a');
+    return c.status === 'success' && /OK/i.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['65b a SECOND EXECUTION resumes the session — no Memory node, the session carries the fruit', () => {
+    const c = get('case65b');
+    return c.status === 'success' && /abacaxi/i.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['65c a stable conversation key CREATES the session — no storage anywhere', () => {
+    const c = get('case65c');
+    return c.status === 'success' && /OK/i.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['65d the same key RESUMES it in a new execution — deterministic hash, no patching', () => {
+    const c = get('case65d');
+    return c.status === 'success' && /jabuticaba/i.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['66 the dedicated Task Tool runs Claude Code in the project and the count comes back', () => {
+    const c = get('case66');
+    return c.status === 'success' && /FILES=6\b/.test(String(c.itemJson?.output ?? ''));
+  }],
+  ['69 explicit Memory mode uses the Memory node and IGNORES the Session ID', () => {
+    const c = get('case69');
+    const model = Object.values(c?.modelRuns ?? {})[0];
+    // Both halves matter: the recall proves memory worked, session_state "new" proves the
+    // Session ID sitting on the node was not used.
+    return (
+      c?.status === 'success' &&
+      /verde-lim/i.test(String(c.itemJson?.output ?? '')) &&
+      model?.sessionState === 'new'
+    );
+  }],
+  ['70 explicit Session mode resumes even with a Memory node connected', () => {
+    const c = get('case70');
+    const model = Object.values(c?.modelRuns ?? {})[0];
+    return c?.status === 'success' && ['created', 'resumed'].includes(String(model?.sessionState));
+  }],
+  ['68 BOTH dedicated tools answer one question in a single turn', () => {
+    const c = get('case68');
+    const out = String(c?.itemJson?.output ?? '');
+    // FILES can only come from the task tool, USAGE only from the usage tool.
+    return c?.status === 'success' && /FILES=6\b/.test(out) && /USAGE=\d{1,3}\b/.test(out);
+  }],
+  ['67 the dedicated zero-arg Usage Tool reads plan windows through the Agent', () => {
+    const c = get('case67');
+    const out = String(c.itemJson?.output ?? '');
+    // The model's own number proves nothing — it could have invented it. The tool's OWN run data
+    // is the evidence: a JSON report that actually carries windows.
+    const tool = c?.toolRuns?.['Plan Usage'];
+    let report = null;
+    try { report = tool ? JSON.parse(tool) : null; } catch { report = null; }
+    return (
+      c.status === 'success' &&
+      !!report &&
+      report.rateLimitsAvailable === true &&
+      Array.isArray(report.windows) && report.windows.length > 0 &&
+      !/NO_WINDOWS|Could not read/i.test(out)
+    );
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
