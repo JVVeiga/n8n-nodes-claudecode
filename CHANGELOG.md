@@ -61,6 +61,27 @@ zero-argument and returns the plan report as JSON text. Both replace the auto-ge
 main node, a zero-argument schema unless `$fromAI()` was hand-wired. The wrappers are gone — see
 BREAKING above for the migration.
 
+### Usage reporting from a sub-node
+
+The main node puts `metrics` and `diagnostics` in its output; a sub-node has no output an
+expression can read. The Chat Model and the Task Tool therefore offer **Report Usage to Workflow**
+and **Process Name**: after every call they hand `{ process_name, run_key, caller_workflow_id,
+caller_execution_id, node_name, metrics, diagnostics }` to the workflow you pick.
+
+The metrics and diagnostics are the SAME objects the main node emits — pinned by a test that
+compares them to the main node's own output builder — so a collector workflow written for the
+main node ingests a sub-node's run unchanged.
+
+`run_key` (`<executionId>:<node name>:<seq>`) identifies one call. It is deliberately not the
+session id: a resumed conversation reuses that across executions, so a table keyed on it would
+overwrite a conversation's history with its most recent message.
+
+The Usage Tool does not offer this — it performs a plan read, with no session, turns or tokens to
+report. Two n8n facts worth knowing before pointing a node at a collector: the collector must be
+**published** (n8n 2.x resolves the published version; merely active is refused), and its trigger
+must accept the payload (declare the fields, or use passthrough). A collector that fails costs you
+a metric, never the run.
+
 **Packaging.** `@langchain/core` and `zod` are peer dependencies by design: n8n resolves peers to
 its own copies for community nodes, which keeps one copy of LangChain in play. The verified
 contract and decisions live in the repo's spec notes.

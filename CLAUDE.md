@@ -83,6 +83,8 @@ nodes/
     subNodeParams.ts           the run params every sub-node reads — ONE copy of the defaults
     runOptions.ts              the Options collection every sub-node offers, as factories
     toolRunLog.ts              toToolName + the addInputData/addOutputData pair for ai_tool
+    usageReport.ts             the collector payload and run_key — pure, no n8n
+    reportUsage.ts             the impure half: builds the reporter from a supply context
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -106,6 +108,7 @@ nodes/
     output/
       resultText.ts            "what does this run say" — the six-rung fallback ladder
       legacy.ts                FROZEN typeVersion 1 / 1.1 shapes
+      metrics.ts               the `metrics` object — v1.2 output and every sub-node report
       v12.ts                   the 1.2 unified envelope
       index.ts                 buildOutputItem — routes by typeVersion
     errors.ts                  the four failure paths, as data
@@ -151,6 +154,7 @@ nodes/
 | Change what the model is told about staged files | `attachments/plan.ts` (`stagedHintBlock`) |
 | Change what a run reports | `diagnostics.ts` |
 | Change the output shape | `output/v12.ts` — **never** `output/legacy.ts` |
+| Change the `metrics` object | `output/metrics.ts` — it feeds v1.2 output AND every sub-node's usage report |
 | Change stop/timeout behaviour | `runner.ts` |
 | Change a failure item | `errors.ts` |
 | Change how the Chat Model maps Agent messages | `ClaudeCodeChatModel/messages.ts` |
@@ -158,6 +162,7 @@ nodes/
 | Change the Task tool's contract or failure text | `ClaudeCodeTool/tool.ts` |
 | Change the Usage tool's report | `ClaudeCodeUsageTool/tool.ts` |
 | Change how a usage read escalates | `ClaudeCodeUsage/escalate.ts` — node and tool share it |
+| Change what a sub-node reports, or its run_key | `shared/usageReport.ts` (pure) / `shared/reportUsage.ts` (the n8n call) |
 | Add an option to every sub-node | `shared/runOptions.ts`, then compose it in each description |
 | Change a sub-node's run defaults | `shared/subNodeParams.ts` — never one node's params.ts |
 
@@ -223,6 +228,21 @@ nodes/
   the tool the model is offered no longer matches the tool that exists and the call fails before
   the handler runs — silently, with the model inventing an explanation. Plain JSON Schema puts
   n8n on its own happy path. Pinned by a test asserting the schema is not a zod instance.
+- **A sub-node's output cannot be read by an expression.** It is not on the `main` chain, so
+  `$('Claude Code Chat Model').item.json.metrics` resolves against nothing — measured, and it is
+  why usage leaves by calling a workflow (`executeWorkflow` is inherited by the supply context)
+  rather than by being picked up downstream. Two n8n rules govern that call, both measured:
+  the target must be **published** (n8n 2.x resolves the published version; setting `active` in
+  the database changes nothing), and its Execute Workflow Trigger must accept the payload —
+  declared fields or `passthrough`, otherwise "At least 1 field is required".
+- **`supplyData` is called ONCE per node, not once per item.** Measured (e2e case72: an Agent fed
+  two items produced two reports from one supplied instance, both carrying `itemIndex` 0, the
+  sequence counter separating them). The signature takes an `itemIndex` and n8n may one day use
+  it, which is why `run_key` carries it too — but a counter created in `supplyData` numbers every
+  call of the execution, which is what the key relies on today.
+- **Reporting must never cost the caller their answer.** `createUsageReporter` calls with
+  `doNotWaitToFinish` and swallows every failure into the debug log. A collector that is down
+  loses a metric; a run that dies because logging failed loses what the user paid for.
 - **Nodes cannot be constructor-injected.** n8n calls `execute.call(executionContext)`, so `this`
   is the context and instance fields are unreachable. Dependencies go through the exported
   `runItems(ctx, deps)` / `readUsageItems(ctx, deps)` / `supplyChatModel(ctx, deps, itemIndex)` —
@@ -262,7 +282,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 712 tests, node:test, no framework
+npm test                                    # 833 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -285,7 +305,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 46 named behaviours against real executions:
+with the node installed and asserts 63 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

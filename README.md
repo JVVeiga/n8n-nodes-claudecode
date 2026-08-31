@@ -610,6 +610,57 @@ visible on the canvas rather than silent.
 > fails there with "No suitable shell found". Disallow **Bash** on the tool and let it use Glob
 > and Read, or run n8n on an image that has a shell.
 
+### Measuring what a sub-node spent
+
+The main Claude Code node puts `metrics` and `diagnostics` in its output, so a following node
+reads them with an expression. **A sub-node cannot do that** — its output is not on the `main`
+chain, and `$('Claude Code Chat Model').item.json.metrics` has nothing to resolve against.
+
+So the numbers leave by calling a workflow. On the Chat Model and the Task Tool, under Options:
+
+| Option | What it does |
+|---|---|
+| **Report Usage to Workflow** | after every call, hands the run to this workflow |
+| **Process Name** | sent as `process_name`, so rows from different workflows stay apart |
+
+Each call sends one item:
+
+```json
+{
+  "process_name": "support-assistant",
+  "run_key": "1274:Claude Code Chat Model:1",
+  "caller_workflow_id": "wF1aBcD2eFgH3iJk",
+  "caller_execution_id": "1274",
+  "node_name": "Claude Code Chat Model",
+  "metrics":     { "duration_ms": 7329, "num_turns": 2, "total_cost_usd": 0.0070098,
+                   "usage": { … }, "modelUsage": { … }, "session_id": "b575370d-…" },
+  "diagnostics": { "requestedModel": "…", "resolvedModel": "…", "appliedEffort": "…", … }
+}
+```
+
+`metrics` and `diagnostics` are **the same objects the main node emits** — a test asserts the
+metrics are deep-equal to what the main node's output builder produces — so a collector written
+for the main node consumes a sub-node's run with no changes.
+
+**`run_key` identifies a call, not a session.** A conversation that resumes a Claude Code session
+carries the same `session_id` across executions, so keying a table on it would make every message
+overwrite the last, and `total_cost_usd` is per run rather than cumulative. The session id is an
+ordinary field instead, which is what makes "what did this conversation cost" a `GROUP BY`.
+
+Three things that will bite you, all measured:
+
+- **The collector must be published.** n8n 2.x has a draft/publish model, and `executeWorkflow`
+  resolves the *published* version — an unpublished one is refused with *"Workflow is not active
+  and cannot be executed"*. Marking it active is not enough.
+- **Its trigger must accept the payload.** An Execute Workflow Trigger that declares fields
+  rejects anything else with *"At least 1 field is required"*; declare the fields you want or set
+  the trigger to *passthrough*.
+- **Reporting never costs you the answer.** The call is made with `doNotWaitToFinish` and any
+  failure is swallowed into the debug log — a collector that is down loses a metric, not a run.
+
+The **Usage Tool** has no reporting, deliberately: it performs a plan *read*, so there is no
+session, no turns and no tokens. A row from it would be a line of zeros in a table of runs.
+
 > **Why not the auto-generated variants?** n8n also synthesizes "tool" wrappers from the regular
 > nodes (`usableAsTool`). Those expose every node parameter and — for the main node — a
 > zero-argument schema unless you hand-write `$fromAI()` expressions. They keep working, but the
