@@ -34,7 +34,13 @@ export const claudeCodeDescription: INodeTypeDescription = {
 	subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 	description:
 		'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',
-	usableAsTool: true,
+	// NOT `usableAsTool`. n8n synthesizes a tool variant from that flag, and the one it built here
+	// was worse than nothing: it exposed all ~15 node parameters and offered the Agent a
+	// ZERO-argument schema unless the author hand-wrote `$fromAI()` into Prompt — so the model had
+	// no way to pass a task at all. `nodes/ClaudeCodeTool/` is the real tool: fixed `{task}`
+	// schema, text-out failures, only the options a tool needs. Dropping the flag also removes the
+	// duplicate entry from the editor's tool picker (CONCERNS d2, closed).
+	// BREAKING for any workflow that used the auto-wrap — see the CHANGELOG's migration note.
 	defaults: {
 		name: 'Claude Code',
 	},
