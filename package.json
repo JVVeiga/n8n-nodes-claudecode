@@ -1,7 +1,7 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
   "version": "1.1.0",
-  "description": "Two n8n nodes for Claude Code v2 via the Claude Agent SDK: the agent — with file attachments from n8n binary data (images, PDFs, CSV), effort, thinking, Ultracode, tool restriction, a spend cap, graceful timeouts and run diagnostics — plus a free usage read for plan limits and reset windows",
+  "description": "Five n8n nodes for Claude Code v2 via the Claude Agent SDK: the agent (attachments, effort, thinking, Ultracode, tool restriction, spend cap, graceful timeouts, diagnostics), a Chat Model and two Agent tools for n8n AI Agents, plus a free usage read for plan limits and reset windows",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -23,7 +23,7 @@
     "url": "https://github.com/JVVeiga/n8n-nodes-claudecode/issues"
   },
   "author": {
-    "name": "João Veiga",
+    "name": "Jo\u00e3o Veiga",
     "email": "joaovveiga@gaudium.com.br"
   },
   "repository": {
@@ -43,7 +43,7 @@
     "lint": "eslint nodes credentials package.json",
     "lintfix": "eslint nodes credentials package.json --fix",
     "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes credentials package.json",
-    "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/n8n-up.sh is missing. It is versioned — restore it with: git checkout scripts/e2e' >&2; exit 1; }",
+    "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/n8n-up.sh is missing. It is versioned \u2014 restore it with: git checkout scripts/e2e' >&2; exit 1; }",
     "e2e:up": "npm run e2e:guard && bash scripts/e2e/n8n-up.sh",
     "e2e:run": "npm run e2e:guard && node scripts/e2e/run-cases.mjs",
     "e2e:verdict": "npm run e2e:guard && node scripts/e2e/verdict.mjs",
@@ -61,13 +61,18 @@
     ],
     "nodes": [
       "dist/nodes/ClaudeCode/ClaudeCode.node.js",
-      "dist/nodes/ClaudeCodeUsage/ClaudeCodeUsage.node.js"
+      "dist/nodes/ClaudeCodeUsage/ClaudeCodeUsage.node.js",
+      "dist/nodes/ClaudeCodeChatModel/ClaudeCodeChatModel.node.js",
+      "dist/nodes/ClaudeCodeTool/ClaudeCodeTool.node.js",
+      "dist/nodes/ClaudeCodeUsageTool/ClaudeCodeUsageTool.node.js"
     ]
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.202"
+    "@anthropic-ai/claude-agent-sdk": "^0.3.202",
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
+    "@langchain/core": "^1.2.9",
     "@types/node": "^22.13.10",
     "@typescript-eslint/parser": "~8.32.0",
     "commitizen": "^4.3.1",
@@ -76,10 +81,13 @@
     "eslint-plugin-n8n-nodes-base": "^1.16.3",
     "gulp": "^5.0.0",
     "prettier": "^3.5.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "zod": "^4.5.4"
   },
   "peerDependencies": {
-    "n8n-workflow": "*"
+    "@langchain/core": "^1.0.0",
+    "n8n-workflow": "*",
+    "zod": ">=3.25.0 <5"
   },
   "config": {
     "commitizen": {
