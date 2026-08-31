@@ -32,6 +32,23 @@ export type ConfigDeps = {
 	/** The temp directory holding staged attachments, when there were any. A runtime fact rather
 	 * than a parameter, which is why it arrives here alongside the AbortController. */
 	stagedDir?: string;
+	/** In-process MCP servers to expose to the run, plus the fully-qualified names of the tools
+	 * they carry (`mcp__<server>__<tool>`). The Chat Model node hands the Agent's tools over this
+	 * way. The names are pre-approved, and appended to an active restriction list so a
+	 * restriction cannot silently unplug the Agent's own tools — the same reasoning as
+	 * `withOrchestration` under Ultracode. */
+	mcp?: { servers: NonNullable<SdkOptions['mcpServers']>; toolNames: string[] };
+	/** Replace the system prompt outright with this string — the SDK's plain-string form. Wins
+	 * over `additional.systemPrompt`, which appends to the Claude Code preset, because its
+	 * applier runs later. Empty string is a valid value: it means "no system prompt". */
+	systemPromptReplace?: string;
+	/** Emit `stream_event` messages so a caller can observe text deltas live. */
+	includePartialMessages?: boolean;
+	/** Create the session under THIS id instead of an auto-generated one (the SDK's `sessionId`
+	 * option; must be a valid UUID). The Chat Model node uses it to create a session under a
+	 * deterministic id when resuming found nothing — which is what makes a stable conversation
+	 * key work with no storage anywhere. Not combined with `resume` by its only caller. */
+	newSessionId?: string;
 };
 
 export type ConfigResult = {
@@ -305,6 +322,58 @@ const APPLIERS: Applier[] = [
 				options.continue = true;
 				note('continue', true);
 			}
+			return true;
+		},
+	},
+	{
+		// The Chat Model node's replace mode. Deliberately AFTER `systemPrompt`: when both are
+		// somehow set, an explicit replace beats an append, and the ordering is what says so.
+		name: 'systemPromptReplace',
+		apply: ({ options, deps }) => {
+			if (deps.systemPromptReplace === undefined) return false;
+			options.systemPrompt = deps.systemPromptReplace;
+			return true;
+		},
+	},
+	{
+		// In-process MCP servers (the Agent's tools, bridged). Placed after every applier that
+		// writes `options.tools`/`options.allowedTools`, because it amends both.
+		name: 'mcpServers',
+		apply: ({ options, deps, note }) => {
+			const mcp = deps.mcp;
+			if (!mcp || Object.keys(mcp.servers).length === 0) return false;
+			options.mcpServers = mcp.servers;
+			if (mcp.toolNames.length > 0) {
+				options.allowedTools = Array.from(
+					new Set([...(options.allowedTools ?? []), ...mcp.toolNames]),
+				);
+				if (Array.isArray(options.tools) && options.tools.length > 0) {
+					options.tools = Array.from(new Set([...options.tools, ...mcp.toolNames]));
+				}
+			}
+			// Re-noted, not merely recorded: `restrictTools`/`allowedTools` already wrote their
+			// lists, and a debug log that reports the pre-merge values describes a run that did not
+			// happen — the same trap stagedAttachments documents twenty lines above.
+			note('mcpToolNames', mcp.toolNames);
+			note('allowedTools', options.allowedTools);
+			if (Array.isArray(options.tools)) note('tools', options.tools);
+			return true;
+		},
+	},
+	{
+		name: 'partialMessages',
+		apply: ({ options, deps }) => {
+			if (!deps.includePartialMessages) return false;
+			options.includePartialMessages = true;
+			return true;
+		},
+	},
+	{
+		name: 'newSessionId',
+		apply: ({ options, deps, note }) => {
+			if (!deps.newSessionId) return false;
+			options.sessionId = deps.newSessionId;
+			note('newSessionId', deps.newSessionId);
 			return true;
 		},
 	},
