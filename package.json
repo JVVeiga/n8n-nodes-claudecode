@@ -1,6 +1,6 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Five n8n nodes for Claude Code v2 via the Claude Agent SDK: the agent (attachments, effort, thinking, Ultracode, tool restriction, spend cap, graceful timeouts, diagnostics), a Chat Model and two Agent tools for n8n AI Agents, plus a free usage read for plan limits and reset windows",
   "keywords": [
     "n8n-community-node-package",
@@ -23,7 +23,7 @@
     "url": "https://github.com/JVVeiga/n8n-nodes-claudecode/issues"
   },
   "author": {
-    "name": "Jo\u00e3o Veiga",
+    "name": "João Veiga",
     "email": "joaovveiga@gaudium.com.br"
   },
   "repository": {
@@ -43,7 +43,7 @@
     "lint": "eslint nodes credentials package.json",
     "lintfix": "eslint nodes credentials package.json --fix",
     "prepublishOnly": "npm run build && npm run lint -c .eslintrc.prepublish.js nodes credentials package.json",
-    "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/n8n-up.sh is missing. It is versioned \u2014 restore it with: git checkout scripts/e2e' >&2; exit 1; }",
+    "e2e:guard": "test -f scripts/e2e/n8n-up.sh || { echo 'scripts/e2e/n8n-up.sh is missing. It is versioned — restore it with: git checkout scripts/e2e' >&2; exit 1; }",
     "e2e:up": "npm run e2e:guard && bash scripts/e2e/n8n-up.sh",
     "e2e:run": "npm run e2e:guard && node scripts/e2e/run-cases.mjs",
     "e2e:verdict": "npm run e2e:guard && node scripts/e2e/verdict.mjs",
