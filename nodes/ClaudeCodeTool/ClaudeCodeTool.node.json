@@ -1,0 +1,26 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.claudeCodeTaskTool",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["AI"],
+	"subcategories": {
+		"AI": ["Tools"]
+	},
+	"alias": [
+		"claude",
+		"claude code",
+		"tool",
+		"coding agent",
+		"task",
+		"anthropic",
+		"ferramenta",
+		"tarefa"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#claude-code-task-tool"
+			}
+		]
+	}
+}

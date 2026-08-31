@@ -1,0 +1,29 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.claudeCodePlanUsageTool",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["AI"],
+	"subcategories": {
+		"AI": ["Tools"]
+	},
+	"alias": [
+		"claude",
+		"claude code",
+		"usage",
+		"limits",
+		"rate limit",
+		"quota",
+		"plan",
+		"tool",
+		"consumo",
+		"cota",
+		"limite"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#claude-code-usage-tool"
+			}
+		]
+	}
+}

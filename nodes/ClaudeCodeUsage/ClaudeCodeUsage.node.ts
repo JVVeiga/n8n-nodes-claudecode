@@ -6,14 +6,9 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import {
-	PROBE_PROMPT,
-	PROFILE_SCOPES,
-	readUsage,
-	UsageReadTimeoutError,
-	type UsageReadResult,
-} from './readUsage';
-import { normalizeUsage, shouldRetryWithProfileScope, type UsageReport } from './usage';
+import { readUsage, UsageReadTimeoutError } from './readUsage';
+import { normalizeUsage, type UsageReport } from './usage';
+import { applyReadDiagnostics, escalateUsageRead, type EscalatedRead } from './escalate';
 import { createHash } from 'crypto';
 import { buildAuthEnv } from '../shared/auth';
 import { readAuth } from '../shared/readAuth';
@@ -67,7 +62,7 @@ export async function readUsageItems(
 	//
 	// The timestamp is cached with the read rather than taken per item: items served by the same
 	// read must report the same `fetchedAt`, and every countdown in them is derived from it.
-	type CachedRead = { raw: UsageReadResult; fetchedAtMs: number; scopeRetried: boolean };
+	type CachedRead = EscalatedRead;
 	const readsByPath = new Map<string, Promise<CachedRead>>();
 
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
@@ -129,37 +124,13 @@ export async function readUsageItems(
 
 			// The escalation lives inside the cached promise so a batch pays for it once, and every
 			// item reports the same numbers and the same fetchedAt.
-			pending = (async (): Promise<CachedRead> => {
-				const raw = await deps.readUsage(readOptions);
-				const done = (r: UsageReadResult, scopeRetried: boolean): CachedRead => ({
-					raw: r,
-					fetchedAtMs: Date.now(),
-					scopeRetried,
-				});
-
-				if (!declareProfileScope) return done(raw, false);
-				if (!shouldRetryWithProfileScope(normalizeUsage({ ...raw, fetchedAtMs: Date.now() }))) {
-					return done(raw, false);
-				}
-
-				// A token session is told it may only infer, so the CLI never asks about plan limits.
-				// Ask again with the scope declared; if the token really cannot read the profile the
-				// second read returns no windows and nothing is lost but ~0.5s.
-				const retried = await deps.readUsage({ ...readOptions, oauthScopes: PROFILE_SCOPES });
-				const afterRetry = normalizeUsage({ ...retried, fetchedAtMs: Date.now() });
-				if (!probeIfUnavailable || afterRetry.rateLimitsAvailable) return done(retried, true);
-
-				// Last resort, and the only route left for an inference-only token: send one trivial
-				// turn so the API response carries the rate-limit headers, which the CLI reports as
-				// seeded utilisation. This one costs money — a fraction of a cent — which is why it is
-				// opt-in and why the cost lands in the item's own session total.
-				const probed = await deps.readUsage({
-					...readOptions,
-					oauthScopes: PROFILE_SCOPES,
-					probePrompt: PROBE_PROMPT,
-				});
-				return done(probed, true);
-			})();
+			// The escalation lives inside the cached promise so a batch pays for it once, and every
+			// item reports the same numbers and the same fetchedAt. The steps themselves are in
+			// escalate.ts, shared with the Usage Tool so the two cannot drift.
+			pending = escalateUsageRead(deps.readUsage, readOptions, {
+				declareProfileScope,
+				probeIfUnavailable,
+			});
 			readsByPath.set(cacheKey, pending);
 		}
 
@@ -195,11 +166,7 @@ export async function readUsageItems(
 			includeEmail: options.includeAccountEmail === true,
 			includeRawLimits: options.includeRawLimits === true,
 		});
-		if (read.scopeRetried) report.diagnostics.scopeRetried = true;
-		if (read.raw.probeCostUsd !== null) {
-			report.diagnostics.probed = true;
-			report.diagnostics.probeCostUsd = read.raw.probeCostUsd;
-		}
+		applyReadDiagnostics(report, read);
 
 		createDebugLogger(ctx.logger, options.debug === true).lazy('Claude Code usage read', () => ({
 			projectPath: projectPath || '(default)',
