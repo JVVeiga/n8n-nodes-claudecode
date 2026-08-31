@@ -60,6 +60,12 @@ export type RunInput = {
 	 * config.ts registered, so the run loop can only ask for it — it never sees the hook itself.
 	 */
 	getAppliedEffort?: () => string | undefined;
+	/**
+	 * Called with each message as it arrives, before anything else looks at it. The Chat Model
+	 * node uses this to surface text deltas live (`handleLLMNewToken`); everything the caller
+	 * needs afterwards is still in `messages`, so this is observation, not routing.
+	 */
+	onMessage?: (message: SDKMessage) => void;
 };
 
 export async function runQuery(input: RunInput): Promise<RunOutcome> {
@@ -120,6 +126,7 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 	try {
 		for await (const message of runningQuery) {
 			messages.push(message);
+			input.onMessage?.(message);
 
 			// In streaming input mode the session stays open while the input stream is open, so the
 			// result message is the signal to close it. Without this the query would never end.

@@ -60,7 +60,9 @@ shipped with a lint error that way. If you need to shorten the output, redirect 
 
 ## Architecture Overview
 
-Two n8n nodes over the Claude Agent SDK. Both are thin shells; the work is in named modules.
+Five n8n nodes over the Claude Agent SDK: two main-flow nodes, and three sub-nodes for n8n's AI
+Agent (a chat model and two tools). Every one of them is a thin shell; the work is in named
+modules, and anything two nodes would otherwise copy lives in `shared/`.
 
 ```
 credentials/                   the two n8n credential types
@@ -68,7 +70,7 @@ credentials/                   the two n8n credential types
   ClaudeCodeOAuthTokenApi.credentials.ts  a Claude Code token -> CLAUDE_CODE_OAUTH_TOKEN
 
 nodes/
-  shared/                      used by both nodes
+  shared/                      used by every node
     projectPath.ts             the cwd check, plus its "mount it in Docker" description
     auth.ts                    the ENTIRE auth policy — the scrub list and the env it builds
     readAuth.ts                the only impure half: the selector + getCredentials()
@@ -76,6 +78,13 @@ nodes/
     debug.ts                   one debug gate — no `if (debug)` blocks in business logic
     sdkMessage.ts              narrowing helpers over SDKMessage; the only casts live here
     problem.ts                 a validation failure, returned rather than thrown
+    abort.ts                   attach/detach an operation's AbortController to outer signals
+    preview.ts                 truncation for log and error text
+    subNodeParams.ts           the run params every sub-node reads — ONE copy of the defaults
+    runOptions.ts              the Options collection every sub-node offers, as factories
+    toolRunLog.ts              toToolName + the addInputData/addOutputData pair for ai_tool
+    usageReport.ts             the collector payload and run_key — pure, no n8n
+    reportUsage.ts             the impure half: builds the reporter from a supply context
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -99,15 +108,36 @@ nodes/
     output/
       resultText.ts            "what does this run say" — the six-rung fallback ladder
       legacy.ts                FROZEN typeVersion 1 / 1.1 shapes
+      metrics.ts               the `metrics` object — v1.2 output and every sub-node report
       v12.ts                   the 1.2 unified envelope
       index.ts                 buildOutputItem — routes by typeVersion
     errors.ts                  the four failure paths, as data
     timeout.ts                 run metrics, grace window, timeout payload/messages
     promptStream.ts            the prompt as an AsyncIterable
+  ClaudeCodeChatModel/         a Chat Model sub-node for n8n's AI Agent (ai_languageModel)
+    ClaudeCodeChatModel.node.ts the class + supplyChatModel(ctx, deps, itemIndex)
+    description.ts             its schema — inputs: [], outputs: [AiLanguageModel]
+    params.ts                  the ONLY getNodeParameter reader for this node
+    model.ts                   ClaudeCodeChat extends BaseChatModel — one _generate = one run
+    messages.ts                BaseMessage[] -> { system, prompt } (history flattened, pure)
+    toolBridge.ts              the Agent's tools -> one in-process MCP server (tool.invoke)
+    result.ts                  SDKMessage[] -> text/usage/tool_calls (the R16 passthrough)
+  ClaudeCodeTool/              Claude Code as a REAL ai_tool sub-node (fixed {task} schema)
+    ClaudeCodeTool.node.ts     the class + supplyClaudeCodeTool(ctx, deps, itemIndex)
+    description.ts             its schema — name claudeCodeTaskTool (claudeCodeTool is the
+                               auto-wrap n8n synthesizes; never reuse that name)
+    params.ts                  the ONLY getNodeParameter reader for this node
+    tool.ts                    DynamicStructuredTool over buildQueryOptions/runQuery; text out,
+                               never throws — a tool error is data for the calling model
+  ClaudeCodeUsageTool/         the plan read as a zero-argument ai_tool sub-node
+    ClaudeCodeUsageTool.node.ts the class + supplyClaudeCodeUsageTool(ctx, deps, itemIndex)
+    description.ts             its schema — name claudeCodePlanUsageTool (same trap as above)
+    tool.ts                    the Usage node's read escalation over readUsage/normalizeUsage
   ClaudeCodeUsage/
     ClaudeCodeUsage.node.ts    the class + readUsageItems(ctx, deps)
     description.ts             its schema
     readUsage.ts               spawns the CLI and reads usage (the only impure module)
+    escalate.ts                the read → scope-retry → paid-probe ladder, shared with the tool
     usage.ts                   window/account normalisation
 ```
 
@@ -124,8 +154,17 @@ nodes/
 | Change what the model is told about staged files | `attachments/plan.ts` (`stagedHintBlock`) |
 | Change what a run reports | `diagnostics.ts` |
 | Change the output shape | `output/v12.ts` — **never** `output/legacy.ts` |
+| Change the `metrics` object | `output/metrics.ts` — it feeds v1.2 output AND every sub-node's usage report |
 | Change stop/timeout behaviour | `runner.ts` |
 | Change a failure item | `errors.ts` |
+| Change how the Chat Model maps Agent messages | `ClaudeCodeChatModel/messages.ts` |
+| Change how the Agent's tools reach Claude Code | `ClaudeCodeChatModel/toolBridge.ts` |
+| Change the Task tool's contract or failure text | `ClaudeCodeTool/tool.ts` |
+| Change the Usage tool's report | `ClaudeCodeUsageTool/tool.ts` |
+| Change how a usage read escalates | `ClaudeCodeUsage/escalate.ts` — node and tool share it |
+| Change what a sub-node reports, or its run_key | `shared/usageReport.ts` (pure) / `shared/reportUsage.ts` (the n8n call) |
+| Add an option to every sub-node | `shared/runOptions.ts`, then compose it in each description |
+| Change a sub-node's run defaults | `shared/subNodeParams.ts` — never one node's params.ts |
 
 ### Rules that are not obvious
 
@@ -182,9 +221,42 @@ nodes/
 - **`ROUTABLE_EXTENSIONS` in `mime.ts` must stay a subset of `EXTENSION_OPTIONS`.** A test asserts
   it. If the router can name a type, the filter has to be able to select it — otherwise a user is
   handed a file they have no way to filter on and the only escape is turning the filter off.
+- **A tool sub-node's schema must be JSON Schema, never a zod object from this package's copy.**
+  n8n's `normalizeToolSchema` branches on `tool.schema instanceof ZodType` against **its own**
+  zod, which an instance from ours never satisfies (measured for `zod/v4` and `zod/v3` alike). It
+  then runs `convertJsonSchemaToZod` over our zod object and produces a mangled `ZodDefault`, so
+  the tool the model is offered no longer matches the tool that exists and the call fails before
+  the handler runs — silently, with the model inventing an explanation. Plain JSON Schema puts
+  n8n on its own happy path. Pinned by a test asserting the schema is not a zod instance.
+- **A sub-node's output cannot be read by an expression.** It is not on the `main` chain, so
+  `$('Claude Code Chat Model').item.json.metrics` resolves against nothing — measured, and it is
+  why usage leaves by calling a workflow (`executeWorkflow` is inherited by the supply context)
+  rather than by being picked up downstream. Two n8n rules govern that call, both measured:
+  the target must be **published** (n8n 2.x resolves the published version; setting `active` in
+  the database changes nothing), and its Execute Workflow Trigger must accept the payload —
+  declared fields or `passthrough`, otherwise "At least 1 field is required".
+- **`supplyData` is called ONCE per node, not once per item.** Measured (e2e case72: an Agent fed
+  two items produced two reports from one supplied instance, both carrying `itemIndex` 0, the
+  sequence counter separating them). The signature takes an `itemIndex` and n8n may one day use
+  it, which is why `run_key` carries it too — but a counter created in `supplyData` numbers every
+  call of the execution, which is what the key relies on today.
+- **Reporting must never cost the caller their answer.** `createUsageReporter` calls with
+  `doNotWaitToFinish` and swallows every failure into the debug log. A collector that is down
+  loses a metric; a run that dies because logging failed loses what the user paid for.
 - **Nodes cannot be constructor-injected.** n8n calls `execute.call(executionContext)`, so `this`
   is the context and instance fields are unreachable. Dependencies go through the exported
-  `runItems(ctx, deps)` / `readUsageItems(ctx, deps)` — that is the seam tests use.
+  `runItems(ctx, deps)` / `readUsageItems(ctx, deps)` / `supplyChatModel(ctx, deps, itemIndex)` —
+  that is the seam tests use.
+- **The Chat Model node is duck-typed on purpose.** n8n's Tools Agent accepts any object whose
+  `lc_namespace` includes `chat_models` and that has `bindTools` (verified in the running
+  container, `@n8n/ai-utilities` `guards.js`), and every seam it touches afterwards is duck-typed
+  too. `@langchain/core` and `zod` are **peerDependencies**: n8n strips peers on community
+  install and resolves them to its own single copy via NODE_PATH; a plain `npm install` (the e2e
+  path) auto-installs a nested copy, which the duck-typing tolerates. Do not "fix" them into
+  dependencies. The Agent's tools are executed by Claude Code in-process through one
+  `createSdkMcpServer` bridge (`mcp__n8n__<tool>`), so the Agent sees a single model turn — HITL
+  tools and Return Intermediate Steps are documented as unsupported. Facts and decisions:
+  `.specs/features/chat-model/spec.md`.
 
 ## Node Versions
 
@@ -201,10 +273,16 @@ it was created with, so raising `defaultVersion` only affects newly added nodes.
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
 an existing version emits**; add a new one.
 
+**Removing `usableAsTool` deletes a node type.** n8n synthesizes `claudeCodeTool` /
+`claudeCodeUsageTool` from that flag; dropping it (2.0.0) removed both, and a stored workflow
+holding one loads as an unrecognized node — for EVERY typeVersion, since the synthesized type has
+none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed the wrappers
+"keep existing"; they did not, and the review caught it before release.
+
 ## Testing
 
 ```bash
-npm test                                    # 712 tests, node:test, no framework
+npm test                                    # 833 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -227,7 +305,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 46 named behaviours against real executions:
+with the node installed and asserts 63 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

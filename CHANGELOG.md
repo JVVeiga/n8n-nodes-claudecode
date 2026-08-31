@@ -1,3 +1,91 @@
+## [2.0.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v1.1.0...v2.0.0) (2026-08-31)
+
+**A major, and only for one reason**: the auto-generated tool variants are gone (see BREAKING
+below). Everything else is additive — no typeVersion moved, the two existing nodes emit exactly
+what they emitted, and the 48 golden fixtures are byte-identical and unregenerated.
+
+### Claude Code Chat Model — plug Claude Code into n8n's AI Agent
+
+A Chat Model sub-node (`ai_languageModel` output) the AI Agent accepts like any other chat model,
+with the same per-execution Authentication (Host / API Key / OAuth Token) as the other two nodes.
+What makes it different from the native Anthropic Chat Model is that every Agent call runs a full
+Claude Code session: the project's `CLAUDE.md`, MCP servers, and Claude Code's own tools (Bash,
+Read, Glob…) are all in play, governed by the same Effort / Thinking / Restrict Tools / Max
+Budget / Timeout knobs as the main node.
+
+**The Agent's tools run inside Claude Code.** Tools connected to the Agent are handed over as one
+in-process MCP server (`mcp__n8n__<tool>`) and executed by Claude Code during its own loop — each
+Tool sub-node still logs its runs. The Agent therefore sees a single model turn per call. Two
+Agent features do not apply and say so in the docs: human-in-the-loop tool approval and Return
+Intermediate Steps. "Require Specific Output Format" **is** supported — the model returns the
+`format_final_json_response` call the Agent's parser expects.
+
+**Memory and streaming work.** Connected memory arrives as chat history and is flattened into the
+prompt; chat streaming reaches the Chat Trigger token by token.
+
+**Conversation Memory picks the mechanism.** A selector on the node: *Auto* (the pre-selector
+behaviour — Session ID decides), *Claude Code Session*, or *n8n Memory Sub-Node*. An explicit
+Session choice with no Session ID fails the node rather than running stateless; Memory mode hides
+the Session ID field and ignores whatever it holds.
+
+**Real multi-turn via Session ID.** Set the node's **Session ID** field to any stable
+conversation key (a Discord/WhatsApp/user ID, straight off the webhook). The key is hashed into a
+deterministic Claude Code session ID: created on the conversation's first message, resumed on
+every next one — prior turns and tool results included, no Memory node and **no storage
+anywhere**. A raw session UUID also works (client round-trip style).
+`response_metadata.session_state` reports `created`/`resumed`/`new` per call; a session that can
+neither be resumed nor created fails with a clear error instead of a fabricated answer.
+
+**Honest cost note.** Each Agent call spawns the Claude Code CLI (~2–5 s) and carries its system
+prompt. This is not a cheap chat model; it is Claude Code with an Agent plugged into it.
+
+### BREAKING: the auto-generated tool variants are gone
+
+`usableAsTool` was removed from **Claude Code** and **Claude Code Usage**, so n8n no longer
+synthesizes "Claude Code Tool" / "Claude Code Usage Tool" wrappers from them. Those wrappers were
+duplicates in the editor's tool picker and, for the main node, structurally broken: the Agent was
+offered a **zero-argument** schema unless you hand-wrote `$fromAI()` into the Prompt field, so the
+model had no way to pass a task.
+
+**Migration**: replace an auto-wrap node on an Agent's Tool port with the dedicated node below —
+**Claude Code Task Tool** or **Claude Code Usage Tool** — and set its Tool Description. Nothing
+else changes; the regular Claude Code and Claude Code Usage nodes are untouched on the main flow.
+
+### Two purpose-built Agent tools
+
+**Claude Code Task Tool** and **Claude Code Usage Tool** — real `ai_tool` sub-nodes that work
+with ANY Agent chat model, native ones included. The Task tool has a fixed one-argument contract
+(`task` in, result text out; failures return as text the model can react to); the Usage tool is
+zero-argument and returns the plan report as JSON text. Both replace the auto-generated
+`usableAsTool` wrappers as the supported path — those exposed every node parameter and, for the
+main node, a zero-argument schema unless `$fromAI()` was hand-wired. The wrappers are gone — see
+BREAKING above for the migration.
+
+### Usage reporting from a sub-node
+
+The main node puts `metrics` and `diagnostics` in its output; a sub-node has no output an
+expression can read. The Chat Model and the Task Tool therefore offer **Report Usage to Workflow**
+and **Process Name**: after every call they hand `{ process_name, run_key, caller_workflow_id,
+caller_execution_id, node_name, metrics, diagnostics }` to the workflow you pick.
+
+The metrics and diagnostics are the SAME objects the main node emits — pinned by a test that
+compares them to the main node's own output builder — so a collector workflow written for the
+main node ingests a sub-node's run unchanged.
+
+`run_key` (`<executionId>:<node name>:<seq>`) identifies one call. It is deliberately not the
+session id: a resumed conversation reuses that across executions, so a table keyed on it would
+overwrite a conversation's history with its most recent message.
+
+The Usage Tool does not offer this — it performs a plan read, with no session, turns or tokens to
+report. Two n8n facts worth knowing before pointing a node at a collector: the collector must be
+**published** (n8n 2.x resolves the published version; merely active is refused), and its trigger
+must accept the payload (declare the fields, or use passthrough). A collector that fails costs you
+a metric, never the run.
+
+**Packaging.** `@langchain/core` and `zod` are peer dependencies by design: n8n resolves peers to
+its own copies for community nodes, which keeps one copy of LangChain in play. The verified
+contract and decisions live in the repo's spec notes.
+
 ## [1.1.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v1.0.0...v1.1.0) (2026-08-30)
 
 Not a breaking release, and not a new typeVersion. Nothing an existing workflow emits or does

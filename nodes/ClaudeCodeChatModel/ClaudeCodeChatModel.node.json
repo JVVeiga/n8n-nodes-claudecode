@@ -1,0 +1,28 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.claudeCodeChatModel",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["AI"],
+	"subcategories": {
+		"AI": ["Language Models", "Root Nodes"],
+		"Language Models": ["Chat Models (Recommended)"]
+	},
+	"alias": [
+		"claude",
+		"claude code",
+		"chat model",
+		"language model",
+		"llm",
+		"agent",
+		"anthropic",
+		"modelo",
+		"agente"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#claude-code-chat-model"
+			}
+		]
+	}
+}

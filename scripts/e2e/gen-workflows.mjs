@@ -836,6 +836,493 @@ cases.push(
 	}),
 );
 
+// ---------------------------------------------------------------------------------------------
+// chat-model cases (60-64): an AI Agent cluster with the Claude Code Chat Model on its
+// ai_languageModel port. These are the first non-`main` connections this rig emits. The FINAL
+// Agent node is named 'Claude Code Agent' so run-cases.mjs's /^Claude Code/ key pick reads ITS
+// output; every other cluster node deliberately avoids that prefix. Auth: the cluster runs in
+// host mode — the container env carries the operator's token — except case63's decoy credential.
+function agentWorkflow({
+	name,
+	notes,
+	prompts, // one Agent node per prompt, chained main->main; the LAST one is asserted on
+	modelOptions = {},
+	auth,
+	tool, // { nodeName, toolName, description, jsCode }
+	memoryKey, // a fixed custom session key, shared by every Agent in the workflow
+	outputParserSchema, // JSON schema string -> Require Specific Output Format on the final Agent
+	modelSessionId, // resume this Claude session (run-cases patches the real id in — see case65b)
+	memorySource, // explicit Conversation Memory value; omitted means the `auto` default
+	taskTool, // { nodeName, toolDescription, projectPath, options } -> the dedicated claudeCodeTaskTool
+	usageTool, // { nodeName, toolDescription } -> the dedicated claudeCodePlanUsageTool
+	twoItems = false, // a two-item Code node between the trigger and the Agent
+}) {
+	const nodes = [
+		{
+			parameters: {},
+			id: nextId(),
+			name: 'When clicking Execute',
+			type: 'n8n-nodes-base.manualTrigger',
+			typeVersion: 1,
+			position: [0, 0],
+		},
+	];
+	const connections = {};
+	const link = (from, type, to) => {
+		connections[from] ??= {};
+		connections[from][type] ??= [[]];
+		connections[from][type][0].push({ node: to, type, index: 0 });
+	};
+
+	if (twoItems) {
+		// The trigger feeds the splitter, which feeds the Agent.
+		connections['When clicking Execute'] = {
+			main: [[{ node: 'Two items', type: 'main', index: 0 }]],
+		};
+		nodes.push({
+			parameters: { jsCode: 'return [{ json: { n: 1 } }, { json: { n: 2 } }];' },
+			id: nextId(),
+			name: 'Two items',
+			type: 'n8n-nodes-base.code',
+			typeVersion: 2,
+			position: [110, 0],
+		});
+	}
+
+	const agentNames = prompts.map((_, i) =>
+		i === prompts.length - 1 ? 'Claude Code Agent' : `Agent step ${i + 1}`,
+	);
+	prompts.forEach((text, i) => {
+		nodes.push({
+			parameters: {
+				promptType: 'define',
+				text,
+				...(outputParserSchema && i === prompts.length - 1 ? { hasOutputParser: true } : {}),
+				options: {},
+			},
+			id: nextId(),
+			name: agentNames[i],
+			type: '@n8n/n8n-nodes-langchain.agent',
+			typeVersion: 3,
+			position: [220 + i * 260, 0],
+		});
+		link(
+			i === 0 ? (twoItems ? 'Two items' : 'When clicking Execute') : agentNames[i - 1],
+			'main',
+			agentNames[i],
+		);
+	});
+
+	// Learned the hard way (first case65 attempt): a sub-node's output is NOT on the `main`
+	// chain, so no expression — from another sub-node or from a main node — can read it
+	// (`$('CC Model A').first()` fails with "No data found from `main` input"). The session id
+	// must round-trip OUTSIDE the execution, exactly like a real caller or a Data Table does;
+	// run-cases.mjs patches it into `modelSessionId` between executions, the case08 pattern.
+	nodes.push({
+		parameters: {
+			model: 'claude-sonnet-5',
+			projectPath: '',
+			options: { effort: 'low', debug: true, ...modelOptions },
+			...(auth ? { authSource: auth.mode } : {}),
+			...(modelSessionId ? { sessionId: modelSessionId } : {}),
+			...(memorySource ? { memorySource } : {}),
+		},
+		id: nextId(),
+		// NOT 'Claude Code…': run-cases.mjs must keep reading the Agent's output, not the model's.
+		name: 'CC Chat Model',
+		type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeChatModel',
+		typeVersion: 1,
+		position: [220, 220],
+		...(auth?.cred
+			? { credentials: { [auth.cred.type]: { id: auth.cred.id, name: auth.cred.name } } }
+			: {}),
+	});
+	for (const agent of agentNames) link('CC Chat Model', 'ai_languageModel', agent);
+
+	if (tool) {
+		nodes.push({
+			parameters: {
+				name: tool.toolName,
+				description: tool.description,
+				language: 'javaScript',
+				jsCode: tool.jsCode,
+				specifyInputSchema: false,
+			},
+			id: nextId(),
+			name: tool.nodeName,
+			type: '@n8n/n8n-nodes-langchain.toolCode',
+			typeVersion: 1.2,
+			position: [480, 220],
+		});
+		for (const agent of agentNames) link(tool.nodeName, 'ai_tool', agent);
+	}
+
+	if (taskTool) {
+		nodes.push({
+			parameters: {
+				toolDescription: taskTool.toolDescription,
+				model: 'claude-sonnet-5',
+				projectPath: taskTool.projectPath ?? '',
+				options: { effort: 'low', debug: true, ...(taskTool.options ?? {}) },
+			},
+			id: nextId(),
+			name: taskTool.nodeName,
+			type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeTaskTool',
+			typeVersion: 1,
+			position: [480, 380],
+		});
+		for (const agent of agentNames) link(taskTool.nodeName, 'ai_tool', agent);
+	}
+
+	if (usageTool) {
+		nodes.push({
+			parameters: {
+				toolDescription: usageTool.toolDescription,
+				// probeIfUnavailable is not optional here, it is the point: the container
+				// authenticates with a CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, which is
+				// inference-only by design — the usage endpoint refuses it and the honest answer is
+				// "no windows". The probe reads them off the rate-limit response headers instead.
+				// Without it this case asserts nothing about the tool (measured: first case67 red
+				// returned NO_WINDOWS, which was CORRECT behaviour and a wrong test).
+				options: { debug: true, probeIfUnavailable: true, ...(usageTool.options ?? {}) },
+			},
+			id: nextId(),
+			name: usageTool.nodeName,
+			type: '@joaoveiga/n8n-nodes-claudecode.claudeCodePlanUsageTool',
+			typeVersion: 1,
+			position: [700, 380],
+		});
+		for (const agent of agentNames) link(usageTool.nodeName, 'ai_tool', agent);
+	}
+
+	if (memoryKey) {
+		nodes.push({
+			parameters: { sessionIdType: 'customKey', sessionKey: memoryKey, contextWindowLength: 10 },
+			id: nextId(),
+			name: 'Window Memory',
+			type: '@n8n/n8n-nodes-langchain.memoryBufferWindow',
+			typeVersion: 1.3,
+			position: [700, 220],
+		});
+		for (const agent of agentNames) link('Window Memory', 'ai_memory', agent);
+	}
+
+	if (outputParserSchema) {
+		nodes.push({
+			// schemaType/inputSchema, NOT jsonSchema: that param exists only up to typeVersion 1.1,
+			// and n8n strips a parameter whose display condition is not met — so on 1.2 a jsonSchema
+			// value silently gives way to the node's default state/cities example. Case64 failed on
+			// exactly that before this comment existed.
+			parameters: { schemaType: 'manual', inputSchema: outputParserSchema },
+			id: nextId(),
+			name: 'Structured Parser',
+			type: '@n8n/n8n-nodes-langchain.outputParserStructured',
+			typeVersion: 1.2,
+			position: [920, 220],
+		});
+		link('Structured Parser', 'ai_outputParser', agentNames[agentNames.length - 1]);
+	}
+
+	return {
+		id: stableId(name),
+		name,
+		nodes,
+		connections,
+		settings: { executionOrder: 'v1' },
+		active: false,
+		pinData: {},
+		meta: { testCaseNotes: notes },
+	};
+}
+
+cases.push(
+	agentWorkflow({
+		name: 'case60 chat-model - the Agent accepts the model and gets an answer',
+		notes:
+			'AI Agent + Claude Code Chat Model, no tools, no memory. EXPECT: success, output contains ' +
+			'pong. This is the two-copies-of-@langchain/core proof (spec K1/S1) and the duck-typed ' +
+			'gate proof (F-01) in one run.',
+		prompts: ['Reply with exactly the word: pong. Nothing else.'],
+		modelOptions: { timeout: 120, maxTurns: 5 },
+	}),
+	agentWorkflow({
+		name: 'case61 chat-model - an Agent tool runs inside Claude Code and its value comes back',
+		notes:
+			'A Code Tool returning 73194, a number the model cannot guess. EXPECT: success, output ' +
+			'contains 73194 — proof the mcp__n8n__ bridge executed the connected sub-node (F-05).',
+		prompts: [
+			'Call the available tool to get the secret number, then reply with only that number.',
+		],
+		modelOptions: { timeout: 180, maxTurns: 10 },
+		tool: {
+			nodeName: 'Secret Number Tool',
+			toolName: 'secret_number',
+			description: 'Returns the secret number. Input is ignored.',
+			jsCode: 'return 73194;',
+		},
+	}),
+	agentWorkflow({
+		name: 'case62 chat-model - memory carries the first answer into the second call',
+		notes:
+			'Two Agents sharing one Simple Memory (custom key) in ONE execution — the CLI spawns a ' +
+			'fresh n8n process per run, so cross-execution memory is untestable here. EXPECT: the ' +
+			'second output contains chartreuse.',
+		prompts: [
+			'Remember this: my favourite colour is chartreuse. Reply with exactly: OK',
+			'What is my favourite colour? Reply with only the colour name.',
+		],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		memoryKey: 'e2e-case62-memory',
+	}),
+	agentWorkflow({
+		name: 'case63 chat-model - an invalid credential fails the Agent, not the host fallback',
+		notes:
+			'The decoy API key on the chat model, container logged in via env. EXPECT: red, ' +
+			'authentication_failed counted in the raw log, no pong anywhere — same proof shape as ' +
+			'case53. The model times out (the CLI retries 401s), so the timeout is kept short.',
+		prompts: ['Reply with exactly the word: pong. Nothing else.'],
+		modelOptions: { timeout: 25, wrapUpGraceSeconds: 5, maxTurns: 3 },
+		auth: { mode: 'apiKey', cred: CREDENTIALS.decoy },
+	}),
+	agentWorkflow({
+		name: 'case65a chat-model session - the first call opens the session',
+		notes:
+			'First half of the round-trip continuity proof. EXPECT: success, answer OK; run-cases ' +
+			'captures the chat model-s sessionId from its run data for case65b.',
+		prompts: ['Memorize: a fruta secreta é abacaxi. Responda exatamente: OK'],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+	}),
+	agentWorkflow({
+		name: 'case65b chat-model session - a SECOND EXECUTION resumes it',
+		notes:
+			'NO Memory node, separate execution: only the resumed Claude session can carry the ' +
+			'fruit. run-cases patches the real session id in before running (case08 pattern) — an ' +
+			'expression cannot do it, because sub-node outputs are not on the main chain. EXPECT: ' +
+			'the answer names abacaxi.',
+		prompts: ['Qual é a fruta secreta? Responda somente o nome da fruta.'],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		modelSessionId: 'PASTE_SESSION_FROM_CASE65A',
+	}),
+	agentWorkflow({
+		name: 'case66 dedicated task tool - Claude Code as a real ai_tool sub-node',
+		notes:
+			'The purpose-built claudeCodeTaskTool (fixed {task} schema, no $fromAI hand-wiring). The ' +
+			'fixture has exactly six .ts files under /workspace/src, so the answer proves the inner ' +
+			'agent actually ran in the project. EXPECT: success, output contains 6.',
+		prompts: [
+			// Two naming traps, both measured on this case:
+			//   1. "the task tool" made the model call Claude Code's OWN built-in `Task` tool (the
+			//      subagent launcher) instead of ours — the log showed task_started/task_progress
+			//      and never touched mcp__n8n__*. The bridged tool is named explicitly instead, and
+			//      `Task` is disallowed on the outer model so it cannot shadow.
+			//   2. The n8n image is Alpine with no bash at all (/bin/sh is busybox), so Claude
+			//      Code's Bash answers "No suitable shell found" — the first run burned 165s on it.
+			// Anchored format, like case68: a bare `6` in free text is a guessable number, and the
+			// assertion could pass on a model that never called the tool.
+			'Call the Project_Inspector tool with the task: "count how many .ts files exist under /workspace/src using Glob, and reply with just the number". Then reply with exactly: FILES=<n>',
+		],
+		modelOptions: { timeout: 240, maxTurns: 8, disallowedTools: ['Task', 'Bash'] },
+		taskTool: {
+			nodeName: 'Project Inspector',
+			toolDescription:
+				'Runs a coding or file task with Claude Code inside the /workspace project. Input: one clear task in natural language. Returns the result as text.',
+			projectPath: '/workspace',
+			options: {
+				timeout: 150,
+				maxTurns: 10,
+				// Bash is disallowed rather than merely discouraged: no shell exists in this image.
+				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+			},
+		},
+	}),
+	agentWorkflow({
+		name: 'case67 dedicated usage tool - zero-argument plan read via ai_tool',
+		notes:
+			'The purpose-built claudeCodePlanUsageTool: zero-argument schema (the exec-88 regression ' +
+			'shape), reads plan windows in-process. EXPECT: success and a utilisation percentage in ' +
+			'the answer — and never the tool-level "Could not read" failure text.',
+		prompts: [
+			'Use the plan usage tool, then reply with only the five_hour window utilization as a number (no % sign). If the tool reports no windows, reply exactly: NO_WINDOWS',
+		],
+		modelOptions: { timeout: 180, maxTurns: 6 },
+		usageTool: {
+			nodeName: 'Plan Usage',
+			toolDescription:
+				'Reads the current Claude plan usage: percentage used and reset time per rate-limit window. Takes no input. Returns a JSON report.',
+		},
+	}),
+	agentWorkflow({
+		name: 'case71 usage reporting - a sub-node calls the collector workflow itself',
+		notes:
+			'The Chat Model and the Task Tool both report to case71collector. EXPECT: success, and ' +
+			'TWO executions of the collector — one per sub-node call — each carrying process_name, ' +
+			'run_key and the same metrics/diagnostics shape the main node emits. This is the only ' +
+			'proof that executeWorkflow works from a supply context in the middle of an agent loop.',
+		prompts: [
+			'Call the Project_Inspector tool with the task "reply with just the word ok", then reply with exactly: done',
+		],
+		modelOptions: {
+			timeout: 180,
+			maxTurns: 8,
+			disallowedTools: ['Task', 'Bash'],
+			reportUsageTo: 'case71collector0',
+			processName: 'e2e-chat-model',
+		},
+		taskTool: {
+			nodeName: 'Project Inspector',
+			toolDescription:
+				'Runs a task with Claude Code. Input: one clear task in natural language. Returns text.',
+			projectPath: '/workspace',
+			options: {
+				timeout: 120,
+				maxTurns: 5,
+				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+				reportUsageTo: 'case71collector0',
+				processName: 'e2e-task-tool',
+			},
+		},
+	}),
+	agentWorkflow({
+		name: 'case72 usage reporting - TWO items must not share a run_key',
+		notes:
+			'A Code node emits two items into the Agent. EXPECT: two reports whose run_keys differ. ' +
+			'This measures what supplyData\u0027s lifetime actually is — the counter alone starts at 1 ' +
+			'per supplied instance, so if n8n supplies one per item the keys collide unless itemIndex ' +
+			'is in them, and a collector upserting on the key would silently drop the first item.',
+		prompts: ['Reply with exactly the word: pong. Nothing else.'],
+		modelOptions: {
+			timeout: 150,
+			maxTurns: 3,
+			reportUsageTo: 'case71collector0',
+			processName: 'e2e-two-items',
+		},
+		twoItems: true,
+	}),
+	agentWorkflow({
+		name: 'case69 memory mode - the EXPLICIT choice ignores a Session ID and uses the Memory node',
+		notes:
+			'Conversation Memory = n8n Memory Sub-Node, WITH a Session ID also set on the node. Only a ' +
+			'real n8n can prove this: the field is hidden by displayOptions in this mode and n8n ' +
+			'STRIPS parameters whose display condition fails, which is the same mechanism that bit ' +
+			'authSource and binaryProperties. EXPECT: the second answer recalls the colour (memory ' +
+			'works) AND the model reports session_state "new" — the session path was not taken.',
+		prompts: [
+			'Remember: minha cor favorita é verde-limão. Responda exatamente: OK',
+			'Qual é a minha cor favorita? Responda somente o nome da cor.',
+		],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		memoryKey: 'e2e-case69-memory',
+		memorySource: 'memory',
+		modelSessionId: 'e2e-case69-should-be-ignored',
+	}),
+	agentWorkflow({
+		name: 'case70 session mode - the EXPLICIT choice resumes and reports it',
+		notes:
+			'Conversation Memory = Claude Code Session, with a Memory node ALSO connected. EXPECT: ' +
+			'success and session_state "created" — the memory history is not re-sent, the session is.',
+		prompts: ['Reply with exactly the word: pong. Nothing else.'],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		memoryKey: 'e2e-case70-memory',
+		memorySource: 'session',
+		modelSessionId: 'e2e-case70-conversation-key',
+	}),
+	agentWorkflow({
+		name: 'case68 both dedicated tools in ONE turn - task + usage',
+		notes:
+			'One question that cannot be answered without BOTH tools: the plan number comes only ' +
+			'from the usage tool, the file count only from the task tool. EXPECT: success, output ' +
+			'matching FILES=6 and USAGE=<number>. Proves two bridged tools coexist in one session ' +
+			'and that a zero-argument tool and a one-argument tool are both callable in the same run.',
+		prompts: [
+			'Answer with exactly one line in this format and nothing else: FILES=<n> USAGE=<n>. ' +
+				'Get <n> for FILES by calling the Project_Inspector tool with the task "count how many ' +
+				'.ts files exist under /workspace/src using Glob and reply with just the number". Get ' +
+				'<n> for USAGE by calling the Plan_Usage tool and reading the five_hour window ' +
+				'utilization as a whole number.',
+		],
+		modelOptions: { timeout: 300, maxTurns: 12, disallowedTools: ['Task', 'Bash'] },
+		taskTool: {
+			nodeName: 'Project Inspector',
+			toolDescription:
+				'Runs a coding or file task with Claude Code inside the /workspace project. Input: one clear task in natural language. Returns the result as text.',
+			projectPath: '/workspace',
+			options: {
+				timeout: 150,
+				maxTurns: 10,
+				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+			},
+		},
+		usageTool: {
+			nodeName: 'Plan Usage',
+			toolDescription:
+				'Reads the current Claude plan usage: percentage used and reset time per rate-limit window. Takes no input. Returns a JSON report.',
+		},
+	}),
+	agentWorkflow({
+		name: 'case65c chat-model session - a stable KEY creates the session (no storage)',
+		notes:
+			'Session ID holds a literal conversation key, not a UUID. The node hashes it to a ' +
+			'deterministic id; the resume attempt finds nothing and the session is created under ' +
+			'that id. EXPECT: success, answer OK.',
+		prompts: ['Memorize: a fruta secreta é jabuticaba. Responda exatamente: OK'],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		modelSessionId: 'e2e-case65cd-conversation-key',
+	}),
+	agentWorkflow({
+		name: 'case65d chat-model session - the SAME KEY resumes it in a new execution',
+		notes:
+			'Same literal key as case65c, separate execution, NO Memory node and NO patching: the ' +
+			'deterministic hash alone finds the session. EXPECT: the answer names jabuticaba.',
+		prompts: ['Qual é a fruta secreta? Responda somente o nome da fruta.'],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		modelSessionId: 'e2e-case65cd-conversation-key',
+	}),
+	agentWorkflow({
+		name: 'case64 chat-model - Require Specific Output Format returns the schema-d object',
+		notes:
+			'Structured Output Parser on the final Agent. EXPECT: success and output.answer names ' +
+			'blue — proof of the R16 format_final_json_response passthrough.',
+		prompts: [
+			'What colour is a clear daytime sky? Answer briefly and set confidence to 1.',
+		],
+		modelOptions: { timeout: 150, maxTurns: 5 },
+		outputParserSchema:
+			'{"type":"object","properties":{"answer":{"type":"string"},"confidence":{"type":"number"}},"required":["answer"]}',
+	}),
+);
+
+// The collector a reporting case points at. Deliberately a single trigger node: what is being
+// proven is that a SUB-NODE can call a workflow at all (executeWorkflow is inherited by the
+// supply context but had never been exercised mid-agent-loop), and its own execution record —
+// with the payload the sub-node sent — is the evidence.
+cases.push({
+	id: 'case71collector0',
+	name: 'collector71 usage collector (called BY a sub-node)',
+	nodes: [
+		{
+			// `passthrough` accepts whatever the caller sends. With the default (declare fields)
+			// the trigger refuses with "At least 1 field is required" and the report is lost —
+			// measured on case71's second run.
+			parameters: { inputSource: 'passthrough' },
+			id: nextId(),
+			name: 'When Executed by Another Workflow',
+			type: 'n8n-nodes-base.executeWorkflowTrigger',
+			typeVersion: 1.1,
+			position: [0, 0],
+		},
+	],
+	connections: {},
+	settings: { executionOrder: 'v1' },
+	// MEASURED: a sub-node's executeWorkflow fails with "Workflow is not active and cannot be
+	// executed" against an inactive target. n8n-up activates this one after importing.
+	active: true,
+	pinData: {},
+	meta: {
+		testCaseNotes:
+			'Target of case71. Named without a "case" prefix so run-cases does not execute it directly.',
+	},
+});
+
 let n = 0;
 for (const wf of cases) {
 	const file = `${String(++n).padStart(2, '0')}-${wf.name.split(' ')[0]}.json`;

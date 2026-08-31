@@ -53,8 +53,11 @@ describe('node description — identity', () => {
 		}
 	});
 
-	it('stays usable as a tool and keeps one main input and output', () => {
-		assert.equal(claudeCodeDescription.usableAsTool, true);
+	it('keeps one main input and output, and is NOT auto-wrapped as a tool', () => {
+		// The flag was dropped deliberately: n8n's synthesized tool offered the Agent a
+		// zero-argument schema unless `$fromAI()` was hand-wired into Prompt, and it duplicated the
+		// node in the tool picker. `nodes/ClaudeCodeTool/` replaces it with a real contract.
+		assert.equal(claudeCodeDescription.usableAsTool, undefined);
 		assert.equal(claudeCodeDescription.inputs.length, 1);
 		assert.equal(claudeCodeDescription.outputs.length, 1);
 	});

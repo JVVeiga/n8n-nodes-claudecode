@@ -8,6 +8,7 @@ import {
 	lastResult,
 } from '../../shared/sdkMessage';
 import { resolveResultText } from './resultText';
+import { buildRunMetrics } from './metrics';
 import type { OutputFormat } from '../types';
 
 /**
@@ -57,10 +58,6 @@ type ResultLike = {
 	session_id?: string;
 };
 
-/** A number the SDK actually reported, or null. Never a zero standing in for "unknown". */
-const reported = (value: number | undefined): number | null =>
-	typeof value === 'number' ? value : null;
-
 export function buildV12Output(input: V12Input): IDataObject {
 	const { messages } = input;
 	// The LAST result, not the first — see F-07.
@@ -72,16 +69,9 @@ export function buildV12Output(input: V12Input): IDataObject {
 		success: resolved.success,
 		// Empty string rather than null when the run did not fail, so the field's type is stable.
 		errorText: resolved.errorText,
-		metrics: {
-			// The SDK's own duration when it reported one, otherwise the wall time we measured. Both
-			// are real; neither is invented.
-			duration_ms: reported(result?.duration_ms) ?? input.durationMs,
-			num_turns: reported(result?.num_turns),
-			total_cost_usd: reported(result?.total_cost_usd),
-			usage: result?.usage ?? null,
-			modelUsage: result?.modelUsage ?? null,
-			session_id: result?.session_id ?? findInit(messages)?.session_id ?? null,
-		},
+		// Built by ./metrics.ts, which every sub-node's usage report also uses: a collector must
+		// see the same shape whether the run came from this node or from the Chat Model.
+		metrics: buildRunMetrics(messages, input.durationMs),
 		diagnostics: input.diagnostics,
 	};
 

@@ -128,7 +128,7 @@ fi
 # The sqlite readers run inside the container, because the database lives in the volume and
 # node:sqlite is available in the n8n image.
 echo "==> installing the container-side helpers"
-for f in ids.js list-wf.js last-exec.js last-execs.js activate.js read-exec.js patch-session.js; do
+for f in ids.js list-wf.js last-exec.js last-execs.js activate.js read-exec.js patch-session.js read-usage-reports.js; do
 	docker cp "$HERE/$f" "$CONTAINER:/tmp/$f" >/dev/null
 done
 
@@ -168,6 +168,19 @@ node "$HERE/gen-workflows.mjs"
 docker exec --user root "$CONTAINER" rm -rf /tmp/workflows
 docker cp "$HERE/workflows" "$CONTAINER:/tmp/workflows" >/dev/null
 docker exec "$CONTAINER" n8n import:workflow --separate --input=/tmp/workflows 2>&1 | tail -3
+
+# The usage collector must be PUBLISHED, not merely active. n8n 2.x has a draft/publish model:
+# `executeWorkflow` resolves the published version and refuses with "Workflow is not active and
+# cannot be executed" when there is none — measured on case71, where setting `active = 1` in the
+# database changed nothing because `activeVersionId` stayed null. Importing resets it, so this
+# runs after every import.
+docker exec "$CONTAINER" n8n publish:workflow --id=case71collector0 2>&1 | grep -i 'publishing' | tail -1
+docker exec "$CONTAINER" node -e "
+	const { DatabaseSync } = require('node:sqlite');
+	const db = new DatabaseSync('/home/node/.n8n/database.sqlite', { readOnly: true });
+	const w = db.prepare('SELECT activeVersionId FROM workflow_entity WHERE id = ?').get('case71collector0');
+	console.log('==> usage collector published:', Boolean(w && w.activeVersionId));
+" 2>&1 | tail -1
 
 echo
 echo "==> n8n is up:   http://localhost:$PORT"

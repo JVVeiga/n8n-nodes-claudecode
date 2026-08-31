@@ -62,7 +62,7 @@ sections you get. See [Output Formats](#output-formats).
 
 **Start here** — [Install](#install) · [Your First Workflow](#your-first-workflow) · [Templates](./workflow-templates/) · [What people build with it](#what-people-build-with-it)
 
-**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
+**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Claude Code Chat Model](#claude-code-chat-model) · [Agent Tools](#claude-code-tools-for-ai-agents) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
 
 **Also** — [Notes worth knowing](#notes-worth-knowing) · [Development & Contributing](#development--contributing) · [Credits](#credits)
 
@@ -535,6 +535,136 @@ What 1.2 changes, for anyone porting a workflow across:
 | error text | folded into `result` with a `[PARTIAL - …]` prefix | `result` plus a separate `errorText` |
 | `summary.toolUseCount` | counts a tool only if it opened the turn | counts every tool use |
 | metrics on a graceful timeout | the interrupt's per-turn numbers | the cumulative ones |
+
+## Claude Code Chat Model
+
+The third node plugs Claude Code into n8n's **AI Agent** as its Chat Model. Add an AI Agent,
+click the Chat Model port, pick **Claude Code Chat Model** — Memory and Tool sub-nodes connect as
+usual, and the Chat Trigger streams the answer token by token.
+
+What you get over the native Anthropic Chat Model:
+
+- **Your Claude plan, not an API key.** The same per-execution [Authentication](#authentication)
+  as the other two nodes — Host, API Key, or a Claude Code OAuth Token billed against that
+  account's plan.
+- **A project behind the model.** Set **Project Path** and the run loads that directory's
+  `CLAUDE.md`, MCP servers and settings; Claude Code's own tools (Bash, Read, Glob, …) are
+  available alongside the Agent's, governed by the same Restrict / Allowed / Disallowed Tools,
+  Effort, Thinking, Max Budget and Timeout options as the main node.
+
+**How the Agent's tools run.** Tools you connect to the Agent are handed to Claude Code as
+in-process tools (`mcp__n8n__<tool name>`) and executed *inside its session*, so the Agent sees
+one model turn per call while each Tool sub-node still logs its executions. Two Agent features
+therefore do not apply — human-in-the-loop tool approval and *Return Intermediate Steps*.
+**Require Specific Output Format works**: the model hands back the formatting call the Agent's
+parser expects.
+
+**Two ways to remember, and you pick which.** The **Conversation Memory** parameter chooses:
+
+| Mode | Where the history comes from |
+|---|---|
+| **Auto** (default) | Session when Session ID is filled in, Memory sub-node otherwise |
+| **Claude Code Session** | The session — real multi-turn, tool results included. Requires a Session ID; an empty one fails the node instead of running stateless. Any connected Memory is ignored |
+| **n8n Memory Sub-Node** | The connected Memory, flattened into the prompt. Portable across containers and workers; the model *reads* the conversation rather than continuing it. Session ID is hidden — and **cleared when the workflow saves**, so note your key before switching |
+
+Never both at once — that would put every prior turn in the context twice.
+
+With a Memory sub-node, each Agent call is a fresh Claude Code session that reads the
+conversation so far. For real multi-turn memory, set **Session ID** to any **stable conversation
+key** — a Discord/WhatsApp/user ID, straight off the webhook (`{{ $json.body.sessionId }}`). The
+node hashes the key into a deterministic Claude Code session ID, creates the session on the
+conversation's first message and *resumes* it on every next one — prior turns and tool results
+included, with **no storage anywhere**: not in the workflow, not in the caller. A raw session
+UUID from a previous run also works. When Session ID is set, connected Memory history is not
+re-sent, so the Memory node becomes unnecessary. Sessions live on the n8n container's disk —
+recreate the container and conversations start over. `response_metadata.session_state` says what
+happened on each call: `created`, `resumed`, or `new`.
+
+**What it costs.** Every Agent call spawns the Claude Code CLI (a few seconds) and carries Claude
+Code's system prompt. This is not a cheap chat model — it is Claude Code with an Agent plugged
+into it. For a plain LLM call on an API key, the native Anthropic Chat Model is the better tool.
+
+## Claude Code Tools for AI Agents
+
+Two purpose-built `ai_tool` sub-nodes, for **any** Agent chat model — the native Anthropic or
+OpenAI models included:
+
+**Claude Code Task Tool** — hands the Agent a full coding agent as a tool. Fixed contract: the
+Agent sends one `task` string, Claude Code runs it in the configured Project Path (reading files,
+running commands, writing code), and the result comes back as text. Timeout, budget cap, tool
+restrictions and per-execution Authentication are all per-tool options. Failures — timeouts
+included — return as text the Agent can read and react to, never as a dead run.
+
+**Claude Code Usage Tool** — a zero-argument tool that returns the account's plan usage
+(utilisation and reset time per window) as a JSON report, with the same scope-retry and opt-in
+probe escalation as the Usage node.
+
+Both derive their tool name from the node's name on the canvas, so rename the node and the Agent
+sees the new name. **Avoid names that collide with Claude Code's own tools** — a node called
+"Task" makes the model reach for its built-in `Task` subagent instead of yours.
+
+Both also log every call under the node, with the input and the result, so a tool that ran is
+visible on the canvas rather than silent.
+
+> **Alpine note**: the official `n8nio/n8n` image ships no `bash`, so Claude Code's Bash tool
+> fails there with "No suitable shell found". Disallow **Bash** on the tool and let it use Glob
+> and Read, or run n8n on an image that has a shell.
+
+### Measuring what a sub-node spent
+
+The main Claude Code node puts `metrics` and `diagnostics` in its output, so a following node
+reads them with an expression. **A sub-node cannot do that** — its output is not on the `main`
+chain, and `$('Claude Code Chat Model').item.json.metrics` has nothing to resolve against.
+
+So the numbers leave by calling a workflow. On the Chat Model and the Task Tool, under Options:
+
+| Option | What it does |
+|---|---|
+| **Report Usage to Workflow** | after every call, hands the run to this workflow |
+| **Process Name** | sent as `process_name`, so rows from different workflows stay apart |
+
+Each call sends one item:
+
+```json
+{
+  "process_name": "support-assistant",
+  "run_key": "1274:Claude Code Chat Model:1",
+  "caller_workflow_id": "wF1aBcD2eFgH3iJk",
+  "caller_execution_id": "1274",
+  "node_name": "Claude Code Chat Model",
+  "metrics":     { "duration_ms": 7329, "num_turns": 2, "total_cost_usd": 0.0070098,
+                   "usage": { … }, "modelUsage": { … }, "session_id": "b575370d-…" },
+  "diagnostics": { "requestedModel": "…", "resolvedModel": "…", "appliedEffort": "…", … }
+}
+```
+
+`metrics` and `diagnostics` are **the same objects the main node emits** — a test asserts the
+metrics are deep-equal to what the main node's output builder produces — so a collector written
+for the main node consumes a sub-node's run with no changes.
+
+**`run_key` identifies a call, not a session.** A conversation that resumes a Claude Code session
+carries the same `session_id` across executions, so keying a table on it would make every message
+overwrite the last, and `total_cost_usd` is per run rather than cumulative. The session id is an
+ordinary field instead, which is what makes "what did this conversation cost" a `GROUP BY`.
+
+Three things that will bite you, all measured:
+
+- **The collector must be published.** n8n 2.x has a draft/publish model, and `executeWorkflow`
+  resolves the *published* version — an unpublished one is refused with *"Workflow is not active
+  and cannot be executed"*. Marking it active is not enough.
+- **Its trigger must accept the payload.** An Execute Workflow Trigger that declares fields
+  rejects anything else with *"At least 1 field is required"*; declare the fields you want or set
+  the trigger to *passthrough*.
+- **Reporting never costs you the answer.** The call is made with `doNotWaitToFinish` and any
+  failure is swallowed into the debug log — a collector that is down loses a metric, not a run.
+
+The **Usage Tool** has no reporting, deliberately: it performs a plan *read*, so there is no
+session, no turns and no tokens. A row from it would be a line of zeros in a table of runs.
+
+> **Why not the auto-generated variants?** n8n also synthesizes "tool" wrappers from the regular
+> nodes (`usableAsTool`). Those expose every node parameter and — for the main node — a
+> zero-argument schema unless you hand-write `$fromAI()` expressions. They keep working, but the
+> dedicated tools above are the supported path.
 
 ## Usage & Plan Limits
 

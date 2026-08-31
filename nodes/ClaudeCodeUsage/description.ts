@@ -17,7 +17,9 @@ export const claudeCodeUsageDescription: INodeTypeDescription = {
 	// name on the canvas, which says nothing the name has not already said.
 	description:
 		'Read the logged-in account and how much of its Claude plan is left, including when each window resets',
-	usableAsTool: true,
+	// NOT `usableAsTool` — superseded by `nodes/ClaudeCodeUsageTool/`, which is the same read with
+	// a proper zero-argument tool contract. Same reasoning (and the same breaking-change note) as
+	// the Claude Code node's.
 	defaults: {
 		name: 'Claude Code Usage',
 	},

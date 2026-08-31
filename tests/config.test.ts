@@ -360,6 +360,13 @@ describe('buildQueryOptions — the applier table', () => {
 			'maxThinkingTokens',
 			'maxBudgetUsd',
 			'resumeOrContinue',
+			// The Chat Model node's four deps-driven appliers. Order matters twice: replace after
+			// systemPrompt so an explicit replace wins, and mcpServers after everything that writes
+			// options.tools/allowedTools, because it amends both.
+			'systemPromptReplace',
+			'mcpServers',
+			'partialMessages',
+			'newSessionId',
 		]);
 	});
 
@@ -391,11 +398,18 @@ describe('buildQueryOptions — the applier table', () => {
 			},
 			// stagedAttachments and authEnv are the two appliers driven by runtime facts rather
 			// than parameters, so "fully loaded" has to include a staged directory and a
-			// credential.
+			// credential — and the Chat Model node's four deps join them for the same reason.
 			deps({
 				stagedDir: '/tmp/n8n-claude-abc',
 				auth: { mode: 'apiKey', secret: 'sk-ant-test' },
 				processEnv: { PATH: '/usr/bin' },
+				systemPromptReplace: 'you are a poet',
+				mcp: {
+					servers: { n8n: { type: 'sdk', name: 'n8n', instance: {} as never } },
+					toolNames: ['mcp__n8n__calculator'],
+				},
+				includePartialMessages: true,
+				newSessionId: '00000000-0000-5000-8000-000000000001',
 			}),
 		);
 		assert.deepEqual(names, APPLIER_NAMES);
