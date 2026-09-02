@@ -1,6 +1,6 @@
 {
   "name": "@joaoveiga/n8n-nodes-claudecode",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Five n8n nodes for Claude Code v2 via the Claude Agent SDK: the agent (attachments, effort, thinking, Ultracode, tool restriction, spend cap, graceful timeouts, diagnostics), a Chat Model and two Agent tools for n8n AI Agents, plus a free usage read for plan limits and reset windows",
   "keywords": [
     "n8n-community-node-package",
