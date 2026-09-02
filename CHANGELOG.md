@@ -1,3 +1,41 @@
+## [2.1.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.0.0...v2.1.0) (2026-09-01)
+
+Additive. No typeVersion moved, the 48 golden fixtures are byte-identical and unregenerated, and
+every stored workflow keeps the model it selected.
+
+### Claude Fable 5.1
+
+Anthropic released **Claude Fable 5.1** (`claude-fable-5-1`) on 2026-09-01 — 1M context, and the
+default Fable model from Claude Code 2.1.257 onward. It is one new entry in the model list, which
+is why it shows up in six places at once: **Model** and **Fallback Model** on the main node, the
+**Chat Model** sub-node, and the **Task Tool**. The two Usage nodes have no model selector — they
+read the plan rather than run a turn.
+
+**Fable 5 stays.** It is still in Anthropic's model table and is not deprecated, so removing it
+would empty the dropdown for a workflow that had selected it. Only its description changed, since
+it is no longer the most capable model on offer.
+
+The default is still `sonnet` everywhere. Fable is an explicit choice at $10/$50 per Mtok.
+
+No `fable` alias was added alongside `sonnet`/`opus`/`haiku`. In Claude apps gateway sessions
+`fable` still resolves to Fable **5**, because gateways not yet configured for 5.1 reject it — an
+option that means a different model depending on where n8n runs is worse than no option.
+
+### The SDK floor moved to 0.3.257
+
+`@anthropic-ai/claude-agent-sdk` `^0.3.202` → `^0.3.257`, which is the first release whose bundled
+CLI (2.1.257) recognizes `claude-fable-5-1`.
+
+This is not housekeeping. `Options.model` is a plain string rather than a union, and the CLI
+forwards an ID it does not know straight to the API — so the model *runs* on an older CLI, and
+answers. What breaks is the context window: an unrecognized ID is assumed to be 200k, and a
+1M-context model gets auto-compacted at a fifth of its window, with only a line on stderr to say
+so. After the bump the same run reports `contextWindow: 1000000` and
+`canonicalModel: claude-fable-5-1`.
+
+If you point the node at your own binary through **Claude Code Executable Path**, that binary is
+the one that has to be 2.1.257 or newer — the floor here only governs the bundled CLI.
+
 ## [2.0.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v1.1.0...v2.0.0) (2026-08-31)
 
 **A major, and only for one reason**: the auto-generated tool variants are gone (see BREAKING
