@@ -10,6 +10,13 @@ import type { INodePropertyOptions } from 'n8n-workflow';
  *
  * Order is deliberate and NOT alphabetical: aliases first, then pinned IDs newest-first. The n8n
  * lint rule that wants alphabetical options is disabled at each call site for that reason.
+ *
+ * A value here is passed to the SDK as a plain string — `Options.model` is not a union, and the
+ * CLI forwards an ID it does not know straight to the API. That is why adding a model works
+ * before the bundled CLI catches up, and also why the SDK floor in package.json matters: a CLI
+ * that does not recognize the ID assumes a 200k context window and auto-compacts early. CLI
+ * 2.1.257 (SDK 0.3.257) is the first to recognize `claude-fable-5-1`. No `[1m]` suffix on the
+ * Fable IDs — Fable ships 1M by default and the CLI strips the suffix.
  */
 
 export type ModelChoice = {
@@ -71,9 +78,15 @@ export const MODELS: ModelChoice[] = [
 		short: 'Haiku 4.5',
 	},
 	{
+		name: 'Fable 5.1',
+		value: 'claude-fable-5-1',
+		description: 'Anthropic’s most capable model for demanding long-horizon work',
+		short: 'Fable 5.1',
+	},
+	{
 		name: 'Fable 5',
 		value: 'claude-fable-5',
-		description: 'Anthropic’s most capable model for demanding long-horizon work',
+		description: 'Previous-generation Fable, superseded by 5.1',
 		short: 'Fable 5',
 	},
 ];
