@@ -1,3 +1,35 @@
+## [2.2.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.1.0...v2.2.0) (2026-09-22)
+
+Additive. No typeVersion moved, the 48 golden fixtures are byte-identical and unregenerated, and
+every stored workflow keeps the model it selected.
+
+### Claude Opus 5.5
+
+**Claude Opus 5.5** (`claude-opus-5-5`) is now in the model list, ahead of Opus 5. It has a 1M
+context window natively, and the CLI prices it at $4/$20 per Mtok. Like Fable 5.1 it is one new
+entry, so it appears in six places: **Model** and **Fallback Model** on the main node, the
+**Chat Model** sub-node, and the **Task Tool**.
+
+**Opus 5 stays.** Removing it would empty the dropdown for a workflow that had selected it, so
+only its description changed.
+
+The **Opus (Latest Alias)** option did not need to change: from CLI 2.1.280 `opus` resolves to
+Opus 5.5 on first-party auth, Bedrock, Vertex and Mantle. On Foundry and gateways it still resolves
+to an older Opus. Pick the pinned ID if you need 5.5 everywhere. The default is still `sonnet`.
+
+The ID carries no `[1m]` suffix. The CLI's model table marks Opus 5.5 `native_1m`. It also accepts
+the suffix, but in 2.1.280 the only effect is "(1M context)" in the display name.
+
+### The SDK floor moved to 0.3.280
+
+`@anthropic-ai/claude-agent-sdk` `^0.3.257` → `^0.3.280`, the first release whose bundled CLI
+(2.1.280) recognizes `claude-opus-5-5`. This was found by bisecting the published binaries:
+0.3.278 and earlier do not contain the ID.
+
+The reason is the same as for Fable 5.1. An unrecognized ID still runs, but the CLI assumes a 200k
+window and auto-compacts a 1M model early. If you set **Claude Code Executable Path**, that binary
+must be 2.1.280 or newer.
+
 ## [2.1.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.0.0...v2.1.0) (2026-09-01)
 
 Additive. No typeVersion moved, the 48 golden fixtures are byte-identical and unregenerated, and
