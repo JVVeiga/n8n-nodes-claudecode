@@ -174,13 +174,43 @@ docker exec "$CONTAINER" n8n import:workflow --separate --input=/tmp/workflows 2
 # cannot be executed" when there is none — measured on case71, where setting `active = 1` in the
 # database changed nothing because `activeVersionId` stayed null. Importing resets it, so this
 # runs after every import.
-docker exec "$CONTAINER" n8n publish:workflow --id=case71collector0 2>&1 | grep -i 'publishing' | tail -1
+#
+# case80's targets need the same: a Call Workflow Tool resolves the published version too, and an
+# MCP Server Trigger is served only once published.
+PUBLISHED_TARGETS="case71collector0 case80wftarget00 case80mcpserver0"
+for id in $PUBLISHED_TARGETS; do
+	docker exec "$CONTAINER" n8n publish:workflow --id="$id" 2>&1 | grep -i 'publishing' | tail -1
+done
 docker exec "$CONTAINER" node -e "
 	const { DatabaseSync } = require('node:sqlite');
 	const db = new DatabaseSync('/home/node/.n8n/database.sqlite', { readOnly: true });
-	const w = db.prepare('SELECT activeVersionId FROM workflow_entity WHERE id = ?').get('case71collector0');
-	console.log('==> usage collector published:', Boolean(w && w.activeVersionId));
-" 2>&1 | tail -1
+	for (const id of process.argv.slice(1)) {
+		const w = db.prepare('SELECT activeVersionId FROM workflow_entity WHERE id = ?').get(id);
+		console.log('==> published:', id, Boolean(w && w.activeVersionId));
+	}
+" $PUBLISHED_TARGETS 2>&1 | tail -3
+
+# MEASURED: `publish:workflow` runs in a separate CLI process, so the running server never
+# registers the MCP Server Trigger's route — /mcp/<path> answers 404 until n8n restarts. The probe
+# is a real JSON-RPC `initialize`, because the route exists only for POST.
+echo "==> restarting n8n so it serves the MCP Server Trigger published above"
+docker restart "$CONTAINER" >/dev/null
+MCP_INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}'
+mcp_up() {
+	docker exec "$CONTAINER" wget -qO- \
+		--header 'Content-Type: application/json' \
+		--header 'Accept: application/json, text/event-stream' \
+		--post-data "$MCP_INIT" http://localhost:5678/mcp/e2e-case80 >/dev/null 2>&1
+}
+for _ in $(seq 1 90); do
+	mcp_up && break
+	sleep 2
+done
+if mcp_up; then
+	echo "==> MCP Server Trigger answers at /mcp/e2e-case80"
+else
+	echo "WARNING: /mcp/e2e-case80 does not answer; case80's MCP tool will fail." >&2
+fi
 
 echo
 echo "==> n8n is up:   http://localhost:$PORT"

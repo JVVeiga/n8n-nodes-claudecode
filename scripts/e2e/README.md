@@ -155,6 +155,29 @@ UTF-8 sniff) and an image over the 5 MB ceiling staging instead of inlining. Bot
 functions of `(mimeType, bytes)` with no environment dependency, which is the whole reason
 `mime.ts` takes no I/O.
 
+## The Claude Code Agent cases
+
+`case80`–`case86` drive the Agent root node on Haiku at low effort (~US$0.25 for all nine). What
+only a real n8n shows, and so what they assert on:
+
+- `case80` wires one tool of each shape the Agent must bridge: a Code Tool with a JSON-schema
+  input, a Call Workflow Tool, an HTTP Request node used as a tool, and an MCP Client Tool — which
+  arrives as a *toolkit* — pointed at an MCP Server Trigger in the same instance. Its two targets
+  (`case80wftarget00`, `case80mcpserver0`) must be **published**, and the running server only
+  serves `/mcp/e2e-case80` after a **restart** that follows the publish; `n8n-up.sh` does both and
+  probes the route with a real `initialize`.
+- `run-cases.mjs` records `nodeRuns` — every node's own run log. A tool node with a run, or a
+  Subagent node with an `ai_agent` run (`case83`), is the evidence the sub-node was used rather than
+  imitated by the model.
+- `case84a`/`case84b` share a literal session key. `run-cases.mjs` deletes that key's session from
+  the container before `case84a`, so it is a real first use (`created`) on every pass and `case84b`
+  resumes what it created.
+- `case81b`'s impossible schema ends one of two ways, at the model's whim: it gives up in prose (a
+  success with no object), or it exhausts the CLI's five retries, after which the SDK also throws.
+  Both must be a `structured_output` failure; the second once came out as an `execution_error`.
+- `editor83` is never executed: it is the canvas a browser uses to check that a Subagent cannot be
+  dragged onto the n8n AI Agent's Tool input.
+
 ## Retry a timing-sensitive failure before investigating it
 
 The timeout cases (`case01`, `case02`, `case03`, and `case08` which resumes case01's session)

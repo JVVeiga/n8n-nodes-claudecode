@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 const r = JSON.parse(readFileSync(new URL('./results.json', import.meta.url), 'utf8'));
-const get = (n) => r.find((c) => c.name.startsWith(n));
+// By exact slug: a prefix match let get('case81') pick case81b whenever it sorted first.
+const get = (n) => r.find((c) => c.name.split(' ')[0] === n);
 const det = (c) => c?.itemJson?.details ?? c?.itemJson ?? {};
 const ctx = (c) => c?.errorContext ?? {};
 
@@ -325,6 +326,82 @@ const checks = [
       Array.isArray(report.windows) && report.windows.length > 0 &&
       !/NO_WINDOWS|Could not read/i.test(out)
     );
+  }],
+
+  // Claude Code Agent (80-86). The root node's item is the v1.2 envelope plus `structured`.
+  ['80 all four tool shapes answer through the Agent', () => {
+    const c = get('case80');
+    const out = String(c?.itemJson?.result ?? '');
+    // CODE-Q7 needs the schema'd argument, WF-8052 the published target, MCP-6130 the MCP server
+    // behind a toolkit. `ok` alone is guessable; health_check's own run below is what proves it.
+    return c?.status === 'success' && c.itemJson?.success === true &&
+      /CODE-Q7/.test(out) && /WF-8052/.test(out) && /MCP-6130/.test(out) && /HEALTH=\W*ok/i.test(out);
+  }],
+  ['80 diagnostics.bridgedTools lists four mcp__n8n__ tools, the toolkit flattened', () => {
+    const t = get('case80')?.itemJson?.diagnostics?.bridgedTools ?? [];
+    return t.length === 4 && t.every((n) => n.startsWith('mcp__n8n__')) &&
+      t.some((n) => /mcp_secret$/.test(n)) && t.includes('mcp__n8n__secret_code');
+  }],
+  ['80 every tool node has its own run in the execution', () => {
+    const runs = get('case80')?.nodeRuns ?? {};
+    return ['secret_code', 'findings_token', 'MCP Client', 'health_check']
+      .every((n) => (runs[n]?.runs ?? 0) >= 1);
+  }],
+  ['81 JSON Schema mode emits the object as structured', () => {
+    const j = get('case81')?.itemJson;
+    return j?.success === true && /paris/i.test(String(j.structured?.capital)) &&
+      j.structured?.sum === 42 && j.diagnostics?.structuredOutput?.mode === 'jsonSchema';
+  }],
+  ['81b an impossible schema fails the item as structured_output, with metrics', () => {
+    const c = get('case81b');
+    const d = det(c);
+    return c?.status === 'success' && c.itemCount === 1 && d.errorType === 'structured_output' &&
+      typeof d.metrics?.total_cost_usd === 'number' && d.metrics.total_cost_usd > 0 &&
+      !('structured' in (c.itemJson ?? {}));
+  }],
+  ['82 Output Parser mode emits the user object, not wrapped in output', () => {
+    const s = get('case82')?.itemJson?.structured;
+    return !!s && typeof s === 'object' && !('output' in s) &&
+      /blue/i.test(String(s.colour)) && s.legs === 8 &&
+      get('case82').itemJson.diagnostics?.structuredOutput?.mode === 'outputParser';
+  }],
+  ['83 both subagents answer — their codewords exist nowhere else', () => {
+    const j = get('case83')?.itemJson;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /ORCHID-4417/.test(out) && /GRANITE-9023/.test(out);
+  }],
+  ['83 diagnostics report both delegations', () => {
+    const d = get('case83')?.itemJson?.diagnostics ?? {};
+    const by = Object.fromEntries((d.subagents ?? []).map((s) => [s.name, s]));
+    return (by.alpha?.invocations ?? 0) >= 1 && (by.beta?.invocations ?? 0) >= 1 &&
+      d.subagentToolUses >= 2;
+  }],
+  ['83 each Subagent sub-node logs its delegation as an ai_agent run', () => {
+    const runs = get('case83')?.nodeRuns ?? {};
+    return ['Subagent alpha', 'Subagent beta'].every((n) => runs[n]?.types?.includes('ai_agent'));
+  }],
+  ['84a a literal session key creates the session on first use', () => {
+    const j = get('case84a')?.itemJson;
+    return j?.success === true && /OK/.test(String(j.result)) && j.diagnostics?.sessionState === 'created';
+  }],
+  ['84b the same key resumes it in a separate execution', () => {
+    const j = get('case84b')?.itemJson;
+    return j?.success === true && /TANGERINE-58/.test(String(j.result)) &&
+      j.diagnostics?.sessionState === 'resumed';
+  }],
+  ['85 an Instruction File reaches the model; a missing one is listed, not fatal', () => {
+    const j = get('case85')?.itemJson;
+    const i = j?.diagnostics?.instructions;
+    return j?.success === true && /MARMOT-3361/.test(String(j.result)) &&
+      JSON.stringify(i?.loaded) === '[".agent/rules.md"]' &&
+      JSON.stringify(i?.missing) === '[".agent/missing.md"]';
+  }],
+  ['86 the Agent reports usage to the collector workflow', () => {
+    const c = get('case86');
+    const mine = (c?.usageReports ?? []).filter((r) => r.process_name === 'e2e-agent');
+    return c?.status === 'success' && mine.length >= 1 && mine.every((r) =>
+      typeof r.run_key === 'string' && r.run_key.includes(':') &&
+      typeof r.metrics?.total_cost_usd === 'number' && r.metrics.total_cost_usd > 0);
   }],
 ];
 
