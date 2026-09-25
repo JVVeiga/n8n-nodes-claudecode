@@ -17,12 +17,21 @@ export type ResultMessage = Extract<SDKMessage, { type: 'result' }>;
 export type AssistantMessage = Extract<SDKMessage, { type: 'assistant' }>;
 export type UserMessage = Extract<SDKMessage, { type: 'user' }>;
 export type InitMessage = Extract<SDKMessage, { type: 'system'; subtype: 'init' }>;
+export type TaskStartedMessage = Extract<SDKMessage, { type: 'system'; subtype: 'task_started' }>;
+export type TaskNotificationMessage = Extract<
+	SDKMessage,
+	{ type: 'system'; subtype: 'task_notification' }
+>;
 
 export const isResult = (m: SDKMessage): m is ResultMessage => m.type === 'result';
 export const isAssistant = (m: SDKMessage): m is AssistantMessage => m.type === 'assistant';
 export const isUser = (m: SDKMessage): m is UserMessage => m.type === 'user';
 export const isInit = (m: SDKMessage): m is InitMessage =>
 	m.type === 'system' && m.subtype === 'init';
+export const isTaskStarted = (m: SDKMessage): m is TaskStartedMessage =>
+	m.type === 'system' && m.subtype === 'task_started';
+export const isTaskNotification = (m: SDKMessage): m is TaskNotificationMessage =>
+	m.type === 'system' && m.subtype === 'task_notification';
 
 /** A content block, described structurally: the SDK's own block union is wider than any one
  * consumer needs, and every field here is optional in at least one variant. */

@@ -19,9 +19,10 @@ export type SubagentDiagnostics = {
 	name: string;
 	invocations: number;
 	completed: number;
-	totalTokens: number;
-	toolUses: number;
-	durationMs: number;
+	/** Sums over the subagent's invocations; null when no invocation reported the figure. */
+	totalTokens: number | null;
+	toolUses: number | null;
+	durationMs: number | null;
 };
 
 export type InstructionsDiagnostics = { loaded: string[]; missing: string[] };
