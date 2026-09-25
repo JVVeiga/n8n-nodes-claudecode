@@ -18,7 +18,7 @@ import { runQuery } from '../ClaudeCode/runner';
 import type { ClaudeCodeParams } from '../ClaudeCode/types';
 import { mapMessages } from './messages';
 import { resolveChatOutcome } from './result';
-import { buildToolBridge, type BindableTool } from './toolBridge';
+import { buildToolBridge, type BindableTool } from '../shared/toolBridge';
 import { reportRun, type UsageReporting } from '../shared/usageReport';
 
 /**

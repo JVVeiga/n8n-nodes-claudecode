@@ -4,11 +4,12 @@ import { z } from 'zod/v4';
 import {
 	bridgedToolName,
 	buildToolBridge,
+	flattenTools,
 	planTool,
 	runBindableTool,
 	MCP_SERVER_NAME,
 	type BindableTool,
-} from '../nodes/ClaudeCodeChatModel/toolBridge';
+} from '../nodes/shared/toolBridge';
 
 /**
  * The Option B bridge (DEC-CM1). The schemas below mirror what spike S2 measured: structured
@@ -166,5 +167,36 @@ describe('buildToolBridge — what config.ts receives', () => {
 
 	it('bridgedToolName matches the SDK naming scheme the run will see', () => {
 		assert.equal(bridgedToolName('calculator'), 'mcp__n8n__calculator');
+	});
+});
+
+describe('flattenTools — what an ai_tool connection hands over', () => {
+	const tool = (name: string): BindableTool => ({ name, invoke: invokeNever });
+
+	it('nothing connected is an empty list', () => {
+		assert.deepEqual(flattenTools(undefined), []);
+		assert.deepEqual(flattenTools(null), []);
+		assert.deepEqual(flattenTools([]), []);
+	});
+
+	it('a single tool becomes a one-element list', () => {
+		const calculator = tool('calculator');
+		assert.deepEqual(flattenTools(calculator), [calculator]);
+	});
+
+	it('a toolkit is unpacked into its tools', () => {
+		const a = tool('a');
+		const b = tool('b');
+		assert.deepEqual(flattenTools({ tools: [a, b], getTools: () => [a, b] }), [a, b]);
+	});
+
+	it('an array mixing tools and toolkits flattens in order', () => {
+		const [a, b, c, d] = ['a', 'b', 'c', 'd'].map(tool);
+		const flat = flattenTools([a, { tools: [b, c] }, d]);
+		assert.deepEqual(
+			flat.map((entry) => entry.name),
+			['a', 'b', 'c', 'd'],
+		);
+		assert.equal(flat[1], b, 'the same instances, not copies');
 	});
 });

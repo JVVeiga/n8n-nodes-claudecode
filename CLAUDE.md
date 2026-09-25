@@ -85,6 +85,7 @@ nodes/
     toolRunLog.ts              toToolName + the addInputData/addOutputData pair for ai_tool
     usageReport.ts             the collector payload and run_key — pure, no n8n
     reportUsage.ts             the impure half: builds the reporter from a supply context
+    toolBridge.ts              LangChain tools -> one in-process MCP server (tool.invoke)
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -120,7 +121,6 @@ nodes/
     params.ts                  the ONLY getNodeParameter reader for this node
     model.ts                   ClaudeCodeChat extends BaseChatModel — one _generate = one run
     messages.ts                BaseMessage[] -> { system, prompt } (history flattened, pure)
-    toolBridge.ts              the Agent's tools -> one in-process MCP server (tool.invoke)
     result.ts                  SDKMessage[] -> text/usage/tool_calls (the R16 passthrough)
   ClaudeCodeTool/              Claude Code as a REAL ai_tool sub-node (fixed {task} schema)
     ClaudeCodeTool.node.ts     the class + supplyClaudeCodeTool(ctx, deps, itemIndex)
@@ -158,7 +158,7 @@ nodes/
 | Change stop/timeout behaviour | `runner.ts` |
 | Change a failure item | `errors.ts` |
 | Change how the Chat Model maps Agent messages | `ClaudeCodeChatModel/messages.ts` |
-| Change how the Agent's tools reach Claude Code | `ClaudeCodeChatModel/toolBridge.ts` |
+| Change how the Agent's tools reach Claude Code | `shared/toolBridge.ts` |
 | Change the Task tool's contract or failure text | `ClaudeCodeTool/tool.ts` |
 | Change the Usage tool's report | `ClaudeCodeUsageTool/tool.ts` |
 | Change how a usage read escalates | `ClaudeCodeUsage/escalate.ts` — node and tool share it |
