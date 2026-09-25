@@ -27,6 +27,19 @@ import {
 	wrapUpGraceOption,
 } from '../shared/runOptions';
 
+// The Claude Code node needs `auto` to stay off for workflows built before 1.3. This node has no
+// such history, so it offers On/Off with On as the default.
+export const AGENT_ATTACH_ALL_PROPERTY: INodeProperties = {
+	...ATTACH_ALL_BINARIES_PROPERTY,
+	options: [
+		{ name: 'Off', value: 'off', description: 'Send only the properties named below' },
+		{ name: 'On', value: 'on', description: 'Send every binary property on the item' },
+	],
+	default: 'on',
+	description:
+		'Whether to send every binary property on the input item to Claude. Images, PDFs and small text files are attached directly to the request; anything larger or of a type that cannot be attached is written to a temporary directory Claude can read from. An item with no binary data is unaffected either way.',
+};
+
 const JSON_SCHEMA_EXAMPLE = JSON.stringify(
 	{
 		type: 'object',
@@ -139,7 +152,7 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 		timeoutOption(
 			'Maximum time in seconds for one item, before the run is stopped. A resumed session that has to be created shares this budget.',
 		),
-		ATTACH_ALL_BINARIES_PROPERTY,
+		AGENT_ATTACH_ALL_PROPERTY,
 		BINARY_PROPERTIES_PROPERTY,
 		{
 			displayName: 'Output Mode',

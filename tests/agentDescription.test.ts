@@ -3,7 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import type { INodeProperties } from 'n8n-workflow';
-import { claudeCodeAgentDescription } from '../nodes/ClaudeCodeAgent/description';
+import {
+	AGENT_ATTACH_ALL_PROPERTY,
+	claudeCodeAgentDescription,
+} from '../nodes/ClaudeCodeAgent/description';
 import { PERMISSION_MODE_OPTION } from '../nodes/ClaudeCode/description/additionalOptions';
 import {
 	ATTACH_ALL_BINARIES_PROPERTY,
@@ -85,7 +88,13 @@ describe('Claude Code Agent — parameters', () => {
 	});
 
 	it('reuses the Claude Code node’s property objects rather than copies', () => {
-		assert.equal(property('attachAllBinaries'), ATTACH_ALL_BINARIES_PROPERTY);
+		assert.equal(property('attachAllBinaries'), AGENT_ATTACH_ALL_PROPERTY);
+		assert.equal(AGENT_ATTACH_ALL_PROPERTY.name, ATTACH_ALL_BINARIES_PROPERTY.name);
+		assert.equal(AGENT_ATTACH_ALL_PROPERTY.default, 'on');
+		assert.deepEqual(
+			(AGENT_ATTACH_ALL_PROPERTY.options as Array<{ value: string }>).map((o) => o.value),
+			['off', 'on'],
+		);
 		assert.equal(property('binaryProperties'), BINARY_PROPERTIES_PROPERTY);
 		assert.deepEqual(property('model'), modelProperty());
 		assert.equal(option('permissionMode'), PERMISSION_MODE_OPTION);
