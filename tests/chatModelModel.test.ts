@@ -4,11 +4,8 @@ import type { SDKMessage, query as sdkQuery } from '@anthropic-ai/claude-agent-s
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { DebugLogger } from '../nodes/shared/debug';
 import type { ClaudeCodeParams } from '../nodes/ClaudeCode/types';
-import {
-	ClaudeCodeChat,
-	toSessionUuid,
-	type ChatModelDeps,
-} from '../nodes/ClaudeCodeChatModel/model';
+import { ClaudeCodeChat, type ChatModelDeps } from '../nodes/ClaudeCodeChatModel/model';
+import { toSessionUuid } from '../nodes/shared/session';
 
 /**
  * The model driven end to end through LangChain's own `invoke`, with a scripted `query` — the

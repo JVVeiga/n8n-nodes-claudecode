@@ -86,6 +86,7 @@ nodes/
     usageReport.ts             the collector payload and run_key — pure, no n8n
     reportUsage.ts             the impure half: builds the reporter from a supply context
     toolBridge.ts              LangChain tools -> one in-process MCP server (tool.invoke)
+    session.ts                 Session ID -> deterministic uuid, and the resume-or-create retry
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk

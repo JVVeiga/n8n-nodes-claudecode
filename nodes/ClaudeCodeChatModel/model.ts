@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { SDKMessage, query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import {
@@ -9,7 +8,6 @@ import { AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatResult } from '@langchain/core/outputs';
 import type { AuthSelection } from '../shared/auth';
 import type { DebugLogger } from '../shared/debug';
-import { assistantMessages, findResult } from '../shared/sdkMessage';
 import { attachAbort } from '../shared/abort';
 import { preview } from '../shared/preview';
 import { buildQueryOptions } from '../ClaudeCode/config';
@@ -20,6 +18,7 @@ import { mapMessages } from './messages';
 import { resolveChatOutcome } from './result';
 import { buildToolBridge, type BindableTool } from '../shared/toolBridge';
 import { reportRun, type UsageReporting } from '../shared/usageReport';
+import { runWithSession, toSessionUuid, type SessionRequest } from '../shared/session';
 
 /**
  * Claude Code, duck-typed as a LangChain chat model.
@@ -72,28 +71,6 @@ const textDeltaOf = (message: SDKMessage): string | null => {
 	if (event.type !== 'content_block_delta' || event.delta?.type !== 'text_delta') return null;
 	return event.delta.text ?? null;
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * The Session ID parameter accepts either a real session UUID (the round-trip style) or ANY
- * stable conversation key — `discord:8463…`, a phone number, a ticket id. A key is hashed into a
- * deterministic UUID (v5-shaped: SHA-1, version and variant bits set), because the SDK requires
- * a valid UUID and because determinism is the whole point: the same key always names the same
- * session, so nothing anywhere has to store a mapping.
- */
-export function toSessionUuid(sessionIdOrKey: string): string {
-	if (UUID_RE.test(sessionIdOrKey)) return sessionIdOrKey.toLowerCase();
-	const hash = createHash('sha1')
-		.update('n8n-nodes-claudecode/chat-model-session/')
-		.update(sessionIdOrKey)
-		.digest('hex');
-	const bytes = hash.slice(0, 32).split('');
-	bytes[12] = '5'; // version 5
-	bytes[16] = ((parseInt(bytes[16], 16) & 0x3) | 0x8).toString(16); // RFC 4122 variant
-	const h = bytes.join('');
-	return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
-}
 
 export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 	/** What `isChatInstance` reads. Declared explicitly rather than inherited so the gate never
@@ -184,18 +161,10 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 		// configured timeout twice (a 300s node occupying 600s of wall clock).
 		const startedAt = Date.now();
 
-		/** One CLI run. `resume` continues an existing session; `create` starts one under the
-		 * deterministic id (the SDK's `sessionId` option); null is a plain anonymous session. */
-		const runOnce = async (session: { resume: string } | { create: string } | null) => {
+		/** One CLI run; runWithSession decides which session it targets and its time budget. */
+		const runOnce = async (session: SessionRequest, budget: { timeoutSeconds: number }) => {
 			const promptStream = createPromptStream(mapped.prompt);
-			// The retry must not spend the configured timeout twice: runQuery arms its timers from
-			// the start of EACH run, so a 300s node could occupy 600s of wall clock. The second
-			// attempt gets what is left of the budget, floored at 5s so it is never born expired.
-			const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-			const budgeted: ClaudeCodeParams = {
-				...callParams,
-				timeoutSeconds: Math.max(5, callParams.timeoutSeconds - elapsedSeconds),
-			};
+			const budgeted: ClaudeCodeParams = { ...callParams, timeoutSeconds: budget.timeoutSeconds };
 			const runParams: ClaudeCodeParams =
 				session && 'resume' in session
 					? { ...budgeted, operation: 'continue', sessionId: session.resume }
@@ -265,38 +234,6 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 			return { run, sdkMessages };
 		};
 
-		/** True when an attempt hit the session-not-found outcome. Measured twice, because it has
-		 * TWO shapes: the generator rejects with "No conversation found with session ID: …"
-		 * (what the runner reports as `run.error` — seen on case65c), and, when the stream is
-		 * abandoned before the rejection lands, a silent `error_during_execution` result with
-		 * zero assistant turns (the original spike, which broke out of the loop early and
-		 * therefore only saw this one). */
-		const resumeFoundNothing = (attempt: {
-			run: { error: unknown; timedOut: boolean };
-			sdkMessages: SDKMessage[];
-		}) => {
-			if (attempt.run.timedOut) return false;
-			if (attempt.run.error !== null) {
-				const text =
-					attempt.run.error instanceof Error
-						? attempt.run.error.message
-						: String(attempt.run.error);
-				return /No conversation found with session ID/i.test(text);
-			}
-			// The silent shape: an error result with no assistant turn at all. Narrowed with
-			// `num_turns` because any early failure — an auth refusal, a CLI crash — wears the same
-			// subtype, and treating those as "session missing" bills a second pointless run and
-			// then blames the container's disk for something else entirely.
-			const result = findResult(attempt.sdkMessages) as
-				| { subtype?: string; num_turns?: number }
-				| undefined;
-			return (
-				assistantMessages(attempt.sdkMessages).length === 0 &&
-				result?.subtype === 'error_during_execution' &&
-				(result.num_turns ?? 0) === 0
-			);
-		};
-
 		const logIndex = deps.log?.start({
 			messages: messages.map((message) => ({
 				type: message._getType(),
@@ -307,29 +244,23 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 			...(sessionUuid ? { sessionUuid } : {}),
 		});
 
-		let sessionState: 'new' | 'resumed' | 'created' = sessionUuid ? 'resumed' : 'new';
 		try {
-			let attempt = await runOnce(sessionUuid ? { resume: sessionUuid } : null);
-
-			// First message of a conversation: the deterministic id names a session that does not
-			// exist yet. Create it under that SAME id and run again — this is what makes a stable
-			// conversation key work with no storage anywhere (no Data Table, no client state).
-			if (sessionUuid && resumeFoundNothing(attempt)) {
-				deps.debug.log('Session not found — creating it under the deterministic id', {
-					sessionUuid,
-				});
-				sessionState = 'created';
-				attempt = await runOnce({ create: sessionUuid });
-				if (resumeFoundNothing(attempt)) {
-					throw new Error(
-						`Claude Code could neither resume nor create session ${sessionUuid} ` +
-							`(from Session ID "${deps.params.sessionId}"). Check the container's disk and ` +
-							'the debug log, or retry without Session ID to run stateless.',
-					);
-				}
+			const session = await runWithSession(runOnce, {
+				sessionUuid,
+				timeoutSeconds: callParams.timeoutSeconds,
+				startedAt,
+				debug: deps.debug,
+			});
+			if (session.unrecoverable) {
+				throw new Error(
+					`Claude Code could neither resume nor create session ${sessionUuid} ` +
+						`(from Session ID "${deps.params.sessionId}"). Check the container's disk and ` +
+						'the debug log, or retry without Session ID to run stateless.',
+				);
 			}
+			const sessionState = session.state;
 
-			const { run, sdkMessages } = attempt;
+			const { run, sdkMessages } = session.attempt;
 			const chat = resolveChatOutcome(sdkMessages);
 
 			if (run.timedOut) {
