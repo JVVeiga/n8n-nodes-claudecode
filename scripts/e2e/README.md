@@ -176,7 +176,11 @@ only a real n8n shows, and so what they assert on:
   success with no object), or it exhausts the CLI's five retries, after which the SDK also throws.
   Both must be a `structured_output` failure; the second once came out as an `execution_error`.
 - `editor83` is never executed: it is the canvas a browser uses to check that a Subagent cannot be
-  dragged onto the n8n AI Agent's Tool input.
+  dragged onto the n8n AI Agent's Tool input, and where NDV parameters get toggled. **A browser
+  must never edit a `case…` workflow**: n8n 2.x autosaves, and an NDV toggle saved mid-sequence
+  once left case83 on Session = Resume with no key, failing the next run. A browser that exits
+  without closing also leaves an edit lock ("Editing in another tab") that the next one must take
+  over with "Edit here".
 
 ## Retry a timing-sensitive failure before investigating it
 

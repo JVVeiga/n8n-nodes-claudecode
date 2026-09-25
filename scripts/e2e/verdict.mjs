@@ -32,7 +32,7 @@ const checks = [
   // These are three SEPARATE runs, so cost, duration and session id legitimately differ. What must
   // match is the SHAPE — same envelope keys, same metric keys — and the answer to the same prompt.
   // Whether the three agree field-for-field on ONE run is a unit test's job (output.test.ts).
-  ['20 all three 1.2 formats share one envelope shape', () => {
+  ['20s 20m 20t all three 1.2 formats share one envelope shape', () => {
     const runs = ['case20s', 'case20m', 'case20t'].map((n) => get(n)?.itemJson);
     if (runs.some((j) => !j)) return false;
     const metricKeys = runs.map((j) => Object.keys(j.metrics).sort().join(','));
