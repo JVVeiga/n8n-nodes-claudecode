@@ -44,11 +44,11 @@ describe('Claude Code Agent — identity and connections', () => {
 		assert.equal((d as { usableAsTool?: boolean }).usableAsTool, undefined);
 	});
 
-	it('inputs: main, tools, subagents and at most one output parser', () => {
+	it('inputs: main, subagents, tools and at most one output parser', () => {
 		assert.deepEqual(d.inputs, [
 			'main',
-			{ type: 'ai_tool', displayName: 'Tools', required: false },
 			{ type: 'ai_agent', displayName: 'Subagents', required: false },
+			{ type: 'ai_tool', displayName: 'Tools', required: false },
 			{ type: 'ai_outputParser', displayName: 'Output Parser', maxConnections: 1, required: false },
 		]);
 		assert.deepEqual(d.outputs, ['main']);

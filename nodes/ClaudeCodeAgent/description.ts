@@ -113,10 +113,12 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	defaults: {
 		name: 'Claude Code Agent',
 	},
+	// The editor spaces AI ports by count, not label length: the short label goes in the middle so
+	// "Subagents" and "Output Parser" do not overlap.
 	inputs: [
 		NodeConnectionType.Main,
-		{ type: NodeConnectionType.AiTool, displayName: 'Tools', required: false },
 		{ type: NodeConnectionType.AiAgent, displayName: 'Subagents', required: false },
+		{ type: NodeConnectionType.AiTool, displayName: 'Tools', required: false },
 		{
 			type: NodeConnectionType.AiOutputParser,
 			displayName: 'Output Parser',
