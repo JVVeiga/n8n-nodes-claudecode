@@ -65,7 +65,8 @@
       "dist/nodes/ClaudeCodeChatModel/ClaudeCodeChatModel.node.js",
       "dist/nodes/ClaudeCodeTool/ClaudeCodeTool.node.js",
       "dist/nodes/ClaudeCodeUsageTool/ClaudeCodeUsageTool.node.js",
-      "dist/nodes/ClaudeCodeAgent/ClaudeCodeAgent.node.js"
+      "dist/nodes/ClaudeCodeAgent/ClaudeCodeAgent.node.js",
+      "dist/nodes/ClaudeCodeSubagent/ClaudeCodeSubagent.node.js"
     ]
   },
   "dependencies": {

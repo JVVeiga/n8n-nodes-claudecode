@@ -1,0 +1,26 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.claudeCodeSubagent",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["AI"],
+	"subcategories": {
+		"AI": ["Agents"]
+	},
+	"alias": [
+		"claude",
+		"claude code",
+		"subagent",
+		"agent",
+		"specialist",
+		"delegate",
+		"anthropic",
+		"subagente"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#claude-code-subagent"
+			}
+		]
+	}
+}
