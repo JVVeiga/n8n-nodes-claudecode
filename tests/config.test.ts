@@ -367,6 +367,10 @@ describe('buildQueryOptions — the applier table', () => {
 			'mcpServers',
 			'partialMessages',
 			'newSessionId',
+			// Agent-only inputs, appended last so every earlier position is unchanged.
+			'agents',
+			'outputFormat',
+			'claudeAiConnectors',
 		]);
 	});
 
@@ -410,6 +414,9 @@ describe('buildQueryOptions — the applier table', () => {
 				},
 				includePartialMessages: true,
 				newSessionId: '00000000-0000-5000-8000-000000000001',
+				agents: { reviewer: { description: 'Reviews code', prompt: 'You review code.' } },
+				outputFormat: { type: 'json_schema', schema: { type: 'object' } },
+				claudeAiConnectors: false,
 			}),
 		);
 		assert.deepEqual(names, APPLIER_NAMES);

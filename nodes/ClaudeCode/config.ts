@@ -1,3 +1,4 @@
+import type { AgentDefinition, OutputFormat } from '@anthropic-ai/claude-agent-sdk';
 import type { PromptStream } from './promptStream';
 import { buildAuthEnv, type AuthSelection } from '../shared/auth';
 import type { Problem } from '../shared/problem';
@@ -49,6 +50,15 @@ export type ConfigDeps = {
 	 * deterministic id when resuming found nothing — which is what makes a stable conversation
 	 * key work with no storage anywhere. Not combined with `resume` by its only caller. */
 	newSessionId?: string;
+	/** Programmatic subagents, keyed by name. */
+	agents?: Record<string, AgentDefinition>;
+	/** Ask the SDK for a structured result validated against this JSON Schema. */
+	outputFormat?: OutputFormat;
+	/** false switches off the claude.ai cloud connectors a full login auto-connects; absent or
+	 * true leaves the CLI default. */
+	claudeAiConnectors?: boolean;
+	/** Appended after `additional.systemPrompt` in the preset's `append` slot. */
+	instructionsAppend?: string;
 };
 
 export type ConfigResult = {
@@ -128,13 +138,12 @@ const APPLIERS: Applier[] = [
 		// Appended to Claude Code's own preset rather than replacing it, so the built-in agent
 		// behaviour survives a custom system prompt.
 		name: 'systemPrompt',
-		apply: ({ options, params }) => {
-			if (!params.additional.systemPrompt) return false;
-			options.systemPrompt = {
-				type: 'preset',
-				preset: 'claude_code',
-				append: params.additional.systemPrompt,
-			};
+		apply: ({ options, params, deps }) => {
+			const append = [params.additional.systemPrompt, deps.instructionsAppend]
+				.filter((part): part is string => typeof part === 'string' && part !== '')
+				.join('\n\n');
+			if (append === '') return false;
+			options.systemPrompt = { type: 'preset', preset: 'claude_code', append };
 			return true;
 		},
 	},
@@ -374,6 +383,33 @@ const APPLIERS: Applier[] = [
 			if (!deps.newSessionId) return false;
 			options.sessionId = deps.newSessionId;
 			note('newSessionId', deps.newSessionId);
+			return true;
+		},
+	},
+	{
+		name: 'agents',
+		apply: ({ options, deps, note }) => {
+			if (!deps.agents || Object.keys(deps.agents).length === 0) return false;
+			options.agents = deps.agents;
+			note('agents', Object.keys(deps.agents));
+			return true;
+		},
+	},
+	{
+		name: 'outputFormat',
+		apply: ({ options, deps }) => {
+			if (!deps.outputFormat) return false;
+			options.outputFormat = deps.outputFormat;
+			return true;
+		},
+	},
+	{
+		// Merged, not assigned: ultracodeSetting may already have written `settings.ultracode`.
+		name: 'claudeAiConnectors',
+		apply: ({ options, deps }) => {
+			if (deps.claudeAiConnectors !== false) return false;
+			const current = typeof options.settings === 'object' ? options.settings : {};
+			options.settings = { ...current, disableClaudeAiConnectors: true };
 			return true;
 		},
 	},
