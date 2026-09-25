@@ -9,6 +9,7 @@ import { NodeOperationError } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthMode } from '../shared/auth';
 import { createDebugLogger, type DebugLogger } from '../shared/debug';
+import { lastResult } from '../shared/sdkMessage';
 import { readAuth } from '../shared/readAuth';
 import { usageReporting } from '../shared/reportUsage';
 import {
@@ -308,12 +309,20 @@ export async function runAgentItems(
 				throw error;
 			}
 
+			// The SDK rejects right after yielding an exhausted-retries result; that rejection only
+			// repeats the result, which is reported below as the structured failure it is.
+			const structuredExhausted =
+				structuredOutcome !== null &&
+				'failure' in structuredOutcome &&
+				lastResult(messages)?.subtype === 'error_max_structured_output_retries';
 			const runError = session.unrecoverable
 				? new Error(
 						`Claude Code could neither resume nor create the session for "${agent.session.key}" ` +
 							`(${sessionUuid}). Check the container's disk and the debug log, or set Session to New.`,
 					)
-				: run.error;
+				: structuredExhausted
+					? null
+					: run.error;
 			if (runError !== null) {
 				const errorMessage = runError instanceof Error ? runError.message : String(runError);
 				if (ctx.continueOnFail()) {

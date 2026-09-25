@@ -360,6 +360,35 @@ describe('ClaudeCodeAgent — structured output', () => {
 		],
 	];
 
+	// The real SDK rejects right after yielding an error result ("Claude Code returned an error
+	// result: …"), so the retry limit arrives as a result AND a run error.
+	const exhausted: FakeQueryOptions = {
+		messages: failures[1][1],
+		throwAfter: new Error(
+			'Claude Code returned an error result: Failed to provide valid structured output after 5 attempts',
+		),
+	};
+
+	it('the retry limit followed by the SDK’s throw is still a structured_output failure', async () => {
+		const { json } = await exec({
+			continueOnFail: true,
+			params: { outputMode: 'jsonSchema', jsonSchema: JSON.stringify(SCHEMA) },
+			stream: exhausted,
+		});
+		const details = json.details as Record<string, unknown>;
+		assert.equal(details.errorType, 'structured_output');
+		assert.equal(typeof details.metrics, 'object');
+	});
+
+	it('the retry limit followed by the SDK’s throw throws a structured_output error', async () => {
+		const { error } = await execExpectingThrow({
+			params: { outputMode: 'jsonSchema', jsonSchema: JSON.stringify(SCHEMA) },
+			stream: exhausted,
+		});
+		assert.ok(error instanceof NodeOperationError);
+		assert.equal(error.type, 'structured_output');
+	});
+
 	for (const [label, messages] of failures) {
 		it(`${label}: a structured_output failure item under Continue On Fail`, async () => {
 			const { json } = await exec({
