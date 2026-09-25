@@ -31,6 +31,17 @@ export type FakeContextOptions = {
 	 * for a declared input with nothing connected. A type absent from the map throws.
 	 */
 	connections?: Record<string, unknown>;
+	/**
+	 * Model the members usage reporting reads: `getExecutionId`, `getWorkflow` and
+	 * `executeWorkflow`. Absent, all three stay unimplemented.
+	 */
+	workflow?: { executionId?: string; workflowId?: string; executeWorkflowThrows?: boolean };
+};
+
+export type ExecuteWorkflowCall = {
+	workflowId: string;
+	payload: unknown;
+	doNotWaitToFinish?: boolean;
 };
 
 export type LogEntry = {
@@ -50,6 +61,8 @@ export type FakeContext = {
 	reads: string[];
 	/** Every `getInputConnectionData` call, in order. */
 	connectionReads: Array<{ type: string; itemIndex: number }>;
+	/** Every `executeWorkflow` call, when `workflow` is modelled. */
+	workflowCalls: ExecuteWorkflowCall[];
 	/** Replace a parameter mid-test (e.g. between items). */
 	setParam: (name: string, value: unknown) => void;
 	logsFor: (level: LogEntry['level']) => LogEntry[];
@@ -76,6 +89,8 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 	const reads: string[] = [];
 	const connectionReads: Array<{ type: string; itemIndex: number }> = [];
 	const cancellationCallbacks: Array<() => void> = [];
+	const workflowCalls: ExecuteWorkflowCall[] = [];
+	const workflow = options.workflow;
 
 	const log =
 		(level: LogEntry['level']) =>
@@ -148,8 +163,31 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 			return connections[type];
 		},
 
-		// Everything else the interface declares but these nodes never call.
-		getWorkflow: NOT_IMPLEMENTED('getWorkflow'),
+		...(workflow
+			? {
+					getExecutionId: () => workflow.executionId ?? 'exec-1',
+					getWorkflow: () => ({ id: workflow.workflowId ?? 'wf-1', name: 'Fake', active: false }),
+					executeWorkflow: async (
+						info: { id?: string },
+						inputData?: Array<{ json: unknown }>,
+						_cb?: unknown,
+						opts?: { doNotWaitToFinish?: boolean },
+					) => {
+						if (workflow.executeWorkflowThrows) {
+							throw new Error('collector workflow is unavailable');
+						}
+						workflowCalls.push({
+							workflowId: info.id ?? '',
+							payload: inputData?.[0]?.json,
+							doNotWaitToFinish: opts?.doNotWaitToFinish,
+						});
+						return { data: [], executionId: 'sub-exec' };
+					},
+				}
+			: {
+					// Everything else the interface declares but these nodes never call.
+					getWorkflow: NOT_IMPLEMENTED('getWorkflow'),
+				}),
 		helpers: new Proxy(
 			{
 				/**
@@ -183,6 +221,7 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 		logs,
 		reads,
 		connectionReads,
+		workflowCalls,
 		cancel: () => {
 			for (const cb of cancellationCallbacks) cb();
 		},

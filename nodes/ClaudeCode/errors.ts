@@ -1,6 +1,7 @@
 import type { IDataObject } from 'n8n-workflow';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { findResult } from '../shared/sdkMessage';
+import { buildRunMetrics } from './output/metrics';
 import {
 	buildTimeoutPayload,
 	collectRunMetrics,
@@ -132,6 +133,20 @@ export function buildFailureItem(
 		num_turns: spend.num_turns,
 		session_id: spend.session_id,
 		usage: spend.usage,
+		diagnostics: ctx.diagnostics,
+	}) as IDataObject;
+}
+
+/**
+ * The soft failure item for a run that finished but did not deliver the structured object it was
+ * asked for. It carries the run's metrics, because the run was paid for either way.
+ */
+export function buildStructuredFailureItem(ctx: FailureContext, errorMessage: string): IDataObject {
+	return shapeFailureJson(ctx.nodeVersion, errorMessage, null, {
+		error: errorMessage,
+		errorType: 'structured_output',
+		itemIndex: ctx.itemIndex,
+		metrics: buildRunMetrics(ctx.messages, ctx.durationMs),
 		diagnostics: ctx.diagnostics,
 	}) as IDataObject;
 }

@@ -122,6 +122,8 @@ export async function reportRun(input: {
 	authMode: AuthMode;
 	/** Where a build failure is recorded. Optional so a caller without one still cannot throw. */
 	debug?: DebugLogger;
+	/** Diagnostics the caller already built, richer than the ones built here from `params`. */
+	diagnostics?: IDataObject;
 }): Promise<void> {
 	const { usage } = input;
 	if (!usage) return;
@@ -146,14 +148,16 @@ export async function reportRun(input: {
 				durationMs: input.durationMs,
 				// The main node's builder, called here rather than injected: `shared/` already depends
 				// on `ClaudeCode/` for types, and an injected function would only hide which one runs.
-				diagnostics: buildDiagnostics({
-					messages: input.messages,
-					params: input.params,
-					// Always set by shared/subNodeParams.ts; read straight rather than defaulted twice.
-					permissionMode: input.params.additional.permissionMode as string,
-					appliedEffort: input.appliedEffort,
-					authMode: input.authMode,
-				}) as unknown as IDataObject,
+				diagnostics:
+					input.diagnostics ??
+					(buildDiagnostics({
+						messages: input.messages,
+						params: input.params,
+						// Always set by shared/subNodeParams.ts; read straight rather than defaulted twice.
+						permissionMode: input.params.additional.permissionMode as string,
+						appliedEffort: input.appliedEffort,
+						authMode: input.authMode,
+					}) as unknown as IDataObject),
 			}),
 		);
 	} catch (error) {
