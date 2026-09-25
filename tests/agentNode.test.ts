@@ -220,6 +220,40 @@ describe('ClaudeCodeAgent — a plain run', () => {
 		});
 		assert.equal(diagnosticsOf(json).subagentToolUses, 2);
 	});
+
+	it('answers with the LAST result when background subagents made the CLI write several', async () => {
+		// Measured in the e2e container: the turn that launches background subagents ends in its
+		// own result, and each completion notification starts a turn that ends in another.
+		const { json } = await exec({
+			params: { options: { includeTranscript: true } },
+			stream: {
+				messages: [
+					init(),
+					assistantTool('Agent'),
+					successResult({ result: 'Launched both; waiting for them.', total_cost_usd: 0.04 }),
+					assistantText('ALPHA=ORCHID'),
+					successResult({ result: 'ALPHA=ORCHID BETA=GRANITE', total_cost_usd: 0.05 }),
+				],
+			},
+		});
+		assert.equal(json.result, 'ALPHA=ORCHID BETA=GRANITE');
+		assert.equal((json.metrics as IDataObject).total_cost_usd, 0.05);
+		assert.equal((json.messages as unknown[]).length, 5);
+	});
+
+	it('an error in the final result is not masked by an earlier success', async () => {
+		const { json } = await exec({
+			stream: {
+				messages: [
+					init(),
+					successResult({ result: 'Launched; waiting.' }),
+					errorResult('error_during_execution', { errors: ['subagent crashed'] }),
+				],
+			},
+		});
+		assert.equal(json.success, false);
+		assert.notEqual(json.result, 'Launched; waiting.');
+	});
 });
 
 describe('ClaudeCodeAgent — tools', () => {
