@@ -210,3 +210,46 @@ describe('sdkMessages — streams are well-formed', () => {
 		);
 	});
 });
+
+describe('createFakeContext — getInputConnectionData', () => {
+	it('returns what the map holds for the type, as given', async () => {
+		const tools = [{ name: 'a' }, { name: 'b' }];
+		const parser = { getSchema: () => ({}) };
+		const { ctx } = createFakeContext({
+			connections: { ai_tool: tools, ai_outputParser: parser },
+		});
+		assert.equal(await ctx.getInputConnectionData('ai_tool' as never, 0), tools);
+		assert.equal(await ctx.getInputConnectionData('ai_outputParser' as never, 0), parser);
+	});
+
+	it('returns undefined for a declared type with nothing connected', async () => {
+		const { ctx } = createFakeContext({ connections: { ai_agent: undefined } });
+		assert.equal(await ctx.getInputConnectionData('ai_agent' as never, 0), undefined);
+	});
+
+	it('records every call with its item index, in order', async () => {
+		const { ctx, connectionReads } = createFakeContext({
+			connections: { ai_tool: [], ai_agent: undefined },
+		});
+		await ctx.getInputConnectionData('ai_tool' as never, 0);
+		await ctx.getInputConnectionData('ai_agent' as never, 1);
+		assert.deepEqual(connectionReads, [
+			{ type: 'ai_tool', itemIndex: 0 },
+			{ type: 'ai_agent', itemIndex: 1 },
+		]);
+	});
+
+	it('throws a named error for a type the test did not model', async () => {
+		const { ctx, connectionReads } = createFakeContext({ connections: { ai_tool: [] } });
+		await assert.rejects(
+			ctx.getInputConnectionData('ai_outputParser' as never, 0),
+			/getInputConnectionData\('ai_outputParser'\) has no modelled connection/,
+		);
+		assert.deepEqual(connectionReads, [{ type: 'ai_outputParser', itemIndex: 0 }]);
+	});
+
+	it('throws for every type when no connections map is given', async () => {
+		const { ctx } = createFakeContext();
+		await assert.rejects(ctx.getInputConnectionData('ai_tool' as never, 0), /FakeExecuteFunctions/);
+	});
+});
