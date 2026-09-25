@@ -2,6 +2,50 @@ import type { INodeProperties } from 'n8n-workflow';
 import { EXTENSION_OPTIONS } from './extensionOptions';
 import { FALLBACK_MODEL_OPTIONS } from './models';
 
+export const PERMISSION_MODE_OPTION: INodeProperties = {
+	displayName: 'Permission Mode',
+	name: 'permissionMode',
+	type: 'options',
+	options: [
+		{
+			name: 'Accept Edits',
+			value: 'acceptEdits',
+			description: 'Automatically accept file edits',
+		},
+		{
+			name: 'Auto',
+			value: 'auto',
+			description: 'Let Claude Code decide, without prompting',
+		},
+		{
+			name: 'Bypass Permissions',
+			value: 'bypassPermissions',
+			description: 'Skip all permission checks',
+		},
+		{
+			name: 'Default',
+			value: 'default',
+			description:
+				'Standard permission prompts. Headless runs cannot answer them, so anything not pre-approved is denied.',
+		},
+		{
+			name: "Don't Ask",
+			value: 'dontAsk',
+			description:
+				'Never prompt. Tools that are pre-approved in Allowed Tools run; anything else is denied.',
+		},
+		{
+			name: 'Plan',
+			value: 'plan',
+			description:
+				'Planning mode - Claude produces a plan and executes no tools. Nothing is written.',
+		},
+	],
+	default: 'bypassPermissions',
+	description:
+		"How to handle permission requests for tool usage. Bypass Permissions is the default because n8n runs headless and cannot answer a prompt; pair Don't Ask with Allowed Tools for a bounded run.",
+};
+
 /**
  * The Additional Options collection: everything that is not part of the everyday shape of a
  * request. Split from properties.ts because it is half the schema by line count and a separate
@@ -174,49 +218,7 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 			description: 'Maximum number of thinking tokens (0 for unlimited)',
 			hint: 'Controls how many tokens Claude can use for internal reasoning',
 		},
-		{
-			displayName: 'Permission Mode',
-			name: 'permissionMode',
-			type: 'options',
-			options: [
-				{
-					name: 'Accept Edits',
-					value: 'acceptEdits',
-					description: 'Automatically accept file edits',
-				},
-				{
-					name: 'Auto',
-					value: 'auto',
-					description: 'Let Claude Code decide, without prompting',
-				},
-				{
-					name: 'Bypass Permissions',
-					value: 'bypassPermissions',
-					description: 'Skip all permission checks',
-				},
-				{
-					name: 'Default',
-					value: 'default',
-					description:
-						'Standard permission prompts. Headless runs cannot answer them, so anything not pre-approved is denied.',
-				},
-				{
-					name: "Don't Ask",
-					value: 'dontAsk',
-					description:
-						'Never prompt. Tools that are pre-approved in Allowed Tools run; anything else is denied.',
-				},
-				{
-					name: 'Plan',
-					value: 'plan',
-					description:
-						'Planning mode - Claude produces a plan and executes no tools. Nothing is written.',
-				},
-			],
-			default: 'bypassPermissions',
-			description:
-				"How to handle permission requests for tool usage. Bypass Permissions is the default because n8n runs headless and cannot answer a prompt; pair Don't Ask with Allowed Tools for a bounded run.",
-		},
+		PERMISSION_MODE_OPTION,
 		{
 			displayName: 'System Prompt',
 			name: 'systemPrompt',

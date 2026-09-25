@@ -1,5 +1,5 @@
 import type { INodePropertyOptions, INodeProperties } from 'n8n-workflow';
-import { FALLBACK_MODEL_OPTIONS } from '../ClaudeCode/description/models';
+import { FALLBACK_MODEL_OPTIONS, MODEL_OPTIONS } from '../ClaudeCode/description/models';
 import { BUILT_IN_TOOL_OPTIONS } from '../ClaudeCode/description/toolOptions';
 
 /**
@@ -220,4 +220,16 @@ export const projectPathProperty = (description: string): INodeProperties => ({
 	placeholder: '/home/user/projects/my-app',
 	description,
 	hint: 'The path must exist inside the n8n container',
+});
+
+export const modelProperty = (): INodeProperties => ({
+	displayName: 'Model',
+	name: 'model',
+	type: 'options',
+	// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+	// Aliases first, then pinned IDs newest-first — see ../ClaudeCode/description/models.ts.
+	options: MODEL_OPTIONS,
+	default: 'sonnet',
+	description:
+		'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
 });
