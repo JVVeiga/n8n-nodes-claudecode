@@ -65,6 +65,31 @@ capacity comes back
 > This is the only template that does not need a webhook. It is also the one to copy the *shape* of:
 > put a usage read in front of anything that fans out into several Claude Code nodes.
 
+---
+
+### 5. [Claude Code Review Team](./claude-code-review-team.json)
+**Trigger**: Manual, with a Set node holding `projectPath`, `base` and `head`
+**What it does**:
+- Reads the diff between the two refs with **Code Review Kit** (Diff Context): changed files, the
+  added line numbers per file, and the zero-context patch
+- Runs a **Claude Code Agent** with three **Claude Code Subagent** reviewers (correctness,
+  performance and SQL, conventions), Subagent Orchestration set to Required
+- Returns a review object validated against a JSON Schema: `summary`, `verdict`
+  (`APPROVE` / `REQUEST_CHANGES`) and `items[]` with `path`, `line`, `type`, `severity`, `body`
+- Loads the team's review rules from `.review/rules.md` through Instruction Files, if the file
+  exists
+- Checks every `blocker` a second time with Verification, which resumes the session, tries to refute
+  each one from the code and removes the ones it refutes
+- Keeps only the items that sit on an added line (Validate Anchors) and gives each a stable
+  fingerprint (Fingerprint), so a later run can tell a repeated finding from a new one
+
+**Perfect for**: A first review pass on a branch before a human looks at it
+
+> It posts nothing. Add your own node after **Fingerprint** to publish the review, and store the
+> fingerprints if you want the Kit's **Dedupe** operation to work across runs. The reviewers are
+> read-only: Write, Edit and NotebookEdit are disallowed on the Agent and each subagent's tools are
+> limited to Read, Grep and Glob.
+
 ## 🛠️ How to Use These Templates
 
 ### Method 1: Import via n8n UI
@@ -109,6 +134,14 @@ capacity comes back
    ```
    Both Slack nodes post to `#engineering-alerts` — change the channel, and note that the guard
    needs no webhook or Project Path of its own (the gated Claude Code node still does).
+
+5. **Claude Code Review Team only**: the three values in **Review Inputs** and the Agent's budget
+   ```javascript
+   "projectPath": "/path/to/your/repo"   // a git clone the n8n process can read
+   "base": "origin/main"                 // the branch the change goes into
+   "head": "HEAD"                        // the branch or SHA holding the change
+   "maxBudgetUsd": 3                     // checked between turns, so a run can end above it
+   ```
 
 ### Required Credentials
 
