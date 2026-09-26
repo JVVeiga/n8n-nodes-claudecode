@@ -246,6 +246,28 @@ describe('Code Review Kit node — Fingerprint', () => {
 		]);
 	});
 
+	it('an absolute path is that item’s error, not the whole run’s', async () => {
+		const git = fakeGit({
+			showFile: (_ref, path) =>
+				path.startsWith('/')
+					? { problem: { message: `fatal: '${path}' is outside repository` } }
+					: { ok: APP },
+		});
+		const fake = createFakeContext({
+			params: params({
+				items: [
+					{ path: '/etc/passwd', line: 1 },
+					{ path: './src/app.ts', line: 9, type: 'bug' },
+				],
+			}),
+		});
+		const [[item]] = await runKitItems(fake.ctx, { git: git.factory });
+		const out = item.json.items as Array<Record<string, unknown>>;
+		assert.equal(out[0].fingerprint, null);
+		assert.match(out[1].fingerprint as string, /^[0-9a-f]{64}$/);
+		assert.deepEqual(git.calls, [['showFile', 'HEAD', 'src/app.ts']]);
+	});
+
 	it('gives the same fingerprint for the same snippet at another line', async () => {
 		const shifted = `top\nmore\n${APP}`;
 		const at = async (file: string, line: number) => {

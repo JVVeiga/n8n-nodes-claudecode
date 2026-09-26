@@ -40,6 +40,17 @@ export function fingerprint(path: string, type: string, snippet: string): string
 	return createHash('sha256').update(`${path}\0${type}\0${snippet}`).digest('hex');
 }
 
+/**
+ * The one spelling of a repository path: `./a`, `a//b` and `a/./b` read and hash as `a`, `a/b`.
+ * Null for a path git would resolve outside the tree: absolute, or climbing with `..`.
+ */
+export function normalizeRepoPath(path: string): string | null {
+	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return null;
+	const segments = path.split('/').filter((s) => s !== '' && s !== '.');
+	if (segments.length === 0 || segments.includes('..')) return null;
+	return segments.join('/');
+}
+
 const asType = (value: unknown): string =>
 	typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);
 
@@ -73,15 +84,20 @@ export async function fingerprintItems(
 			out.push(fail(`"${fields.path}" must be a non-empty string`));
 			continue;
 		}
+		const repoPath = normalizeRepoPath(path);
+		if (repoPath === null) {
+			out.push(fail(`"${path}" must be a path relative to the repository root, without ".."`));
+			continue;
+		}
 		if (typeof line !== 'number' || !Number.isInteger(line) || line < 1) {
 			out.push(fail(`"${fields.line}" must be a positive integer`));
 			continue;
 		}
 
-		let pending = reads.get(path);
+		let pending = reads.get(repoPath);
 		if (!pending) {
-			pending = readFile(path);
-			reads.set(path, pending);
+			pending = readFile(repoPath);
+			reads.set(repoPath, pending);
 		}
 		const read = await pending;
 		if ('error' in read) {
@@ -91,12 +107,12 @@ export async function fingerprintItems(
 		const lines = splitLines(read.text);
 		const snippet = normalizeSnippet(lines, line, radius);
 		if (snippet === null) {
-			out.push(fail(`line ${line} is outside ${path} (${lines.length} lines)`));
+			out.push(fail(`line ${line} is outside ${repoPath} (${lines.length} lines)`));
 			continue;
 		}
 		out.push({
 			...record,
-			[fields.fingerprint]: fingerprint(path, asType(record[fields.type]), snippet),
+			[fields.fingerprint]: fingerprint(repoPath, asType(record[fields.type]), snippet),
 		});
 	}
 	return out;

@@ -123,6 +123,50 @@ describe('Code Review Kit — fingerprintItems', () => {
 		);
 	});
 
+	it('a path outside the repository fails only its own item and is never read', async () => {
+		const calls: string[] = [];
+		const out = (await fingerprintItems(
+			[
+				{ path: '/etc/passwd', line: 1 },
+				{ path: '../other/m.js', line: 1 },
+				{ path: 'src/../../m.js', line: 1 },
+				{ path: 'm.js', line: 2 },
+			],
+			FIELDS,
+			0,
+			reader({ 'm.js': FILE }, calls),
+		)) as Array<Record<string, unknown>>;
+		assert.deepEqual(calls, ['m.js']);
+		for (const bad of out.slice(0, 3)) {
+			assert.equal(bad.fingerprint, null);
+			assert.match(bad.error as string, /relative to the repository root/);
+		}
+		assert.equal(out[0].path, '/etc/passwd', 'the item keeps what it was given');
+		assert.match(out[3].fingerprint as string, /^[0-9a-f]{64}$/);
+	});
+
+	it('spellings of one path read one file and give one fingerprint', async () => {
+		const calls: string[] = [];
+		const out = (await fingerprintItems(
+			[
+				{ path: 'src/m.js', line: 2 },
+				{ path: './src/m.js', line: 2 },
+				{ path: 'src//m.js', line: 2 },
+				{ path: 'src/./m.js', line: 2 },
+			],
+			FIELDS,
+			0,
+			reader({ 'src/m.js': FILE }, calls),
+		)) as Array<Record<string, unknown>>;
+		assert.deepEqual(calls, ['src/m.js']);
+		const expected = fingerprint('src/m.js', '', 'const sum = a + b;');
+		assert.deepEqual(
+			out.map((o) => o.fingerprint),
+			[expected, expected, expected, expected],
+		);
+		assert.equal(out[1].path, './src/m.js');
+	});
+
 	it('writes to the configured fields', async () => {
 		const out = (await fingerprintItems(
 			[{ file: 'm.js', at: 2, kind: 'bug' }],
