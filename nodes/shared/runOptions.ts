@@ -3,7 +3,7 @@ import { FALLBACK_MODEL_OPTIONS, MODEL_OPTIONS } from '../ClaudeCode/description
 import { BUILT_IN_TOOL_OPTIONS } from '../ClaudeCode/description/toolOptions';
 
 /**
- * The run options every sub-node offers, declared once.
+ * The run options every sub-node and the Agent offer, declared once.
  *
  * The Chat Model and the Task Tool each spelled these out — the six-entry Effort list and the
  * four-entry Thinking list verbatim in both files, 156 identical lines. `models.ts` and

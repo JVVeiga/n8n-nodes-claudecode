@@ -71,7 +71,7 @@ credentials/                   the two n8n credential types
   ClaudeCodeOAuthTokenApi.credentials.ts  a Claude Code token -> CLAUDE_CODE_OAUTH_TOKEN
 
 nodes/
-  shared/                      used by every node
+  shared/                      anything more than one node uses
     projectPath.ts             the cwd check, plus its "mount it in Docker" description
     auth.ts                    the ENTIRE auth policy — the scrub list and the env it builds
     readAuth.ts                the only impure half: the selector + getCredentials()
@@ -82,15 +82,16 @@ nodes/
     abort.ts                   attach/detach an operation's AbortController to outer signals
     preview.ts                 truncation for log and error text
     subNodeParams.ts           the run params every sub-node reads — ONE copy of the defaults
-    runOptions.ts              the Options collection every sub-node offers, as factories
-    toolRunLog.ts              toToolName + the addInputData/addOutputData pair for ai_tool
+    runOptions.ts              the run options the sub-nodes and the Agent offer, and the Model
+                               selector every node uses, as factories
+    toolRunLog.ts              toToolName + the addInputData/addOutputData pair (ai_tool unless given)
     usageReport.ts             the collector payload and run_key — pure, no n8n
     reportUsage.ts             the impure half: builds the reporter from a supply context
     toolBridge.ts              LangChain tools -> one in-process MCP server (tool.invoke), plus
                                flattenTools for what an ai_tool input returns (toolkits unflattened)
     session.ts                 Session ID -> deterministic uuid, and the resume-or-create retry
     subagent.ts                the tagged object a Subagent supplies and the Agent accepts
-    subagentLog.ts             the addInputData/addOutputData pair for ai_agent; never throws
+    subagentLog.ts             the Subagent's run log: toolRunLog on ai_agent; never throws
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -100,6 +101,7 @@ nodes/
       collect.ts               getBinaryDataBuffer + validation — the only impure reader
       plan.ts                  Attachment[] -> ContentBlockParam[] + staging list (pure)
       stage.ts                 the temp dir, and the cleanup the node must run
+      prepare.ts               collect -> plan -> stage -> the user turn; used by both nodes
     description/               the declarative schema — pure data, no branching
       properties.ts            top-level parameters
       additionalOptions.ts     the Additional Options collection
@@ -118,6 +120,7 @@ nodes/
       v12.ts                   the 1.2 unified envelope
       index.ts                 buildOutputItem — routes by typeVersion
     errors.ts                  the four failure paths, as data
+    settle.ts                  which path a failed item takes; throws the NodeOperationError
     timeout.ts                 run metrics, grace window, timeout payload/messages
     promptStream.ts            the prompt as an AsyncIterable
   ClaudeCodeChatModel/         a Chat Model sub-node for n8n's AI Agent (ai_languageModel)
@@ -145,7 +148,11 @@ nodes/
     escalate.ts                the read → scope-retry → paid-probe ladder, shared with the tool
     usage.ts                   window/account normalisation
   ClaudeCodeAgent/             a root node: tools, subagents and a parser as AI inputs
-    ClaudeCodeAgent.node.ts    the class + runAgentItems(ctx, deps); owns the run and the session
+    ClaudeCodeAgent.node.ts    the class + runAgentItems(ctx, deps); holds the item's state, settles it
+    prepare.ts                 every check that can refuse the item, before anything is staged
+    turn.ts                    one turn of the session (options, runner), the main run, how it settles
+    report.ts                  the usage report per CLI run and the subagents' own logs
+    values.ts                  isRecord / num / sum over values any field of which may be absent
     description.ts             its schema — input order chosen so the canvas labels do not overlap
     params.ts                  the ONLY getNodeParameter reader for this node
     connections.ts             the ONLY getInputConnectionData reader: tools, subagents, parser
@@ -155,11 +162,13 @@ nodes/
     outputSchema.ts            Output Mode + pasted schema or parser -> the schema sent (unwraps)
     structured.ts              SDKMessage[] -> the object, or why there is none (both failures)
     instructions.ts            Instruction Files -> the append text; the only file reader here
-    output.ts                  the 1.2 envelope + structured/verification, from the LAST result
+    output.ts                  the 1.2 envelope + structured/verification, from the LAST result;
+                               the Agent-only diagnostics fields
     verification/
       select.ts                Items Path + filter -> the items and their indices (pure)
       prompt.ts                the verifier's turn and the { keep, drop } schema
-      run.ts                   the second run over the resumed session; never fails the item
+      run.ts                   the second run over a fork of the session, its metrics and log;
+                               never fails the item
       apply.ts                 the verdict -> new structured + report; unjudged items are kept
       metrics.ts               both runs counted once; the verification cost is the difference
   ClaudeCodeSubagent/          a sub-node with an ai_agent output: one AgentDefinition
@@ -171,7 +180,8 @@ nodes/
     description.ts             its schema — four operations
     params.ts                  the ONLY getNodeParameter reader for this node
     operations.ts              one function per operation, over params and deps.git
-    git.ts                     the ONLY impure module: execFile('git', …), no shell
+    git.ts                     the ONLY impure module: execFile('git', …), no shell (the Project
+                               Path check reaches operations.ts as deps.pathExists)
     refs.ts                    the ref check that runs before git does
     input.ts                   a json parameter as text or as a parsed value
     diff.ts                    numstat + -U0 patch text -> files[], addedLines (pure)
@@ -195,24 +205,27 @@ nodes/
 | Change the output shape | `output/v12.ts` — **never** `output/legacy.ts` |
 | Change the `metrics` object | `output/metrics.ts` — it feeds v1.2 output AND every sub-node's usage report |
 | Change stop/timeout behaviour | `runner.ts` |
-| Change a failure item | `errors.ts` |
+| Change a failure item | `errors.ts`; which one an item gets, `settle.ts` |
 | Change how the Chat Model maps Agent messages | `ClaudeCodeChatModel/messages.ts` |
 | Change how the Agent's tools reach Claude Code | `shared/toolBridge.ts` |
 | Change the Task tool's contract or failure text | `ClaudeCodeTool/tool.ts` |
 | Change the Usage tool's report | `ClaudeCodeUsageTool/tool.ts` |
 | Change how a usage read escalates | `ClaudeCodeUsage/escalate.ts` — node and tool share it |
 | Change what a sub-node reports, or its run_key | `shared/usageReport.ts` (pure) / `shared/reportUsage.ts` (the n8n call) |
-| Add an option to every sub-node | `shared/runOptions.ts`, then compose it in each description |
+| Add an option to every sub-node or the Agent | `shared/runOptions.ts`, then compose it in each description |
 | Change a sub-node's run defaults | `shared/subNodeParams.ts` — never one node's params.ts |
 | Add or change an Agent parameter | `ClaudeCodeAgent/description.ts`, read in `ClaudeCodeAgent/params.ts` |
 | Add an AI input to the Agent, or change how one is read | `ClaudeCodeAgent/connections.ts` (and `inputs` in its description — mind the label order) |
-| Change the Agent's output | `ClaudeCodeAgent/output.ts` — it builds on `output/v12.ts`, never forks it |
+| Change the Agent's output or its own diagnostics fields | `ClaudeCodeAgent/output.ts` — it builds on `output/v12.ts` and `diagnostics.ts`, never forks them |
+| Change a check that refuses an Agent item | `ClaudeCodeAgent/prepare.ts` |
+| Change how an Agent turn is built, run or settled | `ClaudeCodeAgent/turn.ts` |
+| Change the Agent's usage reports or the subagents' logs | `ClaudeCodeAgent/report.ts` |
 | Change when a structured run counts as successful | `ClaudeCodeAgent/structured.ts` |
 | Change how a parser's schema becomes the one sent | `ClaudeCodeAgent/outputSchema.ts` |
 | Change how Instruction Files are read or bounded | `ClaudeCodeAgent/instructions.ts` |
 | Change `diagnostics.subagents` | `ClaudeCodeAgent/subagentReport.ts` |
 | Change what Required orchestration tells the model | `ClaudeCodeAgent/orchestration.ts` |
-| Change what Verification checks, says or applies | `verification/select.ts`, `prompt.ts`, `apply.ts`; its cost in `verification/metrics.ts` |
+| Change what Verification checks, says or applies | `verification/select.ts`, `prompt.ts`, `apply.ts`; its cost in `verification/metrics.ts`; the run itself in `verification/run.ts` |
 | Add a Subagent field | `ClaudeCodeSubagent/description.ts` + `params.ts` (it becomes an `AgentDefinition` field) |
 | Change the Subagent's execution log | `shared/subagentLog.ts` |
 | Change a Code Review Kit operation | `CodeReviewKit/operations.ts`, over the pure module: `diff.ts`, `anchors.ts`, `fingerprint.ts` or `dedupe.ts` |
@@ -366,7 +379,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1166 tests, node:test, no framework
+npm test                                    # 1200 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
