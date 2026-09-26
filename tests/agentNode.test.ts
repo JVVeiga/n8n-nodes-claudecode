@@ -396,6 +396,22 @@ describe('ClaudeCodeAgent — structured output', () => {
 		assert.deepEqual(diagnosticsOf(json).structuredOutput, { mode: 'jsonSchema', attempts: 1 });
 	});
 
+	it('the object survives a later turn that ends without one; the answer text is the last', async () => {
+		const { json } = await exec({
+			params: { outputMode: 'jsonSchema', jsonSchema: JSON.stringify(SCHEMA) },
+			stream: {
+				messages: [
+					...structuredRun({ summary: 'fine' }),
+					assistantText('The reviewer subagent finished.'),
+					successResult({ result: 'The reviewer subagent finished.' }),
+				],
+			},
+		});
+		assert.equal(json.success, true);
+		assert.deepEqual(json.structured, { summary: 'fine' });
+		assert.equal(json.result, 'The reviewer subagent finished.');
+	});
+
 	it('an invalid schema fails the item before anything is spawned', async () => {
 		const { error, calls } = await execExpectingThrow({
 			params: { outputMode: 'jsonSchema', jsonSchema: '{ not json' },

@@ -1,5 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { countToolUses, lastResult } from '../shared/sdkMessage';
+import { countToolUses, isResult, lastResult } from '../shared/sdkMessage';
+
+const hasObject = (value: unknown): boolean => value !== undefined && value !== null;
 
 export type StructuredOutcome =
 	| { ok: unknown; attempts: number }
@@ -16,10 +18,16 @@ export function extractStructured(messages: SDKMessage[]): StructuredOutcome {
 	if (!result) return { failure: 'the run ended without a result', attempts };
 
 	if (result.subtype === 'success') {
-		if (result.structured_output === undefined || result.structured_output === null) {
+		// A turn started by a background subagent's notification ends in a success of its own,
+		// without the object an earlier turn already produced.
+		const produced = messages
+			.filter(isResult)
+			.reverse()
+			.find((r) => r.subtype === 'success' && hasObject(r.structured_output));
+		if (!produced || produced.subtype !== 'success') {
 			return { failure: 'the model finished without producing the structured output', attempts };
 		}
-		return { ok: result.structured_output, attempts };
+		return { ok: produced.structured_output, attempts };
 	}
 
 	const errors = (Array.isArray(result.errors) ? result.errors : []).filter(

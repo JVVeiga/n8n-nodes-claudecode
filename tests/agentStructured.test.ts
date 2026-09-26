@@ -37,6 +37,38 @@ describe('extractStructured', () => {
 		assert.deepEqual(outcome, { ok: { n: 3 }, attempts: 1 });
 	});
 
+	it('an object from an earlier result wins over a later plain success without one', () => {
+		// A background subagent's notification starts a turn after the object was produced; that
+		// turn ends in a success of its own with no structured_output.
+		const outcome = extractStructured([
+			init(),
+			assistantTool('StructuredOutput'),
+			success({ structured_output: { n: 3 } }),
+			assistantText('The subagent finished.'),
+			success({ result: 'The subagent finished.' }),
+		]);
+		assert.deepEqual(outcome, { ok: { n: 3 }, attempts: 1 });
+	});
+
+	it('the latest object wins when several results carry one', () => {
+		const outcome = extractStructured([
+			init(),
+			success({ structured_output: { n: 1 } }),
+			success({ structured_output: { n: 2 } }),
+			success({ result: 'done' }),
+		]);
+		assert.deepEqual(outcome, { ok: { n: 2 }, attempts: 0 });
+	});
+
+	it('an error in the last result is not rescued by an earlier object', () => {
+		const outcome = extractStructured([
+			init(),
+			success({ structured_output: { n: 3 } }),
+			errorResult('error_during_execution', ['subagent crashed']),
+		]);
+		assert.deepEqual(outcome, { failure: 'subagent crashed', attempts: 0 });
+	});
+
 	it('fails a success result that carries no structured output — the prose give-up', () => {
 		const outcome = extractStructured([
 			init(),
