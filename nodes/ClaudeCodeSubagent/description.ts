@@ -2,6 +2,7 @@ import type { INodePropertyOptions, INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
 import { MODEL_OPTIONS } from '../ClaudeCode/description/models';
 import { BUILT_IN_TOOL_OPTIONS } from '../ClaudeCode/description/toolOptions';
+import { EFFORT_VALUES } from '../shared/runOptions';
 
 export const INHERIT = 'inherit';
 
@@ -16,11 +17,11 @@ const MODEL_CHOICES: INodePropertyOptions[] = [
 
 const EFFORT_CHOICES: INodePropertyOptions[] = [
 	{ name: 'Inherit From Agent', value: INHERIT },
-	{ name: 'Low', value: 'low' },
-	{ name: 'Medium', value: 'medium' },
-	{ name: 'High', value: 'high' },
-	{ name: 'Extra High', value: 'xhigh' },
-	{ name: 'Max', value: 'max' },
+	// Ultracode is a run mode, not a level an AgentDefinition accepts.
+	...EFFORT_VALUES.filter((o) => o.value !== 'ultracode').map(({ name, value }) => ({
+		name,
+		value,
+	})),
 ];
 
 /** No credentials and no project path: a subagent runs inside the Agent's own session. */

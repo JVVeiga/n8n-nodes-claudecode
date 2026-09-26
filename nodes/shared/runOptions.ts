@@ -15,7 +15,7 @@ import { BUILT_IN_TOOL_OPTIONS } from '../ClaudeCode/description/toolOptions';
  * the prose stays honest.
  */
 
-const EFFORT_VALUES: INodePropertyOptions[] = [
+export const EFFORT_VALUES: INodePropertyOptions[] = [
 	{ name: 'Low', value: 'low', description: 'Minimal thinking, fastest responses' },
 	{ name: 'Medium', value: 'medium', description: 'Moderate thinking' },
 	{ name: 'High', value: 'high', description: 'Deep reasoning (recommended default)' },
