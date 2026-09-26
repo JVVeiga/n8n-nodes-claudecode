@@ -34,6 +34,10 @@ export type ExecFileFn = (
 
 export const GIT_TIMEOUT_MS = 60_000;
 export const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+const MAX_BUFFER_MB = GIT_MAX_BUFFER / (1024 * 1024);
+
+const isOverflow = (error: ExecFailure): boolean =>
+	error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
 
 // quotePath off: a non-ASCII name comes back as UTF-8, not octal escapes. Literal pathspecs: a
 // file named `*.ts` is that file, not a glob.
@@ -86,6 +90,15 @@ function describeFailure(error: ExecFailure, stderr: string): string {
 
 function toProblem(args: string[], error: unknown): Problem {
 	const failure = error as ExecFailure;
+	// Checked first: node kills the child on overflow, which would otherwise read as a timeout.
+	if (isOverflow(failure)) {
+		return {
+			message: `git ${args[0]} output is larger than ${MAX_BUFFER_MB} MB`,
+			description:
+				'The change between these refs is too large to read. Narrow it: a Base Ref closer to ' +
+				'Head Ref, or smaller changes per review.',
+		};
+	}
 	const stderr = (failure.stderr ?? '').trim();
 	const detail = stderr.split('\n')[0] || failure.message;
 	return {
@@ -178,7 +191,15 @@ export function createGit(projectPath: string, execFileImpl: ExecFileFn = execFi
 			if (match[1] !== 'blob') {
 				return { problem: { message: `${path} is not a file at ${ref}` }, missing: true };
 			}
-			return run(['cat-file', 'blob', match[2]]);
+			// One oversized file is that item's problem, not the whole run's.
+			let tooLarge = false;
+			const blob = await run(['cat-file', 'blob', match[2]], (e) => {
+				tooLarge = isOverflow(e);
+				return tooLarge
+					? { message: `${path} is larger than ${MAX_BUFFER_MB} MB at ${ref}` }
+					: null;
+			});
+			return tooLarge ? { ...blob, missing: true } : blob;
 		},
 	};
 }

@@ -206,6 +206,37 @@ describe('Code Review Kit — git.ts runs git with an argument array', () => {
 		);
 	});
 
+	it('a diff over the output limit says so and how to narrow it, not that git was slow', async () => {
+		const overflow = () =>
+			failure({
+				code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+				killed: true,
+				signal: 'SIGTERM',
+				message: 'stdout maxBuffer length exceeded',
+			});
+		const git = createGit('/repo', recorder(overflow).exec);
+		for (const result of [await git.numstat('a', 'b'), await git.patchU0('a', 'b')]) {
+			assert.ok('problem' in result);
+			assert.equal(result.problem.message, 'git diff output is larger than 64 MB');
+			assert.match(result.problem.description ?? '', /too large/);
+			assert.match(result.problem.description ?? '', /Base Ref/);
+			assert.doesNotMatch(result.problem.description ?? '', /did not finish/);
+		}
+	});
+
+	it('a file over the output limit fails only its own item', async () => {
+		const { exec } = recorder((args) =>
+			args.includes('ls-tree')
+				? `100644 blob ${SHA}\tbig.bin\0`
+				: failure({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }),
+		);
+		const result = await createGit('/repo', exec).showFile('HEAD', 'big.bin');
+		assert.deepEqual(result, {
+			problem: { message: 'big.bin is larger than 64 MB at HEAD' },
+			missing: true,
+		});
+	});
+
 	it('says "no common ancestor" for merge-base exiting 1 with no stderr', async () => {
 		const result = await createGit(
 			'/repo',
