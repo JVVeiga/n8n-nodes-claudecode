@@ -21,7 +21,7 @@ const fieldName = (
 export const codeReviewKitDescription: INodeTypeDescription = {
 	displayName: 'Code Review Kit',
 	name: 'codeReviewKit',
-	icon: 'file:claudecode.svg',
+	icon: 'file:codereviewkit.svg',
 	group: ['transform'],
 	version: 1,
 	subtitle:

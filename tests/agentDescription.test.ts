@@ -82,6 +82,7 @@ describe('Claude Code Agent — parameters', () => {
 				'sessionMode',
 				'sessionKey',
 				'subagentOrchestration',
+				'orchestrationNotice',
 				'verification',
 				'options',
 			],
@@ -226,5 +227,24 @@ describe('Claude Code Agent — one reader per n8n seam', () => {
 			.filter((s) => /\.getInputConnectionData\(/.test(s.text))
 			.map((s) => s.file);
 		assert.deepEqual(readers, ['connections.ts']);
+	});
+});
+
+describe('Claude Code Agent — what the canvas shows', () => {
+	const d = claudeCodeAgentDescription;
+	const notice = d.properties.find((p) => p.name === 'orchestrationNotice');
+
+	it('the subtitle names the model, a schema mode and Verification when they apply', () => {
+		const subtitle = String(d.subtitle);
+		assert.match(subtitle, /\$parameter\["model"\]/);
+		assert.match(subtitle, /Schema/);
+		assert.match(subtitle, /Parser/);
+		assert.match(subtitle, /verification"\]\.enabled/);
+	});
+
+	it('warns that an Auto subagent may never run, only while Auto is selected', () => {
+		assert.equal(notice?.type, 'notice');
+		assert.deepEqual(notice?.displayOptions, { show: { subagentOrchestration: ['auto'] } });
+		assert.match(notice!.displayName, /may never run/);
 	});
 });

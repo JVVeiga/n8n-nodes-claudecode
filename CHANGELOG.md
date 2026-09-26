@@ -1,3 +1,15 @@
+## Unreleased
+
+What the canvas shows for the new nodes. Nothing a node emits changes, so no typeVersion moves.
+
+- **Claude Code Subagent** shows its **Name** and model as the subtitle (`alpha · inherit`). The
+  Agent delegates by that Name, not by the node's title, and the two could differ unseen.
+- **Claude Code Agent** shows the model plus the output mode and Verification when they apply
+  (`claude-sonnet-5 · Schema · Verify`), and warns under Subagent Orchestration that in Auto a
+  connected subagent may never run.
+- **Code Review Kit** has its own icon. It calls no model, and the Claude icon it shared suggested
+  it did. The Subagent has its own variant of the Claude icon.
+
 ## [2.3.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.2.0...v2.3.0) (2026-09-25)
 
 Three new nodes, three fixes to the existing ones, and new typeVersions for the fix that changes an
