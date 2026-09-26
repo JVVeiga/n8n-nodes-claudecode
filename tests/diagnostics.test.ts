@@ -3,7 +3,14 @@ import { describe, it } from 'node:test';
 import { buildDiagnostics } from '../nodes/ClaudeCode/diagnostics';
 import { readParams } from '../nodes/ClaudeCode/params';
 import { claudeCodeParams, createFakeContext } from './helpers/executeFunctions';
-import { init, streams } from './helpers/sdkMessages';
+import {
+	assistantTool,
+	init,
+	streams,
+	successResult,
+	taskNotified,
+	taskStarted,
+} from './helpers/sdkMessages';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 const paramsFor = (over: Record<string, unknown> = {}, typeVersion = 1.1) => {
@@ -111,6 +118,22 @@ describe('buildDiagnostics — Ultracode evidence', () => {
 		const d = build(streams.ultracode());
 		assert.equal(d.workflowToolUses, 1);
 		assert.equal(d.subagentToolUses, 1);
+	});
+
+	it('counts subagent delegations through the Agent tool the CLI actually calls', () => {
+		// Shaped after a recorded run: init lists Task, the delegations are tool uses named Agent.
+		const d = build([
+			init({ tools: ['Task', 'Read'] }),
+			assistantTool('Agent'),
+			taskStarted('a162'),
+			taskNotified('a162'),
+			assistantTool('Agent'),
+			taskStarted('a310', 'beta'),
+			taskNotified('a310'),
+			assistantTool('Read'),
+			successResult(),
+		]);
+		assert.equal(d.subagentToolUses, 2);
 	});
 
 	it('counts thinking blocks', () => {

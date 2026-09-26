@@ -101,3 +101,7 @@ export const countContent = (
 
 export const countToolUses = (messages: SDKMessage[], name: string): number =>
 	countContent(messages, (c) => c.type === 'tool_use' && c.name === name);
+
+/** The CLI invokes subagents through a tool named `Agent` while listing it as `Task` in init. */
+export const countSubagentToolUses = (messages: SDKMessage[]): number =>
+	countContent(messages, (c) => c.type === 'tool_use' && (c.name === 'Agent' || c.name === 'Task'));

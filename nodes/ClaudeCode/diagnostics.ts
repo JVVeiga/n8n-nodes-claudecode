@@ -1,5 +1,11 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { countContent, countToolUses, findInit, findResult } from '../shared/sdkMessage';
+import {
+	countContent,
+	countSubagentToolUses,
+	countToolUses,
+	findInit,
+	findResult,
+} from '../shared/sdkMessage';
 import type { AuthMode } from '../shared/auth';
 import type { AttachmentDiagnostics } from './attachments/types';
 import { effectiveEffort, isUltracode } from './params';
@@ -88,7 +94,7 @@ export function buildDiagnostics(input: DiagnosticsInput): Diagnostics {
 		// the model's context, so the init list already accounts for it.
 		workflowToolAvailable: (init?.tools ?? []).includes('Workflow'),
 		workflowToolUses: countToolUses(messages, 'Workflow'),
-		subagentToolUses: countToolUses(messages, 'Task'),
+		subagentToolUses: countSubagentToolUses(messages),
 		thinkingRequested: params.additional.thinking || 'default',
 		thinkingBlocks: countContent(messages, (c) => c.type === 'thinking'),
 		// Spread rather than assign: `attachments: undefined` would still be an own property, and

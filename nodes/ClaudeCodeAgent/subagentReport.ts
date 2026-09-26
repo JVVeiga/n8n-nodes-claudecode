@@ -1,6 +1,5 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import {
-	countContent,
 	isTaskNotification,
 	isTaskStarted,
 	type TaskNotificationMessage,
@@ -72,7 +71,3 @@ export function buildSubagentReport(
 		};
 	});
 }
-
-/** The CLI invokes subagents through a tool named `Agent` while listing it as `Task` in init. */
-export const countSubagentToolUses = (messages: SDKMessage[]): number =>
-	countContent(messages, (c) => c.type === 'tool_use' && (c.name === 'Agent' || c.name === 'Task'));

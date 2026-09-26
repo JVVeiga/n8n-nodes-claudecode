@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import {
-	buildSubagentReport,
-	countSubagentToolUses,
-	subagentInvocations,
-} from '../nodes/ClaudeCodeAgent/subagentReport';
+import { buildSubagentReport, subagentInvocations } from '../nodes/ClaudeCodeAgent/subagentReport';
+import { countSubagentToolUses } from '../nodes/shared/sdkMessage';
 import { assistantTool, init, msg, SESSION } from './helpers/sdkMessages';
 
 // Shaped after a recorded host run with two subagents, alpha and beta.

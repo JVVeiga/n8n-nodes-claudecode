@@ -5,7 +5,7 @@ import { resolveResultText } from '../ClaudeCode/output/resultText';
 import { buildV12Output } from '../ClaudeCode/output/v12';
 import { isResult, lastResult } from '../shared/sdkMessage';
 import type { SessionState } from '../shared/session';
-import { countSubagentToolUses, type SubagentDiagnostics } from './subagentReport';
+import type { SubagentDiagnostics } from './subagentReport';
 
 export type InstructionsDiagnostics = { loaded: string[]; missing: string[] };
 
@@ -23,8 +23,7 @@ export type AgentDiagnosticsExtra = {
 
 export type AgentDiagnosticsInput = DiagnosticsInput & { extra?: AgentDiagnosticsExtra };
 
-/** The shared diagnostics, read from the final result, then the Agent's own fields, with subagent
- * delegations counted under both of their tool names. */
+/** The shared diagnostics, read from the final result, then the Agent's own fields. */
 export function buildAgentDiagnostics(input: AgentDiagnosticsInput): Record<string, unknown> {
 	const { extra, ...shared } = input;
 	return {
@@ -34,8 +33,6 @@ export function buildAgentDiagnostics(input: AgentDiagnosticsInput): Record<stri
 		...(extra?.instructions ? { instructions: extra.instructions } : {}),
 		...(extra?.structuredOutput ? { structuredOutput: extra.structuredOutput } : {}),
 		...(extra?.sessionState ? { sessionState: extra.sessionState } : {}),
-		// Overrides the shared count in place, so the key keeps its position.
-		subagentToolUses: countSubagentToolUses(input.messages),
 	};
 }
 
