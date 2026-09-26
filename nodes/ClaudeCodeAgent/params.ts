@@ -4,6 +4,8 @@ import { parseBinaryPropertyNames } from '../ClaudeCode/params';
 import type { AttachAllSelection, ClaudeCodeParams, EffortSelection } from '../ClaudeCode/types';
 import { readSubNodeParams, usageWorkflowId, type SubNodeOptions } from '../shared/subNodeParams';
 import type { OutputMode } from './outputSchema';
+import { DEFAULT_VERIFIER_INSTRUCTIONS } from './verification/prompt';
+import type { ItemFilter } from './verification/select';
 
 export type AgentReadContext = {
 	getNodeParameter: IExecuteFunctions['getNodeParameter'];
@@ -13,6 +15,12 @@ export type AgentReadContext = {
 export type SessionMode = 'new' | 'resume';
 
 export type Orchestration = 'auto' | 'required';
+
+export type VerificationParams = {
+	itemsPath: string;
+	filter: ItemFilter | null;
+	instructions: string;
+};
 
 export type AgentExtras = {
 	outputMode: OutputMode;
@@ -25,6 +33,8 @@ export type AgentExtras = {
 	/** Empty when the node was not asked to report. */
 	usageWorkflowId: string;
 	processName: string;
+	/** Null when Verification is not enabled. */
+	verification: VerificationParams | null;
 };
 
 export type AgentParams = { run: ClaudeCodeParams; agent: AgentExtras };
@@ -93,7 +103,35 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 			includeTranscript: options.includeTranscript === true,
 			usageWorkflowId: usageWorkflowId(options.reportUsageTo),
 			processName: (options.processName ?? '').trim(),
+			verification: readVerification(ctx.getNodeParameter('verification', itemIndex, {})),
 		},
+	};
+}
+
+type VerificationInput = {
+	enabled?: boolean;
+	itemsPath?: string;
+	filterField?: string;
+	filterValues?: string;
+	instructions?: string;
+};
+
+export function readVerification(raw: unknown): VerificationParams | null {
+	const input = (raw ?? {}) as VerificationInput;
+	if (input.enabled !== true) return null;
+	const field = (input.filterField ?? '').trim();
+	return {
+		itemsPath: (input.itemsPath ?? '').trim(),
+		filter: field
+			? {
+					field,
+					values: (input.filterValues ?? '')
+						.split(',')
+						.map((v) => v.trim())
+						.filter((v) => v !== ''),
+				}
+			: null,
+		instructions: (input.instructions ?? '').trim() || DEFAULT_VERIFIER_INSTRUCTIONS,
 	};
 }
 

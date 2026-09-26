@@ -6,6 +6,7 @@ import {
 	resolveAgentAttachAll,
 } from '../nodes/ClaudeCodeAgent/params';
 import { readConnections } from '../nodes/ClaudeCodeAgent/connections';
+import { DEFAULT_VERIFIER_INSTRUCTIONS } from '../nodes/ClaudeCodeAgent/verification/prompt';
 import { createFakeContext } from './helpers/executeFunctions';
 
 const agentParams = (over: Record<string, unknown> = {}) => ({
@@ -110,6 +111,7 @@ describe('readAgentParams — the Agent’s own settings', () => {
 			includeTranscript: false,
 			usageWorkflowId: '',
 			processName: '',
+			verification: null,
 		});
 	});
 
@@ -142,6 +144,48 @@ describe('readAgentParams — the Agent’s own settings', () => {
 	it('a JSON Schema that arrives already parsed is turned back into text', () => {
 		const { agent } = read({ outputMode: 'jsonSchema', jsonSchema: { type: 'object' } });
 		assert.equal(agent.jsonSchemaText, '{"type":"object"}');
+	});
+
+	it('Verification is null unless enabled', () => {
+		assert.equal(read().agent.verification, null);
+		assert.equal(read({ verification: { itemsPath: 'findings' } }).agent.verification, null);
+		assert.equal(
+			read({ verification: { enabled: false, itemsPath: 'findings' } }).agent.verification,
+			null,
+		);
+	});
+
+	it('reads Verification: trimmed path, comma-separated filter values, default instructions', () => {
+		const { agent } = read({
+			verification: {
+				enabled: true,
+				itemsPath: ' review.inline_comments ',
+				filterField: ' severity ',
+				filterValues: 'high, critical ,, ',
+			},
+		});
+		assert.deepEqual(agent.verification, {
+			itemsPath: 'review.inline_comments',
+			filter: { field: 'severity', values: ['high', 'critical'] },
+			instructions: DEFAULT_VERIFIER_INSTRUCTIONS,
+		});
+	});
+
+	it('Verification with no filter field has no filter; blank instructions fall back', () => {
+		const { agent } = read({
+			verification: {
+				enabled: true,
+				itemsPath: 'findings',
+				filterValues: 'high',
+				instructions: '   ',
+			},
+		});
+		assert.equal(agent.verification?.filter, null);
+		assert.equal(agent.verification?.instructions, DEFAULT_VERIFIER_INSTRUCTIONS);
+		const custom = read({
+			verification: { enabled: true, itemsPath: 'findings', instructions: ' Be strict. ' },
+		});
+		assert.equal(custom.agent.verification?.instructions, 'Be strict.');
 	});
 
 	it('parseInstructionFiles drops blank lines and surrounding space', () => {

@@ -7,6 +7,7 @@ import {
 	AGENT_ATTACH_ALL_PROPERTY,
 	claudeCodeAgentDescription,
 } from '../nodes/ClaudeCodeAgent/description';
+import { DEFAULT_VERIFIER_INSTRUCTIONS } from '../nodes/ClaudeCodeAgent/verification/prompt';
 import { PERMISSION_MODE_OPTION } from '../nodes/ClaudeCode/description/additionalOptions';
 import {
 	ATTACH_ALL_BINARIES_PROPERTY,
@@ -81,6 +82,7 @@ describe('Claude Code Agent — parameters', () => {
 				'sessionMode',
 				'sessionKey',
 				'subagentOrchestration',
+				'verification',
 				'options',
 			],
 		);
@@ -182,9 +184,35 @@ describe('Claude Code Agent — options compose the shared factories', () => {
 	});
 });
 
+describe('Claude Code Agent — Verification', () => {
+	const verification = () => property('verification') as INodeProperties;
+	const field = (name: string) =>
+		(verification().options as INodeProperties[]).find((o) => o.name === name);
+
+	it('is a collection with exactly the fields readVerification consumes', () => {
+		assert.equal(verification().type, 'collection');
+		assert.deepEqual(verification().default, {});
+		assert.deepEqual(
+			(verification().options as INodeProperties[]).map((o) => o.name),
+			['enabled', 'filterValues', 'itemsPath', 'filterField', 'instructions'],
+		);
+	});
+
+	it('is off by default, hidden for Text, and prefilled with the default instructions', () => {
+		assert.equal(field('enabled')?.default, false);
+		assert.deepEqual(verification().displayOptions, { hide: { outputMode: ['text'] } });
+		assert.equal(field('instructions')?.default, DEFAULT_VERIFIER_INSTRUCTIONS);
+	});
+
+	it('says it needs structured output and runs a resumed second turn', () => {
+		assert.match(verification().description ?? '', /JSON Schema or Output Parser/);
+		assert.match(field('enabled')?.description ?? '', /resumes the session/);
+	});
+});
+
 describe('Claude Code Agent — one reader per n8n seam', () => {
 	const dir = join(process.cwd(), 'nodes', 'ClaudeCodeAgent');
-	const sources = readdirSync(dir)
+	const sources = (readdirSync(dir, { recursive: true }) as string[])
 		.filter((f) => f.endsWith('.ts'))
 		.map((f) => ({ file: f, text: readFileSync(join(dir, f), 'utf8') }));
 

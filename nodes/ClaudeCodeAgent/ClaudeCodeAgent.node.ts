@@ -6,10 +6,10 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type OutputFormat, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthMode } from '../shared/auth';
 import { createDebugLogger, type DebugLogger } from '../shared/debug';
-import { lastResult } from '../shared/sdkMessage';
+import { findInit, lastResult } from '../shared/sdkMessage';
 import { readAuth } from '../shared/readAuth';
 import { usageReporting } from '../shared/reportUsage';
 import {
@@ -27,6 +27,7 @@ import { planAttachments, stagedHintBlock } from '../ClaudeCode/attachments/plan
 import { stageAttachments } from '../ClaudeCode/attachments/stage';
 import type { StagedAttachments } from '../ClaudeCode/attachments/types';
 import { buildQueryOptions } from '../ClaudeCode/config';
+import { buildRunMetrics } from '../ClaudeCode/output/metrics';
 import {
 	buildFailureItem,
 	buildStructuredFailureItem,
@@ -49,6 +50,9 @@ import { readAgentParams } from './params';
 import { extractStructured } from './structured';
 import { buildSubagentReport, subagentInvocations } from './subagentReport';
 import { buildSubagents } from './subagents';
+import { combineVerificationMetrics } from './verification/metrics';
+import { verifyStructured } from './verification/run';
+import { checkVerification } from './verification/select';
 
 export type AgentExecuteDeps = {
 	/** The SDK's `query`. Injected so a test drives the message stream without spawning a CLI. */
@@ -89,6 +93,8 @@ export async function runAgentItems(
 		let staged: StagedAttachments | null = null;
 		const attempts: Attempt[] = [];
 		let reporting: { usage: UsageReporting; authMode: AuthMode; debug: DebugLogger } | null = null;
+		// Set only when a verification run happened: the item's one report then carries both runs.
+		let verifiedMetrics: IDataObject | null = null;
 
 		const fail = (message: string, description?: string, type?: string) =>
 			new NodeOperationError(ctx.getNode(), message, {
@@ -137,6 +143,10 @@ export async function runAgentItems(
 			if (schema && 'problem' in schema) {
 				throw fail(schema.problem.message, schema.problem.description);
 			}
+			const verificationProblem = checkVerification(agent.verification, agent.outputMode);
+			if (verificationProblem) {
+				throw fail(verificationProblem.message, verificationProblem.description);
+			}
 
 			const instructions =
 				agent.instructionFiles.length > 0
@@ -181,13 +191,18 @@ export async function runAgentItems(
 			if (usage) reporting = { usage, authMode: auth.mode, debug };
 
 			let appliedEffort: string | undefined;
+			const mainFormat: OutputFormat | undefined = schema
+				? { type: 'json_schema', schema: schema.schema }
+				: undefined;
 
-			const runOnce = async (
+			const runTurn = async (
 				session: SessionRequest,
 				budget: { timeoutSeconds: number },
+				turn: { content: PromptContent; outputFormat: OutputFormat | undefined; label: string },
+				sdkMessages: SDKMessage[],
 			): Promise<Attempt> => {
 				// Each attempt needs its own stream: the previous one was closed by its run.
-				const promptStream = createPromptStream(promptContent);
+				const promptStream = createPromptStream(turn.content);
 				const budgeted: ClaudeCodeParams = { ...params, timeoutSeconds: budget.timeoutSeconds };
 				const runParams: ClaudeCodeParams =
 					session && 'resume' in session
@@ -203,7 +218,7 @@ export async function runAgentItems(
 					},
 					mcp: bridge ?? undefined,
 					agents: subagents.agents,
-					outputFormat: schema ? { type: 'json_schema', schema: schema.schema } : undefined,
+					outputFormat: turn.outputFormat,
 					instructionsAppend: instructions?.append,
 					claudeAiConnectors: agent.allowConnectors ? undefined : false,
 					newSessionId: session && 'create' in session ? session.create : undefined,
@@ -213,7 +228,7 @@ export async function runAgentItems(
 				}
 				const { queryOptions, graceWindow } = outcome.config;
 
-				debug.log('Starting Claude Code Agent execution', {
+				debug.log(turn.label, {
 					itemIndex,
 					prompt: params.prompt.substring(0, 100) + '...',
 					model: params.model,
@@ -228,8 +243,6 @@ export async function runAgentItems(
 					...outcome.config.notes,
 				});
 
-				const sdkMessages: SDKMessage[] = [];
-				messages = sdkMessages;
 				const run = await runQuery({
 					queryOptions,
 					graceWindow,
@@ -240,13 +253,31 @@ export async function runAgentItems(
 					messages: sdkMessages,
 					getAppliedEffort: () => appliedEffort,
 				});
-				const attempt: Attempt = {
+				return {
 					run,
 					sdkMessages,
 					params: runParams,
 					graceSeconds: graceWindow.graceSeconds,
 					permissionMode: queryOptions.options.permissionMode as string,
 				};
+			};
+
+			const runOnce = async (
+				session: SessionRequest,
+				budget: { timeoutSeconds: number },
+			): Promise<Attempt> => {
+				const sdkMessages: SDKMessage[] = [];
+				messages = sdkMessages;
+				const attempt = await runTurn(
+					session,
+					budget,
+					{
+						content: promptContent,
+						outputFormat: mainFormat,
+						label: 'Starting Claude Code Agent execution',
+					},
+					sdkMessages,
+				);
 				attempts.push(attempt);
 				return attempt;
 			};
@@ -354,15 +385,59 @@ export async function runAgentItems(
 				);
 			}
 
+			let structured =
+				structuredOutcome && 'ok' in structuredOutcome ? structuredOutcome.ok : undefined;
+			let verification: IDataObject | undefined;
+			if (agent.verification && structured !== undefined) {
+				const verified = await verifyStructured({
+					verification: agent.verification,
+					structured,
+					sessionId: lastResult(messages)?.session_id ?? findInit(messages)?.session_id ?? null,
+					timeoutSeconds: params.timeoutSeconds,
+					runTurn: (turn) =>
+						runTurn(
+							{ resume: turn.resume },
+							{ timeoutSeconds: params.timeoutSeconds },
+							{
+								content: turn.content,
+								outputFormat: turn.outputFormat,
+								label: 'Starting Claude Code Agent verification run',
+							},
+							[],
+						),
+				});
+				structured = verified.structured;
+				let costUsd: number | null = 0;
+				if (verified.attempt) {
+					logSubagentInvocations(subagents.supplied, [verified.attempt], debug);
+					const combined = combineVerificationMetrics(
+						buildRunMetrics(messages, durationMs),
+						buildRunMetrics(verified.attempt.sdkMessages, verified.attempt.run.durationMs),
+					);
+					verifiedMetrics = combined.metrics;
+					costUsd = combined.costUsd;
+				}
+				verification = { ...verified.report, costUsd };
+				debug.log('Verification finished', {
+					status: verified.report.status,
+					reason: verified.report.reason,
+					checked: verified.report.checked,
+					kept: verified.report.kept,
+					dropped: verified.report.dropped,
+					unjudged: verified.report.unjudged,
+					costUsd,
+				});
+			}
+
 			returnData.push({
 				json: buildAgentOutput({
 					messages,
 					diagnostics,
 					durationMs,
 					includeTranscript: agent.includeTranscript,
-					...(structuredOutcome && 'ok' in structuredOutcome
-						? { structured: structuredOutcome.ok }
-						: {}),
+					...(structured === undefined ? {} : { structured }),
+					...(verifiedMetrics ? { metrics: verifiedMetrics } : {}),
+					...(verification ? { verification } : {}),
 				}),
 				pairedItem: { item: itemIndex },
 			});
@@ -391,18 +466,23 @@ export async function runAgentItems(
 			throw fail(userFacingMessage(errorMessage, false, timeoutSeconds), errorMessage);
 		} finally {
 			staged?.cleanup();
-			if (reporting) await reportAttempts(reporting, attempts, diagnostics);
+			if (reporting) await reportAttempts(reporting, attempts, diagnostics, verifiedMetrics);
 		}
 	}
 
 	return [returnData];
 }
 
-/** One report per CLI run: a resume that found nothing was still a run, and may have cost. */
+/**
+ * One report per CLI run: a resume that found nothing was still a run, and may have cost. A
+ * verification run is not reported on its own: its cost already includes the run it resumed, so
+ * the final report carries the combined metrics instead.
+ */
 async function reportAttempts(
 	reporting: { usage: UsageReporting; authMode: AuthMode; debug: DebugLogger },
 	attempts: Attempt[],
 	finalDiagnostics: Record<string, unknown> | null,
+	finalMetrics: IDataObject | null,
 ): Promise<void> {
 	for (const [index, attempt] of attempts.entries()) {
 		const isFinal = index === attempts.length - 1;
@@ -415,6 +495,7 @@ async function reportAttempts(
 			authMode: reporting.authMode,
 			debug: reporting.debug,
 			diagnostics: isFinal && finalDiagnostics ? (finalDiagnostics as IDataObject) : undefined,
+			metrics: isFinal && finalMetrics ? finalMetrics : undefined,
 		});
 	}
 }

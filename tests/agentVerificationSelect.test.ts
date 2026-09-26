@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { selectItems } from '../nodes/ClaudeCodeAgent/verification/select';
+import { checkVerification, selectItems } from '../nodes/ClaudeCodeAgent/verification/select';
 
 const review = {
 	summary: 'two findings',
@@ -117,5 +117,28 @@ describe('selectItems — the filter', () => {
 			values: ['critical'],
 		});
 		assert.deepEqual(selection, { items: [], indices: [] });
+	});
+});
+
+describe('checkVerification', () => {
+	it('nothing to check when Verification is off', () => {
+		assert.equal(checkVerification(null, 'text'), null);
+	});
+
+	it('Text output mode is refused', () => {
+		const problem = checkVerification({ itemsPath: 'findings' }, 'text');
+		assert.match(problem?.message ?? '', /needs structured output, but Output Mode is Text/);
+	});
+
+	it('an empty or blank Items Path is refused', () => {
+		for (const itemsPath of ['', ' ', '.']) {
+			const problem = checkVerification({ itemsPath }, 'jsonSchema');
+			assert.match(problem?.message ?? '', /Items Path is empty/, JSON.stringify(itemsPath));
+		}
+	});
+
+	it('a path with a structured mode passes', () => {
+		assert.equal(checkVerification({ itemsPath: 'findings' }, 'jsonSchema'), null);
+		assert.equal(checkVerification({ itemsPath: 'a.b' }, 'outputParser'), null);
 	});
 });

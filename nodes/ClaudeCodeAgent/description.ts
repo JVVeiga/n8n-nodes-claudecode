@@ -26,6 +26,7 @@ import {
 	timeoutOption,
 	wrapUpGraceOption,
 } from '../shared/runOptions';
+import { DEFAULT_VERIFIER_INSTRUCTIONS } from './verification/prompt';
 
 // The Claude Code node needs `auto` to stay off for workflows built before 1.3. This node has no
 // such history, so it offers On/Off with On as the default.
@@ -98,6 +99,63 @@ export const AGENT_OPTIONS: INodeProperties = {
 		),
 		thinkingOption(),
 		wrapUpGraceOption(),
+	],
+};
+
+export const VERIFICATION_OPTIONS: INodeProperties = {
+	displayName: 'Verification',
+	name: 'verification',
+	type: 'collection',
+	placeholder: 'Add Verification Setting',
+	default: {},
+	displayOptions: { hide: { outputMode: ['text'] } },
+	description:
+		'Check the items of the structured output before they leave the node. A second turn resumes the same session, tries to refute each item from the repository, and the node removes the ones it refutes. Needs Output Mode JSON Schema or Output Parser.',
+	options: [
+		{
+			displayName: 'Enabled',
+			name: 'enabled',
+			type: 'boolean',
+			default: false,
+			description:
+				'Whether to run the verification turn after a successful structured answer. It resumes the session of the first run, so it costs a second run and has its own full Timeout.',
+		},
+		{
+			displayName: 'Equals Any Of',
+			name: 'filterValues',
+			type: 'string',
+			default: '',
+			placeholder: 'e.g. high, critical',
+			description:
+				'Comma-separated values of Only Items Where Field. Empty checks every item. Items that are not checked are always kept.',
+		},
+		{
+			displayName: 'Items Path',
+			name: 'itemsPath',
+			type: 'string',
+			default: '',
+			placeholder: 'e.g. findings or review.inline_comments',
+			description:
+				'Required when enabled. Dot path to the array inside the structured output whose items are checked. An empty array skips the verification turn.',
+		},
+		{
+			displayName: 'Only Items Where Field',
+			name: 'filterField',
+			type: 'string',
+			default: '',
+			placeholder: 'e.g. severity',
+			description:
+				'Check only the items whose value in this field is one of Equals Any Of. Leave empty to check every item.',
+		},
+		{
+			displayName: 'Verifier Instructions',
+			name: 'instructions',
+			type: 'string',
+			typeOptions: { rows: 4 },
+			default: DEFAULT_VERIFIER_INSTRUCTIONS,
+			description:
+				'What the verification turn is told to do with the items. The items (as JSON, with their indices) and the answer format are added after it.',
+		},
 	],
 };
 
@@ -249,6 +307,7 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 			default: 'auto',
 			description: 'How the connected subagents are used',
 		},
+		VERIFICATION_OPTIONS,
 		AGENT_OPTIONS,
 	],
 };

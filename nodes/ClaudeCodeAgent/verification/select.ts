@@ -39,6 +39,22 @@ export const EMPTY_PATH_PROBLEM: Problem = {
 	description: PATH_HINT,
 };
 
+/** What refuses a Verification setting before anything runs. */
+export function checkVerification(
+	verification: { itemsPath: string } | null,
+	outputMode: string,
+): Problem | null {
+	if (!verification) return null;
+	if (outputMode === 'text') {
+		return {
+			message: 'Verification needs structured output, but Output Mode is Text',
+			description:
+				'Set Output Mode to JSON Schema or Output Parser, so there are items to check, or turn Verification off.',
+		};
+	}
+	return splitPath(verification.itemsPath).length === 0 ? EMPTY_PATH_PROBLEM : null;
+}
+
 const selectionProblem = (itemsPath: string, found: string): Problem => ({
 	message: `Verification Items Path "${itemsPath}" does not point to an array: found ${found} there`,
 	description: PATH_HINT,

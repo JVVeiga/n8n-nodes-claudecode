@@ -30,6 +30,8 @@ export type UsageReportInput = {
 	messages: SDKMessage[];
 	durationMs: number;
 	diagnostics: IDataObject | null;
+	/** Metrics the caller already combined, for a report that covers more than one run. */
+	metrics?: IDataObject;
 };
 
 export function buildUsageReport(input: UsageReportInput): IDataObject {
@@ -39,7 +41,7 @@ export function buildUsageReport(input: UsageReportInput): IDataObject {
 		caller_workflow_id: input.callerWorkflowId,
 		caller_execution_id: input.callerExecutionId,
 		node_name: input.nodeName,
-		metrics: buildRunMetrics(input.messages, input.durationMs),
+		metrics: input.metrics ?? buildRunMetrics(input.messages, input.durationMs),
 		diagnostics: input.diagnostics,
 	};
 }
@@ -124,6 +126,8 @@ export async function reportRun(input: {
 	debug?: DebugLogger;
 	/** Diagnostics the caller already built, richer than the ones built here from `params`. */
 	diagnostics?: IDataObject;
+	/** Metrics the caller already combined; built from `messages` when absent. */
+	metrics?: IDataObject;
 }): Promise<void> {
 	const { usage } = input;
 	if (!usage) return;
@@ -146,6 +150,7 @@ export async function reportRun(input: {
 				nodeName: usage.context.nodeName,
 				messages: input.messages,
 				durationMs: input.durationMs,
+				metrics: input.metrics,
 				// The main node's builder, called here rather than injected: `shared/` already depends
 				// on `ClaudeCode/` for types, and an injected function would only hide which one runs.
 				diagnostics:

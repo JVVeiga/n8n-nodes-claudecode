@@ -21,6 +21,9 @@ export type AgentOutputInput = {
 	includeTranscript: boolean;
 	/** The validated object, when the run was asked for one. */
 	structured?: unknown;
+	/** Replaces the metrics read from `messages` when a verification run added to them. */
+	metrics?: IDataObject;
+	verification?: IDataObject;
 };
 
 /**
@@ -48,7 +51,10 @@ export function buildAgentOutput(input: AgentOutputInput): IDataObject {
 		success: resolved.success,
 		errorText: resolved.errorText,
 	};
-	return input.structured === undefined
-		? envelope
-		: { ...envelope, structured: input.structured as IDataObject };
+	if (input.metrics) envelope.metrics = input.metrics;
+	return {
+		...envelope,
+		...(input.structured === undefined ? {} : { structured: input.structured as IDataObject }),
+		...(input.verification ? { verification: input.verification } : {}),
+	};
 }
