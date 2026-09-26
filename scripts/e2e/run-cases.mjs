@@ -258,6 +258,13 @@ for (const { id, name } of ids) {
 			sample: sample === undefined ? null : JSON.stringify(sample).slice(0, 400),
 		};
 	}
+	// The Code Review Kit's nodes, whole: case88 asserts exact values across all of them, which the
+	// 400-character nodeRuns sample cannot carry.
+	const kitRuns = {};
+	for (const [nodeName, list] of Object.entries(runData)) {
+		if (!/^Kit /.test(nodeName)) continue;
+		kitRuns[nodeName] = list?.[0]?.data?.main?.[0]?.[0]?.json ?? null;
+	}
 	let executionId = null;
 	try {
 		executionId =
@@ -303,6 +310,7 @@ for (const { id, name } of ids) {
 		toolRuns,
 		modelRuns,
 		nodeRuns,
+		kitRuns,
 		usageReports,
 		outputBranchIndex: (() => {
 			const main = cc?.data?.main;

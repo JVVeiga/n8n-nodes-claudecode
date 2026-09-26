@@ -74,6 +74,7 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
 | `fixture-project/` | mounted as `/workspace` | six 126-line TS files under `src/` (described one at a time, they overrun a *tight* timeout), plus `verify/slug.ts` for case87 |
+| `kit-repo.sh` | container | builds case88's git repo at `/home/node/kit-repo` (fixed SHAs; its header is the expected diff) |
 | `ids.js` | container | workflow id ↔ name listing, read from the sqlite DB |
 | `list-wf.js` | container | per-workflow summary: typeVersion, timeout, grace, format, onError |
 | `last-exec.js` / `last-execs.js` | container | inspect the most recent execution(s) |
@@ -187,6 +188,13 @@ only a real n8n shows, and so what they assert on:
   claim about it verbatim, without tools; only the verification turn, which resumes the session,
   can refute the false one, and only by reading the file. Its `verification.costUsd` is the
   verification's own share: a resumed result's `total_cost_usd` already includes the first run.
+
+- `case88` is the Code Review Kit and calls no model, so it costs nothing. Its repo is built by
+  `kit-repo.sh` inside the container (by `n8n-up.sh`), never under `/workspace`: that is a bind
+  mount of `fixture-project/`, and a `.git` there would land in the host checkout. Fixed identities
+  and dates make the SHAs reproducible, so the verdict names the merge base. Fingerprint stability
+  is proven end to end with two extra branches: `kit-shifted` inserts three lines above the anchor,
+  `kit-edited` rewords it. `run-cases.mjs` records every `Kit …` node's whole item under `kitRuns`.
 
 ## Retry a timing-sensitive failure before investigating it
 

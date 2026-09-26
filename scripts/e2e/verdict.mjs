@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 const r = JSON.parse(readFileSync(new URL('./results.json', import.meta.url), 'utf8'));
 // By exact slug: a prefix match let get('case81') pick case81b whenever it sorted first.
@@ -422,6 +423,55 @@ const checks = [
     const cost = j?.verification?.costUsd;
     return typeof cost === 'number' && cost > 0 &&
       typeof j.metrics?.total_cost_usd === 'number' && j.metrics.total_cost_usd >= cost;
+  }],
+  // Code Review Kit (88), on the repo kit-repo.sh builds with fixed identities and dates — so the
+  // merge base is a known SHA. The expected table is the script's header.
+  ['88 Diff Context: merge base, files and addedLines equal the fixture table', () => {
+    const d = get('case88')?.kitRuns?.['Kit Diff'];
+    const files = [...(d?.files ?? [])].sort((a, b) => a.path.localeCompare(b.path));
+    return d?.mergeBase === '61c8bec473220304a84c8748e4ade6282f06fe8b' &&
+      JSON.stringify(files) === JSON.stringify([
+        { path: 'docs/notes.md', status: 'deleted', additions: 0, deletions: 2 },
+        { path: 'src/calc.js', status: 'modified', additions: 5, deletions: 1 },
+        { path: 'src/new name.js', oldPath: 'src/old name.js', status: 'renamed', additions: 1, deletions: 0 },
+        { path: 'src/new.js', status: 'added', additions: 3, deletions: 0 },
+      ]) &&
+      JSON.stringify(d.addedLines) === JSON.stringify({
+        'src/calc.js': [2, 9, 10, 11, 12], 'src/new name.js': [5], 'src/new.js': [1, 2, 3],
+      }) &&
+      d.patchTruncated === false && String(d.patch).includes('+++ b/src/new name.js');
+  }],
+  ['88 Validate Anchors: one valid, two moved with distinct reasons', () => {
+    const a = get('case88')?.kitRuns?.['Kit Anchors'];
+    const reasons = (a?.moved ?? []).map((m) => m.reason);
+    return a?.valid?.length === 1 && a.valid[0].line === 10 &&
+      JSON.stringify(reasons) === JSON.stringify([
+        'line 6 is not an added line in src/calc.js',
+        'file is not in the diff (or was deleted): docs/notes.md',
+      ]);
+  }],
+  ['88 Fingerprint: sha256 of path, type and snippet; null with an error for a deleted file', () => {
+    const items = get('case88')?.kitRuns?.['Kit Fingerprint']?.items ?? [];
+    const expected = createHash('sha256')
+      .update('src/calc.js\0bug\0}\nfunction mul(a, b) {\nreturn a * b;\n}\nmodule.exports = { add, sub, mul };')
+      .digest('hex');
+    return items.length === 3 && items[0].fingerprint === expected &&
+      /^[0-9a-f]{64}$/.test(String(items[1].fingerprint)) &&
+      items[2].fingerprint === null && items[2].error === 'docs/notes.md does not exist at HEAD';
+  }],
+  ['88 Fingerprint survives three lines inserted above, changes when the snippet is edited', () => {
+    const k = get('case88')?.kitRuns ?? {};
+    const head = k['Kit Fingerprint']?.items?.[0]?.fingerprint;
+    const shifted = k['Kit Fingerprint Shifted']?.items?.[0]?.fingerprint;
+    const edited = k['Kit Fingerprint Edited']?.items?.[0]?.fingerprint;
+    return typeof head === 'string' && head === shifted && typeof edited === 'string' && edited !== head;
+  }],
+  ['88 Dedupe: two new, one repeated carrying the previous id, one resolved', () => {
+    const d = get('case88')?.kitRuns?.['Kit Dedupe'];
+    return get('case88')?.status === 'success' &&
+      d?.new?.length === 2 && d.new.map((i) => i.line).join() === '6,1' &&
+      d.repeated?.length === 1 && d.repeated[0].previous?.id === 101 && d.repeated[0].item?.line === 10 &&
+      d.resolved?.length === 1 && d.resolved[0].id === 102;
   }],
 ];
 

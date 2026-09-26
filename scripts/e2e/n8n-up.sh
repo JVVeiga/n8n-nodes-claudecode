@@ -132,6 +132,11 @@ for f in ids.js list-wf.js last-exec.js last-execs.js activate.js read-exec.js p
 	docker cp "$HERE/$f" "$CONTAINER:/tmp/$f" >/dev/null
 done
 
+# case88's git repo. Built in the container rather than under /workspace, which is a bind mount of
+# the host's fixture-project/ — a .git there would land in the checkout.
+echo "==> building the Code Review Kit fixture repo"
+docker exec -i "$CONTAINER" sh -s <"$HERE/kit-repo.sh"
+
 # The auth cases (52-54) need credentials in the instance. Ids and names are fixed and must match
 # CREDENTIALS in gen-workflows.mjs — a workflow references a credential by id, so a mismatch imports
 # cleanly and then fails at run time with "credentials not found".

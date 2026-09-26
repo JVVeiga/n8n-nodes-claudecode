@@ -4,6 +4,7 @@
 // UI without digging through JSON.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 
 const OUT = new URL('./workflows/', import.meta.url).pathname;
 rmSync(OUT, { recursive: true, force: true });
@@ -1648,6 +1649,113 @@ cases.push(
 		},
 	}),
 );
+
+// case88: the Code Review Kit against the repo kit-repo.sh builds in the container (see its header
+// for the expected diff). No model runs, so no spend. The nodes are named 'Kit …' — run-cases
+// records each one's item under kitRuns, and none of them may start with 'Claude Code'.
+const KIT_TYPE = '@joaoveiga/n8n-nodes-claudecode.codeReviewKit';
+const KIT_REPO = '/home/node/kit-repo';
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
+// Computed here from the formula, independently of the node: the fingerprint of the bug finding at
+// src/calc.js:10 with two context lines, as the previous run would have stored it.
+const KIT_BUG_FINGERPRINT = sha256(
+	'src/calc.js\0bug\0}\nfunction mul(a, b) {\nreturn a * b;\n}\nmodule.exports = { add, sub, mul };',
+);
+
+function kitWorkflow() {
+	const name = 'case88 kit - diff context, anchors, fingerprint and dedupe on a known diff';
+	const inputs = {
+		findings: [
+			{ path: 'src/calc.js', line: 10, type: 'bug', title: 'mul ignores overflow' },
+			{ path: 'src/calc.js', line: 6, type: 'style', title: 'on an unchanged line' },
+			{ path: 'docs/notes.md', line: 1, type: 'docs', title: 'in a deleted file' },
+		],
+		shifted: [{ path: 'src/calc.js', line: 13, type: 'bug' }],
+		previous: [
+			{ id: 101, fingerprint: KIT_BUG_FINGERPRINT, status: 'open', title: 'mul ignores overflow' },
+			{ id: 102, fingerprint: sha256('fixed since the last run'), status: 'open', title: 'gone' },
+			{ id: 103, fingerprint: sha256('dismissed long ago'), status: 'dismissed', title: 'dismissed' },
+		],
+	};
+	const kit = (nodeName, x, parameters) => ({
+		parameters,
+		id: nextId(),
+		name: nodeName,
+		type: KIT_TYPE,
+		typeVersion: 1,
+		position: [x, 0],
+	});
+	const nodes = [
+		{ parameters: {}, id: nextId(), name: 'When clicking Execute', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: [0, 0] },
+		{
+			parameters: { jsCode: `return [{ json: ${JSON.stringify(inputs)} }];` },
+			id: nextId(),
+			name: 'Inputs',
+			type: 'n8n-nodes-base.code',
+			typeVersion: 2,
+			position: [200, 0],
+		},
+		kit('Kit Diff', 400, {
+			operation: 'diffContext',
+			projectPath: KIT_REPO,
+			baseRef: 'kit-base',
+			headRef: 'HEAD',
+			includePatch: true,
+		}),
+		kit('Kit Anchors', 600, {
+			operation: 'validateAnchors',
+			items: "={{ $('Inputs').item.json.findings }}",
+			addedLines: '={{ $json.addedLines }}',
+		}),
+		kit('Kit Fingerprint', 800, {
+			operation: 'fingerprint',
+			projectPath: KIT_REPO,
+			ref: 'HEAD',
+			items: "={{ $('Inputs').item.json.findings }}",
+		}),
+		kit('Kit Fingerprint Shifted', 1000, {
+			operation: 'fingerprint',
+			projectPath: KIT_REPO,
+			ref: 'kit-shifted',
+			items: "={{ $('Inputs').item.json.shifted }}",
+		}),
+		// Typed as JSON text rather than an expression, so the text path runs in a real n8n too.
+		kit('Kit Fingerprint Edited', 1200, {
+			operation: 'fingerprint',
+			projectPath: KIT_REPO,
+			ref: 'kit-edited',
+			items: JSON.stringify([{ path: 'src/calc.js', line: 10, type: 'bug' }]),
+		}),
+		kit('Kit Dedupe', 1400, {
+			operation: 'dedupe',
+			newItems: "={{ $('Kit Fingerprint').item.json.items }}",
+			previousItems: "={{ $('Inputs').item.json.previous }}",
+		}),
+	];
+	const chain = ['When clicking Execute', 'Inputs', 'Kit Diff', 'Kit Anchors', 'Kit Fingerprint', 'Kit Fingerprint Shifted', 'Kit Fingerprint Edited', 'Kit Dedupe'];
+	const connections = {};
+	for (let i = 0; i < chain.length - 1; i++) {
+		connections[chain[i]] = { main: [[{ node: chain[i + 1], type: 'main', index: 0 }]] };
+	}
+	return {
+		id: stableId(name),
+		name,
+		nodes,
+		connections,
+		settings: { executionOrder: 'v1' },
+		active: false,
+		pinData: {},
+		meta: {
+			testCaseNotes:
+				'Repo built by kit-repo.sh at /home/node/kit-repo. EXPECT: the addedLines/files table in ' +
+				'its header; anchors 1 valid + 2 moved with distinct reasons; the fingerprint equal at ' +
+				'HEAD:10 and kit-shifted:13, different at kit-edited:10; dedupe 2 new, 1 repeated (101), ' +
+				'1 resolved (102).',
+		},
+	};
+}
+
+cases.push(kitWorkflow());
 
 // case80's targets. Neither is named `case…`, so run-cases never executes them directly, and both
 // must be PUBLISHED: a Call Workflow Tool resolves the published version, and an MCP Server
