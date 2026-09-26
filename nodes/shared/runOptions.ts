@@ -222,7 +222,9 @@ export const projectPathProperty = (description: string): INodeProperties => ({
 	hint: 'The path must exist inside the n8n container',
 });
 
-export const modelProperty = (): INodeProperties => ({
+export const modelProperty = (
+	description = 'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
+): INodeProperties => ({
 	displayName: 'Model',
 	name: 'model',
 	type: 'options',
@@ -230,6 +232,5 @@ export const modelProperty = (): INodeProperties => ({
 	// Aliases first, then pinned IDs newest-first — see ../ClaudeCode/description/models.ts.
 	options: MODEL_OPTIONS,
 	default: 'sonnet',
-	description:
-		'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
+	description,
 });

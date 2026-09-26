@@ -1,6 +1,6 @@
 import type { INodeProperties, INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
-import { MODEL_OPTIONS } from './models';
+import { modelProperty } from '../../shared/runOptions';
 import { BUILT_IN_TOOL_OPTIONS } from './toolOptions';
 import { ADDITIONAL_OPTIONS } from './additionalOptions';
 import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../../shared/authDescription';
@@ -144,17 +144,7 @@ export const claudeCodeDescription: INodeTypeDescription = {
 				"Resume this specific session, taken from a previous run's diagnostics.sessionId. Leave empty to continue the most recent conversation in the working directory — which every execution on this instance shares, so concurrent runs will collide.",
 			placeholder: 'e.g. 0b7f2c1e-...',
 		},
-		{
-			displayName: 'Model',
-			name: 'model',
-			type: 'options',
-			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
-			// Aliases first, then pinned IDs newest-first — see description/models.ts.
-			options: MODEL_OPTIONS,
-			default: 'sonnet',
-			description:
-				'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
-		},
+		modelProperty(),
 		{
 			displayName: 'Effort',
 			name: 'effort',

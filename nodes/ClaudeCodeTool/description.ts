@@ -1,6 +1,5 @@
 import type { INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
-import { MODEL_OPTIONS } from '../ClaudeCode/description/models';
 import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../shared/authDescription';
 import {
 	allowedToolsOption,
@@ -12,6 +11,7 @@ import {
 	maxBudgetOption,
 	maxThinkingTokensOption,
 	maxTurnsOption,
+	modelProperty,
 	processNameOption,
 	projectPathProperty,
 	reportUsageToOption,
@@ -59,17 +59,9 @@ export const claudeCodeToolDescription: INodeTypeDescription = {
 				'What the Agent reads to decide when and how to use this tool. Describe what the project contains and what kinds of tasks it should send here.',
 		},
 		AUTHENTICATION_PROPERTY,
-		{
-			displayName: 'Model',
-			name: 'model',
-			type: 'options',
-			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
-			// Aliases first, then pinned IDs newest-first — see ../ClaudeCode/description/models.ts.
-			options: MODEL_OPTIONS,
-			default: 'sonnet',
-			description:
-				'Claude model for the task runs. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
-		},
+		modelProperty(
+			'Claude model for the task runs. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
+		),
 		projectPathProperty(
 			'The directory the tasks run in. Its CLAUDE.md, MCP servers and settings load from here. If empty, uses the current working directory.',
 		),

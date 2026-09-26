@@ -1,6 +1,5 @@
 import type { INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
-import { MODEL_OPTIONS } from '../ClaudeCode/description/models';
 import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../shared/authDescription';
 import {
 	allowedToolsOption,
@@ -12,6 +11,7 @@ import {
 	maxBudgetOption,
 	maxThinkingTokensOption,
 	maxTurnsOption,
+	modelProperty,
 	processNameOption,
 	projectPathProperty,
 	reportUsageToOption,
@@ -45,17 +45,7 @@ export const claudeCodeChatModelDescription: INodeTypeDescription = {
 	credentials: AUTHENTICATION_CREDENTIALS,
 	properties: [
 		AUTHENTICATION_PROPERTY,
-		{
-			displayName: 'Model',
-			name: 'model',
-			type: 'options',
-			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
-			// Aliases first, then pinned IDs newest-first — see ../ClaudeCode/description/models.ts.
-			options: MODEL_OPTIONS,
-			default: 'sonnet',
-			description:
-				'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
-		},
+		modelProperty(),
 		{
 			displayName: 'Conversation Memory',
 			name: 'memorySource',
