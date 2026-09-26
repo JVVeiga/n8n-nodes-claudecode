@@ -60,9 +60,10 @@ shipped with a lint error that way. If you need to shorten the output, redirect 
 
 ## Architecture Overview
 
-Five n8n nodes over the Claude Agent SDK: two main-flow nodes, and three sub-nodes for n8n's AI
-Agent (a chat model and two tools). Every one of them is a thin shell; the work is in named
-modules, and anything two nodes would otherwise copy lives in `shared/`.
+Eight n8n nodes: four main-flow nodes (Claude Code, the Claude Code Agent, Claude Code Usage, and
+the Code Review Kit, which runs git and no model), three sub-nodes for n8n's AI Agent (a chat model
+and two tools), and one sub-node for the Claude Code Agent (a subagent). Every one of them is a thin
+shell; the work is in named modules, and anything two nodes would otherwise copy lives in `shared/`.
 
 ```
 credentials/                   the two n8n credential types
@@ -85,8 +86,11 @@ nodes/
     toolRunLog.ts              toToolName + the addInputData/addOutputData pair for ai_tool
     usageReport.ts             the collector payload and run_key — pure, no n8n
     reportUsage.ts             the impure half: builds the reporter from a supply context
-    toolBridge.ts              LangChain tools -> one in-process MCP server (tool.invoke)
+    toolBridge.ts              LangChain tools -> one in-process MCP server (tool.invoke), plus
+                               flattenTools for what an ai_tool input returns (toolkits unflattened)
     session.ts                 Session ID -> deterministic uuid, and the resume-or-create retry
+    subagent.ts                the tagged object a Subagent supplies and the Agent accepts
+    subagentLog.ts             the addInputData/addOutputData pair for ai_agent; never throws
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -140,6 +144,40 @@ nodes/
     readUsage.ts               spawns the CLI and reads usage (the only impure module)
     escalate.ts                the read → scope-retry → paid-probe ladder, shared with the tool
     usage.ts                   window/account normalisation
+  ClaudeCodeAgent/             a root node: tools, subagents and a parser as AI inputs
+    ClaudeCodeAgent.node.ts    the class + runAgentItems(ctx, deps); owns the run and the session
+    description.ts             its schema — input order chosen so the canvas labels do not overlap
+    params.ts                  the ONLY getNodeParameter reader for this node
+    connections.ts             the ONLY getInputConnectionData reader: tools, subagents, parser
+    subagents.ts               supplied subagents -> the SDK's agents record, sorted; duplicates fail
+    subagentReport.ts          task_started/task_notification -> diagnostics.subagents (pure)
+    orchestration.ts           the Required-mode line appended to the user turn
+    outputSchema.ts            Output Mode + pasted schema or parser -> the schema sent (unwraps)
+    structured.ts              SDKMessage[] -> the object, or why there is none (both failures)
+    instructions.ts            Instruction Files -> the append text; the only file reader here
+    output.ts                  the 1.2 envelope + structured/verification, from the LAST result
+    verification/
+      select.ts                Items Path + filter -> the items and their indices (pure)
+      prompt.ts                the verifier's turn and the { keep, drop } schema
+      run.ts                   the second run over the resumed session; never fails the item
+      apply.ts                 the verdict -> new structured + report; unjudged items are kept
+      metrics.ts               both runs counted once; the verification cost is the difference
+  ClaudeCodeSubagent/          a sub-node with an ai_agent output: one AgentDefinition
+    ClaudeCodeSubagent.node.ts the class + supplySubagent(ctx, itemIndex); runs nothing
+    description.ts             its schema — inputs: [], outputs: [AiAgent]
+    params.ts                  the ONLY getNodeParameter reader for this node
+  CodeReviewKit/               no model: git plus pure reshaping of findings
+    CodeReviewKit.node.ts      the class + runKitItems(ctx, deps)
+    description.ts             its schema — four operations
+    params.ts                  the ONLY getNodeParameter reader for this node
+    operations.ts              one function per operation, over params and deps.git
+    git.ts                     the ONLY impure module: execFile('git', …), no shell
+    refs.ts                    the ref check that runs before git does
+    input.ts                   a json parameter as text or as a parsed value
+    diff.ts                    numstat + -U0 patch text -> files[], addedLines (pure)
+    anchors.ts                 findings -> valid / moved with the reason (pure)
+    fingerprint.ts             snippet normalisation + sha256 (pure; git supplies the text)
+    dedupe.ts                  new / repeated / resolved by fingerprint (pure)
 ```
 
 ### Where to make a change
@@ -166,6 +204,19 @@ nodes/
 | Change what a sub-node reports, or its run_key | `shared/usageReport.ts` (pure) / `shared/reportUsage.ts` (the n8n call) |
 | Add an option to every sub-node | `shared/runOptions.ts`, then compose it in each description |
 | Change a sub-node's run defaults | `shared/subNodeParams.ts` — never one node's params.ts |
+| Add or change an Agent parameter | `ClaudeCodeAgent/description.ts`, read in `ClaudeCodeAgent/params.ts` |
+| Add an AI input to the Agent, or change how one is read | `ClaudeCodeAgent/connections.ts` (and `inputs` in its description — mind the label order) |
+| Change the Agent's output | `ClaudeCodeAgent/output.ts` — it builds on `output/v12.ts`, never forks it |
+| Change when a structured run counts as successful | `ClaudeCodeAgent/structured.ts` |
+| Change how a parser's schema becomes the one sent | `ClaudeCodeAgent/outputSchema.ts` |
+| Change how Instruction Files are read or bounded | `ClaudeCodeAgent/instructions.ts` |
+| Change `diagnostics.subagents` | `ClaudeCodeAgent/subagentReport.ts` |
+| Change what Required orchestration tells the model | `ClaudeCodeAgent/orchestration.ts` |
+| Change what Verification checks, says or applies | `verification/select.ts`, `prompt.ts`, `apply.ts`; its cost in `verification/metrics.ts` |
+| Add a Subagent field | `ClaudeCodeSubagent/description.ts` + `params.ts` (it becomes an `AgentDefinition` field) |
+| Change the Subagent's execution log | `shared/subagentLog.ts` |
+| Change a Code Review Kit operation | `CodeReviewKit/operations.ts`, over the pure module: `diff.ts`, `anchors.ts`, `fingerprint.ts` or `dedupe.ts` |
+| Change which git commands the Kit runs | `CodeReviewKit/git.ts` — refs are checked first in `refs.ts` |
 
 ### Rules that are not obvious
 
@@ -258,6 +309,38 @@ nodes/
   `createSdkMcpServer` bridge (`mcp__n8n__<tool>`), so the Agent sees a single model turn — HITL
   tools and Return Intermediate Steps are documented as unsupported. Facts and decisions:
   `.specs/features/chat-model/spec.md`.
+- **Subagents travel over `ai_agent`.** No built-in node uses that connection type as a real input or
+  output, which is why it works: the editor draws the handles, the "+" on the Agent's Subagents
+  input lists only nodes with an `ai_agent` output, and it refuses to wire a Subagent into n8n's AI
+  Agent or into a mismatched input (measured in the real editor). An `ai_tool` Subagent with a
+  marker would have let exactly that wiring through. n8n delivers the
+  supplied objects in no particular order, so the Agent sorts them by name.
+- **An `ai_tool` input on a root node returns toolkits unflattened.** `getInputConnectionData` builds
+  a node-as-tool into a tool, but hands an MCP Client over as a `StructuredToolkit` with `.tools`.
+  The AI Agent flattens that itself; a root node of ours has to, which is what `flattenTools` is for.
+  n8n names a toolkit's tools `<Node name>_<tool>`.
+- **A structured-output run succeeds only when the object is present.** It can fail two ways:
+  retries exhausted (`error_max_structured_output_retries`, and the iterator throws after yielding
+  the result), or `subtype: success` with no `structured_output` because the model gave up and
+  answered in prose. Trusting `subtype` reports the second as a success. Both become
+  `errorType: 'structured_output'`.
+- **Instruction Files join the one preset `append`.** They go after the System Prompt, in the same
+  string, each wrapped in a tag naming the file. Two appenders would silently fight. `CLAUDE.md`
+  already loads whenever `settingSources` includes `project`, so Instruction Files are for the rest.
+- **The Agent answers from the LAST result.** A background subagent makes the CLI write several
+  result messages, the first one an interim "I'll wait for them". The shared text ladder reads the
+  first, which the Claude Code node's versions keep (a known limitation of those nodes, not fixed
+  in passing); the Agent strips every result but the last before reading.
+- **A resumed session reports a cumulative cost.** `total_cost_usd` and `modelUsage` on a resumed
+  run include every earlier query of that session; `num_turns`, `duration_ms` and `usage` do not
+  (measured, spike S-I). So the Verification run's metrics already contain the main run: the item
+  takes its cost, sums turns and duration, and `verification.costUsd` is the difference. A
+  collector summing `total_cost_usd` across executions of one session double-counts, for every node
+  that resumes.
+- **The Agent's input order is chosen so the canvas labels do not overlap.** The editor spaces AI
+  ports by count, not by label length, so the short label (Tools) sits in the middle and Subagents
+  and Parser at the ends. Reordering `inputs` is a visual change no test catches; look at the
+  canvas.
 
 ## Node Versions
 
@@ -283,7 +366,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 835 tests, node:test, no framework
+npm test                                    # 1166 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -306,7 +389,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 63 named behaviours against real executions:
+with the node installed and asserts 83 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
