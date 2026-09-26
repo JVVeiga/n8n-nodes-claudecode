@@ -261,6 +261,7 @@ export async function runAgentItems(
 					debug,
 					messages: sdkMessages,
 					getAppliedEffort: () => appliedEffort,
+					pendingTasksKeepRunOpen: true,
 				});
 				return {
 					run,

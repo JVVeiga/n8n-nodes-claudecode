@@ -33,6 +33,17 @@ export const isTaskStarted = (m: SDKMessage): m is TaskStartedMessage =>
 export const isTaskNotification = (m: SDKMessage): m is TaskNotificationMessage =>
 	m.type === 'system' && m.subtype === 'task_notification';
 
+/** True while a subagent that started has not reported back. Tasks without a `subagent_type`
+ * (background shells) are left out: one that never ends must not hold a run open. */
+export function hasPendingSubagentTask(messages: SDKMessage[]): boolean {
+	const pending = new Set<string>();
+	for (const m of messages) {
+		if (isTaskStarted(m) && typeof m.subagent_type === 'string') pending.add(m.task_id);
+		else if (isTaskNotification(m)) pending.delete(m.task_id);
+	}
+	return pending.size > 0;
+}
+
 /** A content block, described structurally: the SDK's own block union is wider than any one
  * consumer needs, and every field here is optional in at least one variant. */
 export type ContentBlock = { type?: string; name?: string; text?: string; thinking?: string };

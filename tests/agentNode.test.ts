@@ -20,6 +20,8 @@ import {
 	SESSION,
 	streams,
 	successResult,
+	taskStarted as pendingTask,
+	wrapUpResult,
 } from './helpers/sdkMessages';
 
 type Options = Record<string, unknown> & {
@@ -560,6 +562,21 @@ describe('ClaudeCodeAgent — failures', () => {
 		});
 		assert.match(json.error as string, /timed out|timeout/i);
 		assert.equal(typeof json.details, 'object');
+	});
+
+	it('a result written while a subagent still runs does not cancel the graceful timeout', async () => {
+		const { json } = await exec({
+			continueOnFail: true,
+			params: { timeout: 2, options: { wrapUpGraceSeconds: 1 } },
+			stream: {
+				messages: [init(), assistantTool('Agent'), pendingTask('t1'), successResult()],
+				hang: true,
+				afterInterrupt: [successResult(), wrapUpResult],
+			},
+		});
+		const details = json.details as IDataObject;
+		assert.equal(details.terminationReason, 'timeout_graceful');
+		assert.equal(details.wrapUpSucceeded, true);
 	});
 });
 

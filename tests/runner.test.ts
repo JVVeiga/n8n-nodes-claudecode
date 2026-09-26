@@ -12,6 +12,8 @@ import {
 	assistantTool,
 	init,
 	successResult,
+	taskNotified,
+	taskStarted,
 	wrapUpResult,
 } from './helpers/sdkMessages';
 
@@ -35,6 +37,7 @@ type RunOpts = {
 	timeout?: number;
 	grace?: number;
 	appliedEffort?: string;
+	pendingTasksKeepRunOpen?: boolean;
 };
 
 async function run(opts: RunOpts) {
@@ -49,6 +52,12 @@ async function run(opts: RunOpts) {
 		abortSignal: abortController.signal,
 	});
 	const promptStream = createPromptStream('go');
+	const pushed: string[] = [];
+	const push = promptStream.push;
+	promptStream.push = (text) => {
+		pushed.push(text);
+		push(text);
+	};
 	const messages: SDKMessage[] = [];
 	const input: RunInput = {
 		queryOptions: { prompt: promptStream.stream, options: {} } as QueryOptions,
@@ -59,9 +68,12 @@ async function run(opts: RunOpts) {
 		debug: silent,
 		messages,
 		getAppliedEffort: () => opts.appliedEffort,
+		...(opts.pendingTasksKeepRunOpen === undefined
+			? {}
+			: { pendingTasksKeepRunOpen: opts.pendingTasksKeepRunOpen }),
 	};
 	const outcome = await runQuery(input);
-	return { outcome, record, abortController, promptStream };
+	return { outcome, record, abortController, promptStream, pushed };
 }
 
 describe('runQuery — a run that finishes on its own', () => {
@@ -270,5 +282,70 @@ describe('runQuery — the query call', () => {
 		});
 		assert.equal(record.calls.length, 1);
 		assert.equal((record.calls[0] as { options: typeof options }).options, options);
+	});
+});
+
+describe('runQuery — a result while background subagents are still running', () => {
+	const interim = () => [
+		init(),
+		assistantTool('Agent'),
+		taskStarted('t1'),
+		successResult({ result: 'Launched; waiting.', total_cost_usd: 0.01 }),
+	];
+
+	it('with pendingTasksKeepRunOpen, the interim result does not stop the graceful timeout', async () => {
+		const { outcome, record, pushed } = await run({
+			pendingTasksKeepRunOpen: true,
+			hang: true,
+			messages: interim(),
+			afterInterrupt: [successResult({ total_cost_usd: 0.2 }), wrapUpResult],
+			timeout: 2,
+			grace: 1,
+		});
+		assert.equal(record.interruptCount, 1);
+		assert.deepEqual(pushed, [WRAP_UP_PROMPT]);
+		assert.equal(outcome.timedOut, true);
+		assert.equal(outcome.terminationReason, 'timeout_graceful');
+		assert.equal(outcome.wrapUpSucceeded, true);
+	});
+
+	it('without it, the same stream keeps today behaviour: no interrupt, a hard abort', async () => {
+		const { outcome, record, pushed } = await run({
+			hang: true,
+			messages: interim(),
+			afterInterrupt: [successResult(), wrapUpResult],
+			timeout: 2,
+			grace: 1,
+		});
+		assert.equal(record.interruptCount, 0);
+		assert.deepEqual(pushed, []);
+		assert.equal(outcome.terminationReason, 'timeout_hard_abort');
+	});
+
+	it('a result after every started subagent reported back ends the run', async () => {
+		const { outcome, record, promptStream } = await run({
+			pendingTasksKeepRunOpen: true,
+			messages: [...interim(), taskNotified('t1'), successResult({ result: 'All done.' })],
+			timeout: 2,
+			grace: 1,
+		});
+		assert.equal(outcome.timedOut, false);
+		assert.equal(record.interruptCount, 0);
+		const iterator = promptStream.stream[Symbol.asyncIterator]();
+		assert.equal((await iterator.next()).done, false, 'the initial prompt');
+		assert.equal((await iterator.next()).done, true, 'then closed');
+	});
+
+	it('a background shell is not a subagent and does not hold the run open', async () => {
+		const { outcome, promptStream } = await run({
+			pendingTasksKeepRunOpen: true,
+			messages: [init(), taskStarted('sh1', undefined), successResult()],
+			timeout: 2,
+			grace: 1,
+		});
+		assert.equal(outcome.timedOut, false);
+		const iterator = promptStream.stream[Symbol.asyncIterator]();
+		assert.equal((await iterator.next()).done, false, 'the initial prompt');
+		assert.equal((await iterator.next()).done, true, 'then closed');
 	});
 });

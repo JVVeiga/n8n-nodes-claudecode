@@ -56,6 +56,31 @@ export const userToolResult = (content = 'ok') =>
 		session_id: SESSION,
 	});
 
+/** A subagent delegation starting; `subagentType` undefined models a background shell. */
+export const taskStarted = (taskId: string, subagentType: string | undefined = 'alpha') =>
+	msg({
+		type: 'system',
+		subtype: 'task_started',
+		task_id: taskId,
+		tool_use_id: `toolu_${taskId}`,
+		description: `Task ${taskId}`,
+		...(subagentType === undefined ? {} : { subagent_type: subagentType }),
+		prompt: 'Do the part you were given.',
+		session_id: SESSION,
+	});
+
+export const taskNotified = (taskId: string, status = 'completed', summary = 'done') =>
+	msg({
+		type: 'system',
+		subtype: 'task_notification',
+		task_id: taskId,
+		tool_use_id: `toolu_${taskId}`,
+		status,
+		summary,
+		usage: { total_tokens: 100, tool_uses: 1, duration_ms: 500 },
+		session_id: SESSION,
+	});
+
 export const model = (over: Partial<Record<string, number>> = {}) => ({
 	inputTokens: 4,
 	outputTokens: 486,
