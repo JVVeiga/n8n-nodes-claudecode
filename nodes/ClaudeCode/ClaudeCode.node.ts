@@ -4,7 +4,6 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthSelection } from '../shared/auth';
 import { createDebugLogger } from '../shared/debug';
@@ -15,11 +14,11 @@ import { buildQueryOptions } from './config';
 import { claudeCodeDescription } from './description/properties';
 import { buildDiagnostics } from './diagnostics';
 import {
-	buildFailureItem,
 	buildTextFailureItem,
-	buildTimeoutFailureItem,
-	buildTimeoutReport,
-	userFacingMessage,
+	itemFailer,
+	settle,
+	settleCaught,
+	settleRun,
 	type FailureContext,
 } from './errors';
 import { buildOutputItem } from './output';
@@ -77,12 +76,7 @@ export async function runItems(
 		// place that sees all four of them.
 		let staged: StagedAttachments | null = null;
 
-		const fail = (message: string, description?: string, type?: string) =>
-			new NodeOperationError(ctx.getNode(), message, {
-				itemIndex,
-				...(description ? { description } : {}),
-				...(type ? { type } : {}),
-			});
+		const fail = itemFailer(ctx, itemIndex);
 
 		try {
 			const params = readParams(ctx, itemIndex);
@@ -183,44 +177,19 @@ export async function runItems(
 				durationMs: run.durationMs,
 			};
 
-			// A graceful timeout ends the generator normally, so without this an expired run would
-			// fall through to the success path and report green with the wrap-up as its answer.
-			if (timedOut) {
-				const report = buildTimeoutReport(failure, run, graceWindow.graceSeconds);
-				if (ctx.continueOnFail()) {
-					returnData.push({
-						json: buildTimeoutFailureItem(failure, report),
-						pairedItem: { item: itemIndex },
-					});
-					continue;
-				}
-				// `type: 'timeout'` is the machine-readable tag n8n core nodes branch on —
-				// HttpRequestV3 reads `error.type === 'invalid_url'` the same way.
-				const error = fail(report.message, report.description, 'timeout');
-				error.context = report.context;
-				throw error;
-			}
-
-			if (run.error !== null) {
-				const errorMessage = run.error instanceof Error ? run.error.message : String(run.error);
-
-				// Only soften the failure when the workflow asked for it. Returning a normal item
-				// unconditionally hid every failure behind a green execution and bypassed n8n's
-				// error output. `text` keeps its own shape for backwards compatibility.
-				if (ctx.continueOnFail()) {
-					returnData.push({
-						json:
-							params.outputFormat === 'text'
-								? buildTextFailureItem(failure, errorMessage)
-								: buildFailureItem(failure, errorMessage, {
-										isTimeout: false,
-										stack: run.error instanceof Error ? run.error.stack : undefined,
-									}),
-						pairedItem: { item: itemIndex },
-					});
-					continue;
-				}
-				throw fail(userFacingMessage(errorMessage, false, timeoutSeconds), errorMessage);
+			// `text` keeps its own soft-failure shape for backwards compatibility.
+			const settled = settleRun(
+				failure,
+				run,
+				graceWindow.graceSeconds,
+				() => ctx.continueOnFail(),
+				params.outputFormat === 'text'
+					? (errorMessage) => buildTextFailureItem(failure, errorMessage)
+					: undefined,
+			);
+			if (settled) {
+				returnData.push({ json: settle(settled, fail), pairedItem: { item: itemIndex } });
+				continue;
 			}
 
 			debug.lazy('Execution completed', () => ({
@@ -247,44 +216,19 @@ export async function runItems(
 
 			returnData.push({ json: outputData, pairedItem: { item: itemIndex } });
 		} catch (error) {
-			// Reached by: a validation failure, a config problem, a timeout thrown above, or a run
-			// error thrown above. A NodeOperationError from here is already shaped correctly.
-			if (error instanceof NodeOperationError && !ctx.continueOnFail()) throw error;
-
-			const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-
-			if (ctx.continueOnFail()) {
-				const failure: FailureContext = {
-					messages,
-					diagnostics: null,
-					nodeVersion,
-					itemIndex,
-					timeoutSeconds,
-					durationMs: 0,
-				};
-				// A timeout thrown above already carries its full report on `context`.
-				const timeoutError =
-					error instanceof NodeOperationError && error.type === 'timeout' ? error : null;
-				returnData.push({
-					json: timeoutError
-						? buildTimeoutFailureItem(failure, {
-								message: timeoutError.message,
-								description: timeoutError.description ?? '',
-								context: timeoutError.context as never,
-							})
-						: buildFailureItem(failure, errorMessage, {
-								isTimeout: timedOut,
-								stack: error instanceof Error ? error.stack : undefined,
-							}),
-					pairedItem: { item: itemIndex },
-				});
-				continue;
-			}
-
-			throw fail(userFacingMessage(errorMessage, timedOut, timeoutSeconds), errorMessage);
+			const failure: FailureContext = {
+				messages,
+				diagnostics: null,
+				nodeVersion,
+				itemIndex,
+				timeoutSeconds,
+				durationMs: 0,
+			};
+			const settled = settleCaught(failure, error, () => ctx.continueOnFail(), timedOut);
+			returnData.push({ json: settle(settled, fail), pairedItem: { item: itemIndex } });
 		} finally {
-			// Runs on all four exits: success, the timeout branch's `continue`, a thrown
-			// NodeOperationError, and the catch's own `continue` under continueOnFail. A `finally`
+			// Runs on all four exits: success, a settled run's `continue`, a thrown
+			// NodeOperationError, and the catch's soft item under continueOnFail. A `finally`
 			// on the try that already exists, rather than a nested try/catch — which is what keeps
 			// execute() readable.
 			staged?.cleanup();

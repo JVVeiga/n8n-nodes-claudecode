@@ -5,7 +5,6 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
 import { query, type OutputFormat, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthMode } from '../shared/auth';
 import { createDebugLogger, type DebugLogger } from '../shared/debug';
@@ -28,11 +27,11 @@ import type { StagedAttachments } from '../ClaudeCode/attachments/types';
 import { buildQueryOptions } from '../ClaudeCode/config';
 import { buildRunMetrics } from '../ClaudeCode/output/metrics';
 import {
-	buildFailureItem,
-	buildStructuredFailureItem,
-	buildTimeoutFailureItem,
-	buildTimeoutReport,
-	userFacingMessage,
+	itemFailer,
+	settle,
+	settleCaught,
+	settleRun,
+	settleStructuredFailure,
 	type FailureContext,
 } from '../ClaudeCode/errors';
 import { checkPrompt } from '../ClaudeCode/params';
@@ -95,12 +94,7 @@ export async function runAgentItems(
 		// Set only when a verification run happened: the item's one report then carries both runs.
 		let verifiedMetrics: IDataObject | null = null;
 
-		const fail = (message: string, description?: string, type?: string) =>
-			new NodeOperationError(ctx.getNode(), message, {
-				itemIndex,
-				...(description ? { description } : {}),
-				...(type ? { type } : {}),
-			});
+		const fail = itemFailer(ctx, itemIndex);
 
 		try {
 			const { run: params, agent } = readAgentParams(ctx, itemIndex);
@@ -339,20 +333,6 @@ export async function runAgentItems(
 				durationMs,
 			};
 
-			if (run.timedOut) {
-				const report = buildTimeoutReport(failure, run, session.attempt.graceSeconds);
-				if (ctx.continueOnFail()) {
-					returnData.push({
-						json: buildTimeoutFailureItem(failure, report),
-						pairedItem: { item: itemIndex },
-					});
-					continue;
-				}
-				const error = fail(report.message, report.description, 'timeout');
-				error.context = report.context;
-				throw error;
-			}
-
 			// The SDK rejects right after yielding an exhausted-retries result; that rejection only
 			// repeats the result, which is reported below as the structured failure it is.
 			const structuredExhausted =
@@ -367,35 +347,23 @@ export async function runAgentItems(
 				: structuredExhausted
 					? null
 					: run.error;
-			if (runError !== null) {
-				const errorMessage = runError instanceof Error ? runError.message : String(runError);
-				if (ctx.continueOnFail()) {
-					returnData.push({
-						json: buildFailureItem(failure, errorMessage, {
-							isTimeout: false,
-							stack: runError instanceof Error ? runError.stack : undefined,
-						}),
-						pairedItem: { item: itemIndex },
-					});
-					continue;
-				}
-				throw fail(userFacingMessage(errorMessage, false, timeoutSeconds), errorMessage);
+			const settled = settleRun(
+				failure,
+				{ ...run, error: runError },
+				session.attempt.graceSeconds,
+				() => ctx.continueOnFail(),
+			);
+			if (settled) {
+				returnData.push({ json: settle(settled, fail), pairedItem: { item: itemIndex } });
+				continue;
 			}
 
 			if (structuredOutcome && 'failure' in structuredOutcome) {
-				const message = `Claude Code did not return the structured output: ${structuredOutcome.failure}`;
-				if (ctx.continueOnFail()) {
-					returnData.push({
-						json: buildStructuredFailureItem(failure, message),
-						pairedItem: { item: itemIndex },
-					});
-					continue;
-				}
-				throw fail(
-					message,
-					'The run finished without an object matching the schema. diagnostics.structuredOutput.attempts counts its tries; a clearer schema or prompt usually helps.',
-					'structured_output',
+				const settled = settleStructuredFailure(failure, structuredOutcome.failure, () =>
+					ctx.continueOnFail(),
 				);
+				returnData.push({ json: settle(settled, fail), pairedItem: { item: itemIndex } });
+				continue;
 			}
 
 			let structured =
@@ -458,28 +426,16 @@ export async function runAgentItems(
 				pairedItem: { item: itemIndex },
 			});
 		} catch (error) {
-			if (error instanceof NodeOperationError && !ctx.continueOnFail()) throw error;
-
-			const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-			if (ctx.continueOnFail()) {
-				returnData.push({
-					json: buildFailureItem(
-						{
-							messages,
-							diagnostics,
-							nodeVersion: FAILURE_SHAPE_VERSION,
-							itemIndex,
-							timeoutSeconds,
-							durationMs,
-						},
-						errorMessage,
-						{ isTimeout: false, stack: error instanceof Error ? error.stack : undefined },
-					),
-					pairedItem: { item: itemIndex },
-				});
-				continue;
-			}
-			throw fail(userFacingMessage(errorMessage, false, timeoutSeconds), errorMessage);
+			const failure: FailureContext = {
+				messages,
+				diagnostics,
+				nodeVersion: FAILURE_SHAPE_VERSION,
+				itemIndex,
+				timeoutSeconds,
+				durationMs,
+			};
+			const settled = settleCaught(failure, error, () => ctx.continueOnFail(), false);
+			returnData.push({ json: settle(settled, fail), pairedItem: { item: itemIndex } });
 		} finally {
 			staged?.cleanup();
 			if (reporting) await reportAttempts(reporting, attempts, diagnostics, verifiedMetrics);
