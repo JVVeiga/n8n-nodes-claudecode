@@ -190,12 +190,17 @@ const APPLIERS: Applier[] = [
 		// Ultracode needs Workflow and Task, so add them rather than let a restriction silently
 		// disable orchestration — but only when a restriction was actually asked for.
 		name: 'restrictTools',
-		apply: ({ options, params, ultracode, note }) => {
-			const tools =
+		apply: ({ options, params, ultracode, deps, note }) => {
+			let tools =
 				ultracode && params.restrictTools.length > 0
 					? withOrchestration(params.restrictTools)
 					: params.restrictTools;
 			if (tools.length === 0) return false;
+			// Connected subagents are unreachable without the delegation tool, which the CLI calls
+			// `Agent` while listing `Task`.
+			if (deps.agents && Object.keys(deps.agents).length > 0) {
+				tools = Array.from(new Set([...tools, 'Agent', 'Task']));
+			}
 			options.tools = tools;
 			note('tools', tools);
 			return true;

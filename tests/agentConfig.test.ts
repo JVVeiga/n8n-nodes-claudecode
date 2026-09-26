@@ -148,3 +148,21 @@ describe('existing inputs produce identical options', () => {
 		});
 	}
 });
+
+describe('restrictTools with subagents connected', () => {
+	const agents = { reviewer: { description: 'Reviews', prompt: 'Review it.' } };
+
+	it('adds the delegation tool so a restriction cannot unplug the subagents', () => {
+		const options = build({ restrictTools: ['Read', 'Grep'] }, deps({ agents }));
+		assert.deepEqual(options.tools, ['Read', 'Grep', 'Agent', 'Task']);
+	});
+
+	it('leaves the restriction alone when no subagent is connected', () => {
+		assert.deepEqual(build({ restrictTools: ['Read', 'Grep'] }).tools, ['Read', 'Grep']);
+		assert.deepEqual(build({ restrictTools: ['Read'] }, deps({ agents: {} })).tools, ['Read']);
+	});
+
+	it('does not invent a restriction when none was set', () => {
+		assert.equal('tools' in build({}, deps({ agents })), false);
+	});
+});
