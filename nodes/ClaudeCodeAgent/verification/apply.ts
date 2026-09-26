@@ -1,3 +1,4 @@
+import { isRecord } from '../values';
 import { splitPath, valueAt } from './select';
 
 export type Verdict = { keep: number[]; drop: Array<{ index: number; reason: string }> };
@@ -13,9 +14,6 @@ export type VerificationReport = {
 	unjudged: number[];
 	droppedItems: DroppedItem[];
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** The verdict as the schema describes it, or null. Entries that are not integers are dropped. */
 export function parseVerdict(raw: unknown): Verdict | null {

@@ -1,12 +1,10 @@
 import { toJsonSchema } from '@langchain/core/utils/json_schema';
 import type { Problem } from '../shared/problem';
+import { isRecord } from './values';
 
 export type OutputMode = 'text' | 'jsonSchema' | 'outputParser';
 
 export type ResolvedSchema = { schema: Record<string, unknown> } | null | { problem: Problem };
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-	typeof v === 'object' && v !== null && !Array.isArray(v);
 
 const errorText = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);

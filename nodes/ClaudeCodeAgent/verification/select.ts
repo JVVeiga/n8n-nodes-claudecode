@@ -1,4 +1,5 @@
 import type { Problem } from '../../shared/problem';
+import { isRecord } from '../values';
 
 export type ItemFilter = { field: string; values: string[] };
 
@@ -11,9 +12,6 @@ const describe = (value: unknown): string => {
 	if (typeof value === 'object') return 'an object';
 	return `a ${typeof value}`;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const splitPath = (itemsPath: string): string[] =>
 	itemsPath

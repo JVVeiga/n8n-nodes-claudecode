@@ -6,10 +6,10 @@ import {
 	type TaskNotificationMessage,
 } from '../shared/sdkMessage';
 import type { SubagentInvocation } from '../shared/subagent';
+import { num, sum } from './values';
 
 // The CLI changes these fields between versions, so every read tolerates absence.
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
-const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
 /**
  * One entry per subagent delegation, in the order they started. Subagents' own messages are not
@@ -43,11 +43,6 @@ export function subagentInvocations(messages: SDKMessage[]): SubagentInvocation[
 	}
 	return invocations;
 }
-
-const sum = (values: Array<number | null>): number | null => {
-	const present = values.filter((v): v is number => v !== null);
-	return present.length ? present.reduce((a, b) => a + b, 0) : null;
-};
 
 export type SubagentDiagnostics = {
 	name: string;

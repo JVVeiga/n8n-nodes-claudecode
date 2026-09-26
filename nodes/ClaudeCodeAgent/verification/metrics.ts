@@ -1,9 +1,5 @@
 import type { IDataObject } from 'n8n-workflow';
-
-const num = (value: unknown): number | null => (typeof value === 'number' ? value : null);
-
-const sum = (a: number | null, b: number | null): number | null =>
-	a === null ? b : b === null ? a : a + b;
+import { num, sum } from '../values';
 
 /** Rounded so a subtraction of two costs does not print as 0.0017460000000000002. */
 const round = (value: number): number => Math.round(value * 1e10) / 1e10;
@@ -22,8 +18,8 @@ export function combineVerificationMetrics(
 	return {
 		metrics: {
 			...main,
-			duration_ms: sum(num(main.duration_ms), num(verification.duration_ms)),
-			num_turns: sum(num(main.num_turns), num(verification.num_turns)),
+			duration_ms: sum([num(main.duration_ms), num(verification.duration_ms)]),
+			num_turns: sum([num(main.num_turns), num(verification.num_turns)]),
 			total_cost_usd: sessionCost ?? mainCost,
 			modelUsage: verification.modelUsage ?? main.modelUsage ?? null,
 		},
