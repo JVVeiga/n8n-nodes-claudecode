@@ -73,7 +73,7 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 | `gen-workflows.mjs` | host | generates one workflow JSON per case into `workflows/` |
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
-| `fixture-project/` | mounted as `/workspace` | six 126-line TS files under `src/` (described one at a time, they overrun a *tight* timeout), plus `verify/slug.ts` for case87 |
+| `fixture-project/` | mounted as `/workspace` | six 126-line TS files under `src/` (described one at a time, they overrun a *tight* timeout), plus `verify/slug.ts` for case87 and `data/stock.csv` for case89-91 |
 | `kit-repo.sh` | container | builds case88's git repo at `/home/node/kit-repo` (fixed SHAs; its header is the expected diff) |
 | `ids.js` | container | workflow id ↔ name listing, read from the sqlite DB |
 | `list-wf.js` | container | per-workflow summary: typeVersion, timeout, grace, format, onError |
@@ -197,6 +197,18 @@ only a real n8n shows, and so what they assert on:
   and dates make the SHAs reproducible, so the verdict names the merge base. Fingerprint stability
   is proven end to end with two extra branches: `kit-shifted` inserts three lines above the anchor,
   `kit-edited` rewords it. `run-cases.mjs` records every `Kit …` node's whole item under `kitRuns`.
+
+## The background-subagent cases
+
+`case89`–`case91` pin Claude Code 1.4, the Chat Model 1.1 and the Task Tool 1.1, and ask for one
+general-purpose subagent with `run_in_background` set, which reads a sku from
+`fixture-project/data/stock.csv` — plain data: a subagent refused to repeat a codeword from a file
+that phrased it as an instruction. The CLI then writes an interim result ("waiting on the
+subagent") before the final one. Each case asserts the answer carries `SKU=KESTREL-5082` and no
+waiting text, and — from the debug log, which `run-cases.mjs` counts into `backgroundRun` — that a
+subagent reported back and more than one result was written, so a pass that never backgrounded
+fails instead of passing trivially. In `case91` the outer Chat Model cannot delegate and logs
+nothing, so the counts are the tool's own. About US$0.20 for the three.
 
 ## Retry a timing-sensitive failure before investigating it
 

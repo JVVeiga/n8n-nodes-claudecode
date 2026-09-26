@@ -282,6 +282,14 @@ for (const { id, name } of ids) {
 	// because "it timed out" is also what a network problem looks like.
 	const authFailures = (raw.match(/"error":"authentication_failed"/g) ?? []).length;
 
+	// What the nodes with debug on logged per message: a background subagent shows as a
+	// task_notification, and the interim answer as an extra result.
+	const debugLines = raw.split('\n').filter((l) => /\| debug \|/.test(l));
+	const backgroundRun = {
+		results: debugLines.filter((l) => /\| Result message /.test(l)).length,
+		notifications: debugLines.filter((l) => /"subtype":"task_notification"/.test(l)).length,
+	};
+
 	// The CLI writes the node error to the log even when the JSON blob omits it.
 	const loggedError =
 		raw.match(/NodeOperationError: ([^\n]{0,400})/)?.[1] ??
@@ -301,6 +309,7 @@ for (const { id, name } of ids) {
 		hasTopLevelErrorField: items[0] ? Object.prototype.hasOwnProperty.call(items[0], 'error') : null,
 		setItemJson: setItems[0]?.json ?? null,
 		authFailures,
+		backgroundRun,
 		errorMessage: nodeError?.message ?? loggedError,
 		errorDescription: nodeError?.description ?? null,
 		errorType: nodeError?.type ?? null,

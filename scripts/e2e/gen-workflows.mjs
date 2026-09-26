@@ -857,6 +857,7 @@ function agentWorkflow({
 	taskTool, // { nodeName, toolDescription, projectPath, options } -> the dedicated claudeCodeTaskTool
 	usageTool, // { nodeName, toolDescription } -> the dedicated claudeCodePlanUsageTool
 	twoItems = false, // a two-item Code node between the trigger and the Agent
+	modelVersion = 1, // the Chat Model's typeVersion
 }) {
 	const nodes = [
 		{
@@ -932,7 +933,7 @@ function agentWorkflow({
 		// NOT 'Claude Code…': run-cases.mjs must keep reading the Agent's output, not the model's.
 		name: 'CC Chat Model',
 		type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeChatModel',
-		typeVersion: 1,
+		typeVersion: modelVersion,
 		position: [220, 220],
 		...(auth?.cred
 			? { credentials: { [auth.cred.type]: { id: auth.cred.id, name: auth.cred.name } } }
@@ -969,7 +970,7 @@ function agentWorkflow({
 			id: nextId(),
 			name: taskTool.nodeName,
 			type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeTaskTool',
-			typeVersion: 1,
+			typeVersion: taskTool.version ?? 1,
 			position: [480, 380],
 		});
 		for (const agent of agentNames) link(taskTool.nodeName, 'ai_tool', agent);
@@ -1761,6 +1762,58 @@ function kitWorkflow() {
 }
 
 cases.push(kitWorkflow());
+
+// A subagent sent to the background makes the CLI write an interim result ("launched, waiting")
+// before the final one. The value is in a file only the subagent is told to read — plain data,
+// because a subagent refused to repeat a codeword from a file that phrased it as an instruction.
+const BACKGROUND_TASK =
+	'Use the Agent tool to start ONE general-purpose subagent with run_in_background set to true, ' +
+	"giving it this task: 'Read the file /workspace/data/stock.csv with the Read tool and reply " +
+	"with only the sku on its one data row.' Do not read any file yourself. Once it is " +
+	'launched, wait for the subagent to report back, then reply with exactly: ' +
+	'SKU=<the sku the subagent reported>';
+
+cases.push(
+	workflow({
+		name: 'case89 Claude Code 1.4 - answers after a background subagent',
+		notes:
+			'typeVersion 1.4. EXPECT: the result carries SKU=KESTREL-5082 (from the subagent), ' +
+			'not the interim "launched/waiting" text, and equals the LAST result in the transcript.',
+		version: 1.4,
+		claude: { prompt: BACKGROUND_TASK, effort: 'low', maxTurns: 20, timeout: 240 },
+	}),
+	agentWorkflow({
+		name: 'case90 Chat Model 1.1 - answers after a background subagent',
+		notes:
+			'Chat Model typeVersion 1.1 under an AI Agent. EXPECT: the Agent output carries ' +
+			'SKU=KESTREL-5082, not the interim text.',
+		prompts: [BACKGROUND_TASK],
+		modelVersion: 1.1,
+		modelOptions: { timeout: 240, maxTurns: 20, disallowedTools: ['Bash'] },
+	}),
+	agentWorkflow({
+		name: 'case91 Task Tool 1.1 - answers after a background subagent',
+		notes:
+			'Task Tool typeVersion 1.1; the outer Chat Model cannot delegate itself and does not log. ' +
+			'EXPECT: the tool’s own response carries SKU=KESTREL-5082, not the interim text.',
+		prompts: [
+			`Call the Background_Delegate tool with the task: "${BACKGROUND_TASK}". Then reply with exactly what the tool returned.`,
+		],
+		modelOptions: { timeout: 300, maxTurns: 8, debug: false, disallowedTools: ['Task', 'Agent', 'Bash'] },
+		taskTool: {
+			nodeName: 'Background Delegate',
+			version: 1.1,
+			toolDescription:
+				'Runs a task with Claude Code inside the /workspace project. Input: one clear task in natural language. Returns the result as text.',
+			projectPath: '/workspace',
+			options: {
+				timeout: 240,
+				maxTurns: 20,
+				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+			},
+		},
+	}),
+);
 
 // case80's targets. Neither is named `case…`, so run-cases never executes them directly, and both
 // must be PUBLISHED: a Call Workflow Tool resolves the published version, and an MCP Server

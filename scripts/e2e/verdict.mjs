@@ -496,6 +496,41 @@ const checks = [
       d.repeated?.length === 1 && d.repeated[0].previous?.id === 101 && d.repeated[0].item?.line === 10 &&
       d.resolved?.length === 1 && d.resolved[0].id === 102;
   }],
+  ['89 Claude Code 1.4 answers with the subagent’s value, not the interim text', () => {
+    const j = get('case89')?.itemJson;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /SKU=KESTREL-5082/.test(out) && !/launch|waiting|wait for/i.test(out);
+  }],
+  ['89 the answer is the LAST result the CLI wrote', () => {
+    const j = get('case89')?.itemJson;
+    const results = (j?.messages ?? []).filter((m) => m.type === 'result');
+    return results.length >= 1 && results[results.length - 1].result === j.result;
+  }],
+  ['89 the subagent reported back and the CLI wrote more than one result', () => {
+    const b = get('case89')?.backgroundRun ?? {};
+    console.log(`      89 background: ${JSON.stringify(b)}`);
+    return b.notifications >= 1 && b.results >= 2;
+  }],
+  ['90 Chat Model 1.1 answers with the subagent’s value, not the interim text', () => {
+    const c = get('case90');
+    const out = String(c?.itemJson?.output ?? '');
+    return c?.status === 'success' && /SKU=KESTREL-5082/.test(out) && !/launch|waiting|wait for/i.test(out);
+  }],
+  ['90 the subagent reported back and the CLI wrote more than one result', () => {
+    const b = get('case90')?.backgroundRun ?? {};
+    console.log(`      90 background: ${JSON.stringify(b)}`);
+    return b.notifications >= 1 && b.results >= 2;
+  }],
+  ['91 Task Tool 1.1 returns the subagent’s value, not the interim text', () => {
+    const c = get('case91');
+    const out = String(c?.toolRuns?.['Background Delegate'] ?? '');
+    return c?.status === 'success' && /SKU=KESTREL-5082/.test(out) && !/launch|waiting|wait for/i.test(out);
+  }],
+  ['91 the subagent reported back and the CLI wrote more than one result', () => {
+    const b = get('case91')?.backgroundRun ?? {};
+    console.log(`      91 background: ${JSON.stringify(b)}`);
+    return b.notifications >= 1 && b.results >= 2;
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
