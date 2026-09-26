@@ -6,10 +6,11 @@ import { buildV12Output } from '../ClaudeCode/output/v12';
 import { isResult, lastResult } from '../shared/sdkMessage';
 import { countSubagentToolUses } from './subagentReport';
 
-/** The shared diagnostics, with subagent delegations counted under both of their tool names. */
+/** The shared diagnostics, read from the final result, with subagent delegations counted under
+ * both of their tool names. */
 export function buildAgentDiagnostics(input: DiagnosticsInput): Record<string, unknown> {
 	return {
-		...buildDiagnostics(input),
+		...buildDiagnostics({ ...input, messages: withFinalResultOnly(input.messages) }),
 		subagentToolUses: countSubagentToolUses(input.messages),
 	};
 }

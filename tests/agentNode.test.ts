@@ -16,6 +16,7 @@ import {
 	assistantTool,
 	errorResult,
 	init,
+	model,
 	msg,
 	SESSION,
 	streams,
@@ -243,6 +244,27 @@ describe('ClaudeCodeAgent — a plain run', () => {
 		assert.equal(json.result, 'ALPHA=ORCHID BETA=GRANITE');
 		assert.equal((json.metrics as IDataObject).total_cost_usd, 0.05);
 		assert.equal((json.messages as unknown[]).length, 5);
+	});
+
+	it('diagnostics read the final result, which carries the subagents’ models', async () => {
+		const { json } = await exec({
+			stream: {
+				messages: [
+					init(),
+					successResult({
+						result: 'Launched; waiting.',
+						modelUsage: { 'claude-sonnet-5': model() },
+						session_id: 'interim-session',
+					}),
+					successResult({
+						result: 'Done.',
+						modelUsage: { 'claude-sonnet-5': model(), 'claude-haiku-5': model() },
+					}),
+				],
+			},
+		});
+		assert.deepEqual(diagnosticsOf(json).modelsUsed, ['claude-sonnet-5', 'claude-haiku-5']);
+		assert.equal(diagnosticsOf(json).sessionId, SESSION);
 	});
 
 	it('an error in the final result is not masked by an earlier success', async () => {
