@@ -1,4 +1,4 @@
-## Unreleased
+## [2.3.1](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.3.0...v2.3.1) (2026-09-26)
 
 What the canvas shows for the new nodes. Nothing a node emits changes, so no typeVersion moves.
 
