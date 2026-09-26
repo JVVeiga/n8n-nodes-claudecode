@@ -188,6 +188,48 @@ describe('readAgentParams — the Agent’s own settings', () => {
 		assert.equal(custom.agent.verification?.instructions, 'Be strict.');
 	});
 
+	it('expression values of another type are coerced, not crashed on', () => {
+		const { run, agent } = read({
+			prompt: 42,
+			projectPath: 7,
+			sessionMode: 'resume',
+			sessionKey: 12345,
+			instructionFiles: [' a.md ', '', 'b.md', 3],
+			options: { processName: 99 },
+			verification: {
+				enabled: true,
+				itemsPath: 5,
+				filterField: 0,
+				filterValues: [' high ', 'critical', '', 1],
+				instructions: 8,
+			},
+		});
+		assert.equal(run.prompt, '42');
+		assert.equal(run.projectPath, '7');
+		assert.equal(agent.session.key, '12345');
+		assert.deepEqual(agent.instructionFiles, ['a.md', 'b.md', '3']);
+		assert.equal(agent.processName, '99');
+		assert.deepEqual(agent.verification, {
+			itemsPath: '5',
+			filter: { field: '0', values: ['high', 'critical', '1'] },
+			instructions: '8',
+		});
+	});
+
+	it('null from an expression reads as empty', () => {
+		const { run, agent } = read({
+			prompt: null,
+			sessionKey: null,
+			instructionFiles: null,
+			verification: { enabled: true, itemsPath: null, filterField: null, filterValues: null },
+		});
+		assert.equal(run.prompt, '');
+		assert.equal(agent.session.key, '');
+		assert.deepEqual(agent.instructionFiles, []);
+		assert.equal(agent.verification?.itemsPath, '');
+		assert.equal(agent.verification?.filter, null);
+	});
+
 	it('parseInstructionFiles drops blank lines and surrounding space', () => {
 		assert.deepEqual(parseInstructionFiles(''), []);
 		assert.deepEqual(parseInstructionFiles(' a.md \n\nb/c.md'), ['a.md', 'b/c.md']);

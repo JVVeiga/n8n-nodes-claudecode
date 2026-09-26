@@ -508,6 +508,11 @@ describe('ClaudeCodeAgent — sessions', () => {
 		assert.equal(diagnosticsOf(json).sessionState, 'resumed');
 	});
 
+	it('a numeric key from an expression resumes the same session as its text', async () => {
+		const { optionsOf } = await exec({ params: { sessionMode: 'resume', sessionKey: 12345 } });
+		assert.equal(optionsOf(0).resume, toSessionUuid('12345'));
+	});
+
 	it('a key with no session creates it under the key’s uuid', async () => {
 		const { json, calls, optionsOf } = await exec({
 			params: { sessionMode: 'resume', sessionKey: 'ticket-42' },

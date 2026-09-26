@@ -45,11 +45,17 @@ type AgentOptions = Omit<SubNodeOptions, 'effort' | 'maxTurns' | 'timeout'> & {
 	allowClaudeAiConnectors?: boolean;
 };
 
-export const parseInstructionFiles = (raw: string): string[] =>
-	raw
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter((line) => line !== '');
+/** An expression can resolve to a number, null or an array where the field expects text. */
+const text = (value: unknown): string =>
+	typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);
+
+/** A list field: an array from an expression is taken as the list, text is split. */
+const list = (value: unknown, separator: RegExp | string): string[] =>
+	(Array.isArray(value) ? value.map(text) : text(value).split(separator))
+		.map((entry) => entry.trim())
+		.filter((entry) => entry !== '');
+
+export const parseInstructionFiles = (raw: unknown): string[] => list(raw, /\r?\n/);
 
 /** The Agent is a new node, so Attach All's `auto` means on, as it does from Claude Code 1.3. */
 export const resolveAgentAttachAll = (selection: AttachAllSelection): boolean =>
@@ -66,7 +72,8 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 
 	const run: ClaudeCodeParams = {
 		...base,
-		prompt: ctx.getNodeParameter('prompt', itemIndex, '') as string,
+		prompt: text(ctx.getNodeParameter('prompt', itemIndex, '')),
+		projectPath: text(base.projectPath),
 		attachments: {
 			...base.attachments,
 			all: resolveAgentAttachAll(
@@ -88,11 +95,11 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 			outputMode: ctx.getNodeParameter('outputMode', itemIndex, 'text') as OutputMode,
 			jsonSchemaText: stringify(ctx.getNodeParameter('jsonSchema', itemIndex, '')),
 			instructionFiles: parseInstructionFiles(
-				ctx.getNodeParameter('instructionFiles', itemIndex, '') as string,
+				ctx.getNodeParameter('instructionFiles', itemIndex, ''),
 			),
 			session: {
 				mode: ctx.getNodeParameter('sessionMode', itemIndex, 'new') as SessionMode,
-				key: (ctx.getNodeParameter('sessionKey', itemIndex, '') as string).trim(),
+				key: text(ctx.getNodeParameter('sessionKey', itemIndex, '')).trim(),
 			},
 			orchestration: ctx.getNodeParameter(
 				'subagentOrchestration',
@@ -102,7 +109,7 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 			allowConnectors: options.allowClaudeAiConnectors === true,
 			includeTranscript: options.includeTranscript === true,
 			usageWorkflowId: usageWorkflowId(options.reportUsageTo),
-			processName: (options.processName ?? '').trim(),
+			processName: text(options.processName).trim(),
 			verification: readVerification(ctx.getNodeParameter('verification', itemIndex, {})),
 		},
 	};
@@ -110,28 +117,20 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 
 type VerificationInput = {
 	enabled?: boolean;
-	itemsPath?: string;
-	filterField?: string;
-	filterValues?: string;
-	instructions?: string;
+	itemsPath?: unknown;
+	filterField?: unknown;
+	filterValues?: unknown;
+	instructions?: unknown;
 };
 
 export function readVerification(raw: unknown): VerificationParams | null {
 	const input = (raw ?? {}) as VerificationInput;
 	if (input.enabled !== true) return null;
-	const field = (input.filterField ?? '').trim();
+	const field = text(input.filterField).trim();
 	return {
-		itemsPath: (input.itemsPath ?? '').trim(),
-		filter: field
-			? {
-					field,
-					values: (input.filterValues ?? '')
-						.split(',')
-						.map((v) => v.trim())
-						.filter((v) => v !== ''),
-				}
-			: null,
-		instructions: (input.instructions ?? '').trim() || DEFAULT_VERIFIER_INSTRUCTIONS,
+		itemsPath: text(input.itemsPath).trim(),
+		filter: field ? { field, values: list(input.filterValues, ',') } : null,
+		instructions: text(input.instructions).trim() || DEFAULT_VERIFIER_INSTRUCTIONS,
 	};
 }
 
