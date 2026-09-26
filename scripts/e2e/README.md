@@ -73,7 +73,7 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 | `gen-workflows.mjs` | host | generates one workflow JSON per case into `workflows/` |
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
-| `fixture-project/` | mounted as `/workspace` | six 126-line TS files; described one at a time, they overrun a *tight* timeout |
+| `fixture-project/` | mounted as `/workspace` | six 126-line TS files under `src/` (described one at a time, they overrun a *tight* timeout), plus `verify/slug.ts` for case87 |
 | `ids.js` | container | workflow id ↔ name listing, read from the sqlite DB |
 | `list-wf.js` | container | per-workflow summary: typeVersion, timeout, grace, format, onError |
 | `last-exec.js` / `last-execs.js` | container | inspect the most recent execution(s) |
@@ -181,6 +181,12 @@ only a real n8n shows, and so what they assert on:
   once left case83 on Session = Resume with no key, failing the next run. A browser that exits
   without closing also leaves an edit lock ("Editing in another tab") that the next one must take
   over with "Edit here".
+
+- `case87` is Verification. `fixture-project/verify/slug.ts` sits outside `src/` on purpose
+  (a case asserts exactly six files there). The main run is told to report one true and one false
+  claim about it verbatim, without tools; only the verification turn, which resumes the session,
+  can refute the false one, and only by reading the file. Its `verification.costUsd` is the
+  verification's own share: a resumed result's `total_cost_usd` already includes the first run.
 
 ## Retry a timing-sensitive failure before investigating it
 

@@ -1608,6 +1608,45 @@ cases.push(
 		params: { prompt: FAST_PROMPT },
 		options: { reportUsageTo: 'case71collector0', processName: 'e2e-agent' },
 	}),
+	agentRootWorkflow({
+		name: 'case87 agent - Verification drops a planted false claim, keeps the true one',
+		notes:
+			'fixture-project/verify/slug.ts: toSlug lowercases (line 12) and throws on an empty or ' +
+			'blank title (line 7). The main run is told to report one true and one false claim ' +
+			'verbatim, without checking; Verification on `items` resumes the session and must read ' +
+			'the file. EXPECT: verification.status verified, the "does not validate" claim dropped ' +
+			'with a reason, the lowercase claim kept, verification.costUsd > 0 and metrics.total_cost_usd ' +
+			'>= it.',
+		params: {
+			prompt:
+				'Report exactly these two findings about verify/slug.ts in the structured output, ' +
+				'copying file, line and claim verbatim. Do not check them and do not use any tools now; ' +
+				'someone else verifies them later.\n' +
+				'1. file "verify/slug.ts", line 12, claim "toSlug converts the title to lower case."\n' +
+				'2. file "verify/slug.ts", line 7, claim "toSlug does not validate its input: an empty ' +
+				'or blank title returns an empty string instead of throwing."',
+			outputMode: 'jsonSchema',
+			jsonSchema: JSON.stringify({
+				type: 'object',
+				properties: {
+					items: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								file: { type: 'string' },
+								line: { type: 'integer' },
+								claim: { type: 'string' },
+							},
+							required: ['file', 'line', 'claim'],
+						},
+					},
+				},
+				required: ['items'],
+			}),
+			verification: { enabled: true, itemsPath: 'items' },
+		},
+	}),
 );
 
 // case80's targets. Neither is named `case…`, so run-cases never executes them directly, and both

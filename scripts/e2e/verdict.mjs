@@ -403,6 +403,26 @@ const checks = [
       typeof r.run_key === 'string' && r.run_key.includes(':') &&
       typeof r.metrics?.total_cost_usd === 'number' && r.metrics.total_cost_usd > 0);
   }],
+  // Verification (87). The false claim is refutable only by reading verify/slug.ts, which the
+  // main run was told not to do.
+  ['87 Verification drops the planted false claim with a reason', () => {
+    const v = get('case87')?.itemJson?.verification;
+    const dropped = v?.droppedItems ?? [];
+    return v?.status === 'verified' && v.checked === 2 && v.dropped === 1 && dropped.length === 1 &&
+      /does not validate/i.test(String(dropped[0].item?.claim)) &&
+      String(dropped[0].reason ?? '').trim().length > 0;
+  }],
+  ['87 the true claim is kept in structured', () => {
+    const j = get('case87')?.itemJson;
+    const items = j?.structured?.items ?? [];
+    return j?.success === true && items.length === 1 && /lower case/i.test(String(items[0].claim));
+  }],
+  ['87 metrics count both runs once; the verification cost is its own share', () => {
+    const j = get('case87')?.itemJson;
+    const cost = j?.verification?.costUsd;
+    return typeof cost === 'number' && cost > 0 &&
+      typeof j.metrics?.total_cost_usd === 'number' && j.metrics.total_cost_usd >= cost;
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
