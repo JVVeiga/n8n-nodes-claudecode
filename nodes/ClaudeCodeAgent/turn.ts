@@ -1,5 +1,6 @@
 import type { OutputFormat, SDKMessage, query } from '@anthropic-ai/claude-agent-sdk';
 import type { DebugLogger } from '../shared/debug';
+import { lastResult } from '../shared/sdkMessage';
 import {
 	runWithSession,
 	type SessionAttempt,
@@ -8,12 +9,19 @@ import {
 } from '../shared/session';
 import type { ToolBridge } from '../shared/toolBridge';
 import { buildQueryOptions } from '../ClaudeCode/config';
-import type { ItemFailer } from '../ClaudeCode/settle';
+import type { FailureContext } from '../ClaudeCode/errors';
+import {
+	settleRun,
+	settleStructuredFailure,
+	type ItemFailer,
+	type Settled,
+} from '../ClaudeCode/settle';
 import { createPromptStream, type PromptContent } from '../ClaudeCode/promptStream';
 import { runQuery } from '../ClaudeCode/runner';
 import type { ClaudeCodeParams, RunOutcome } from '../ClaudeCode/types';
 import type { AgentExtras } from './params';
 import type { PreparedAgent } from './prepare';
+import type { StructuredOutcome } from './structured';
 
 /** One CLI run: the main run, the create after a resume found nothing, or a verification run. */
 export type Attempt = SessionAttempt & {
@@ -162,4 +170,43 @@ export async function runMainTurn(
 	return sessionUuid
 		? runWithSession(runOnce, { sessionUuid, timeoutSeconds, debug })
 		: { attempt: await runOnce(null, { timeoutSeconds }), state: 'new', unrecoverable: false };
+}
+
+/**
+ * How the main run ends when it did not succeed: a timeout, a run error, a session that could be
+ * neither resumed nor created, or a missing structured object. Null when it succeeded.
+ */
+export function settleMainRun(
+	failure: FailureContext,
+	session: SessionRun<Attempt>,
+	structuredOutcome: StructuredOutcome | null,
+	options: { sessionKey: string; sessionUuid: string | null; continueOnFail: () => boolean },
+): Settled | null {
+	const { run } = session.attempt;
+	// The SDK rejects right after yielding an exhausted-retries result; that rejection only
+	// repeats the result, which is reported below as the structured failure it is.
+	const structuredExhausted =
+		structuredOutcome !== null &&
+		'failure' in structuredOutcome &&
+		lastResult(session.attempt.sdkMessages)?.subtype === 'error_max_structured_output_retries';
+	const runError = session.unrecoverable
+		? new Error(
+				`Claude Code could neither resume nor create the session for "${options.sessionKey}" ` +
+					`(${options.sessionUuid}). Check the container's disk and the debug log, or set Session to New.`,
+			)
+		: structuredExhausted
+			? null
+			: run.error;
+	const settled = settleRun(
+		failure,
+		{ ...run, error: runError },
+		session.attempt.graceSeconds,
+		options.continueOnFail,
+	);
+	if (settled) return settled;
+
+	if (structuredOutcome && 'failure' in structuredOutcome) {
+		return settleStructuredFailure(failure, structuredOutcome.failure, options.continueOnFail);
+	}
+	return null;
 }

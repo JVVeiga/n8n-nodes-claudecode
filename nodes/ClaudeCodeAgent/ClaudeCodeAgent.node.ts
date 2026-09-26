@@ -7,19 +7,11 @@ import type {
 } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
-import { lastResult } from '../shared/sdkMessage';
 import { buildToolBridge } from '../shared/toolBridge';
 import { prepareAttachments } from '../ClaudeCode/attachments/prepare';
 import type { StagedAttachments } from '../ClaudeCode/attachments/types';
 import type { FailureContext } from '../ClaudeCode/errors';
-import {
-	itemFailer,
-	settle,
-	settleCaught,
-	settleRun,
-	settleStructuredFailure,
-	type ItemFailer,
-} from '../ClaudeCode/settle';
+import { itemFailer, settle, settleCaught, type ItemFailer } from '../ClaudeCode/settle';
 import { claudeCodeAgentDescription } from './description';
 import { orchestrationInstruction } from './orchestration';
 import { buildAgentDiagnostics, buildAgentOutput } from './output';
@@ -33,7 +25,7 @@ import {
 } from './report';
 import { extractStructured } from './structured';
 import { buildSubagentReport } from './subagentReport';
-import { createTurnRunner, runMainTurn, type Attempt } from './turn';
+import { createTurnRunner, runMainTurn, settleMainRun, type Attempt } from './turn';
 import { runVerification } from './verification/run';
 
 export type AgentExecuteDeps = {
@@ -208,34 +200,12 @@ async function runAgentItem(
 	item.diagnostics = diagnostics;
 	const failure = failureOf(item, itemIndex);
 
-	// The SDK rejects right after yielding an exhausted-retries result; that rejection only
-	// repeats the result, which is reported below as the structured failure it is.
-	const structuredExhausted =
-		structuredOutcome !== null &&
-		'failure' in structuredOutcome &&
-		lastResult(messages)?.subtype === 'error_max_structured_output_retries';
-	const runError = session.unrecoverable
-		? new Error(
-				`Claude Code could neither resume nor create the session for "${agent.session.key}" ` +
-					`(${sessionUuid}). Check the container's disk and the debug log, or set Session to New.`,
-			)
-		: structuredExhausted
-			? null
-			: run.error;
-	const settled = settleRun(
-		failure,
-		{ ...run, error: runError },
-		session.attempt.graceSeconds,
-		() => ctx.continueOnFail(),
-	);
+	const settled = settleMainRun(failure, session, structuredOutcome, {
+		sessionKey: agent.session.key,
+		sessionUuid,
+		continueOnFail: () => ctx.continueOnFail(),
+	});
 	if (settled) return settle(settled, fail);
-
-	if (structuredOutcome && 'failure' in structuredOutcome) {
-		return settle(
-			settleStructuredFailure(failure, structuredOutcome.failure, () => ctx.continueOnFail()),
-			fail,
-		);
-	}
 
 	let structured =
 		structuredOutcome && 'ok' in structuredOutcome ? structuredOutcome.ok : undefined;
