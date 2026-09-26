@@ -404,18 +404,26 @@ The grace is clamped to half the Timeout, so a large grace on a short Timeout ca
 
 Anything that changes what a node *emits* is gated behind its version, never switched on by a
 package upgrade. **A node keeps the version it was created with**, so upgrading the package never
-changes an existing workflow. New nodes start on the current default, `1.2`.
+changes an existing workflow. New nodes start on the current default, `1.4`.
 
-| | 1 | 1.1 | 1.2 (default) |
-|---|---|---|---|
-| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` |
-| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 |
-| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 |
-| Output shape | one per format | one per format | [one envelope](#output-formats) |
+| | 1 | 1.1 | 1.2 | 1.3 | 1.4 (default) |
+|---|---|---|---|---|---|
+| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` | `60` | `60` |
+| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 | same as 1.1 | same as 1.1 |
+| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 | same as 1.1 | same as 1.1 |
+| Output shape | one per format | one per format | [one envelope](#output-formats) | one envelope | one envelope |
+| Attach All Binaries `Auto` | off | off | off | on | on |
+| A subagent in the background | answers from the first result | same as 1 | same as 1 | same as 1 | answers from the final result |
 
-All three get the diagnostics, the session ID and the self-describing error message. Nothing else is
-version-gated: [Attachments](#attachments) work identically on all three, because they change what
-goes *in* rather than what comes out.
+All of them get the diagnostics, the session ID and the self-describing error message.
+[Attachments](#attachments) work on every version; only what Attach All's `Auto` means differs.
+
+**1.4 and background subagents.** When Claude sends a subagent to the background, the CLI writes a
+result for the turn that launched it ("I've launched the agent, I'll wait") and another once the
+subagent reports back. Below 1.4 the item's `result` can be that first, interim text. From 1.4 the
+answer, `success`, `errorText` and the diagnostics come from the final result, and the graceful
+timeout waits for a subagent still out instead of treating the interim result as the end of the
+run. The Chat Model and the Task Tool got the same change as their version 1.1.
 
 To give an existing node the newer output shape without recreating it, set **Output Envelope** to
 `Unified` in Additional Options. It defaults to `Auto`, which routes by version and changes nothing.
@@ -523,8 +531,9 @@ sections come with it:
 
 **Existing workflows are untouched.** A node keeps the typeVersion it was created with, so nodes
 built before 1.2 keep emitting exactly what they always did — a flat `duration_ms` and
-`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. Only a
-newly added node starts on 1.2. To move an old one, delete and re-add it.
+`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. A newly
+added node starts on the current default, which keeps this envelope. To move an old one, set
+Output Envelope to `Unified`, or delete and re-add it.
 
 What 1.2 changes, for anyone porting a workflow across:
 
@@ -557,6 +566,10 @@ What you get over the native Anthropic Chat Model:
 in-process tools (`mcp__n8n__<tool name>`) and executed *inside its session*, so the Agent sees
 one model turn per call while each Tool sub-node still logs its executions. Two Agent features
 therefore do not apply — human-in-the-loop tool approval and *Return Intermediate Steps*.
+
+**Version 1.1** (the default for a new node) answers from the run's final result when Claude sent a
+subagent to the background, and its graceful timeout waits for that subagent; version 1 can answer
+with the interim "I've launched the agent" text. See [Node versions](#node-versions).
 **Require Specific Output Format works**: the model hands back the formatting call the Agent's
 parser expects.
 
@@ -594,7 +607,9 @@ OpenAI models included:
 Agent sends one `task` string, Claude Code runs it in the configured Project Path (reading files,
 running commands, writing code), and the result comes back as text. Timeout, budget cap, tool
 restrictions and per-execution Authentication are all per-tool options. Failures — timeouts
-included — return as text the Agent can read and react to, never as a dead run.
+included — return as text the Agent can read and react to, never as a dead run. Version 1.1 (the
+default for a new node) returns the final result when Claude sent a subagent to the background;
+version 1 can return the interim text. See [Node versions](#node-versions).
 
 **Claude Code Usage Tool** — a zero-argument tool that returns the account's plan usage
 (utilisation and reset time per window) as a JSON report, with the same scope-retry and opt-in
@@ -1231,7 +1246,7 @@ fixture moved and why. Fixes to old behaviour belong in a new node version, not 
 marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
 `v12.ts`.
 
-There is also a Docker suite that runs real n8n with the node installed and asserts 83 named
+There is also a Docker suite that runs real n8n with the node installed and asserts 90 named
 behaviours against real executions — including that an attached image, PDF or document actually
 reaches the model, which no unit test can prove. It lives in `scripts/e2e/`, which **is** versioned;
 only what it generates (`workflows/`, `results.json`, `run-*.log`, `.pack/`) is gitignored. It costs

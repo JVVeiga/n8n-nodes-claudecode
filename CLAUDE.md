@@ -77,7 +77,9 @@ nodes/
     readAuth.ts                the only impure half: the selector + getCredentials()
     authDescription.ts         the Authentication selector and credentials[], shared by both nodes
     debug.ts                   one debug gate — no `if (debug)` blocks in business logic
-    sdkMessage.ts              narrowing helpers over SDKMessage; the only casts live here
+    sdkMessage.ts              narrowing helpers over SDKMessage; the only casts live here —
+                               also withFinalResultOnly and countSubagentToolUses (Agent + Task)
+    text.ts                    a text parameter as text: an expression can resolve to a number
     problem.ts                 a validation failure, returned rather than thrown
     abort.ts                   attach/detach an operation's AbortController to outer signals
     preview.ts                 truncation for log and error text
@@ -365,7 +367,12 @@ it was created with, so raising `defaultVersion` only affects newly added nodes.
 | 1 | the original |
 | 1.1 | Timeout Wrap-Up Grace defaults to 60s; failure items reshaped to reach the error output |
 | 1.2 | one output envelope for all three formats |
-| 1.3 | Attach All Binaries set to Auto means ON (current default) |
+| 1.3 | Attach All Binaries set to Auto means ON |
+| 1.4 | answers from the final result when subagents run in the background; graceful timeout waits for pending subagents (current default) |
+
+The Chat Model and the Task Tool got the same final-result change as their **1.1** (current
+default; 1 unchanged). Every version gate reads `nodeVersion` in params.ts
+(`answersFromFinalResult`, `subNodeAnswersFromFinalResult`), never a schema default.
 
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
 an existing version emits**; add a new one.
@@ -379,7 +386,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1200 tests, node:test, no framework
+npm test                                    # 1232 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -402,7 +409,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 83 named behaviours against real executions:
+with the node installed and asserts 90 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

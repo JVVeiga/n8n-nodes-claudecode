@@ -1,8 +1,9 @@
 ## [2.3.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.2.0...v2.3.0) (2026-09-25)
 
-Three new nodes. A minor: no existing node changes what it emits, no typeVersion moved, and the 48
-golden fixtures are byte-identical and unregenerated. The code the new nodes share with the old ones
-(the tool bridge and the session helpers, moved to `shared/`; three new `config.ts` appliers and an
+Three new nodes, three fixes to the existing ones, and new typeVersions for the fix that changes an
+answer. A minor: a stored workflow keeps its typeVersion and emits what it did, and the 48 golden
+fixtures are byte-identical and unregenerated. The code the new nodes share with the old ones (the
+tool bridge and the session helpers, moved to `shared/`; three new `config.ts` appliers and an
 Instruction Files input to the System Prompt one; five optional diagnostics fields) is a no-op for
 them.
 
@@ -60,18 +61,40 @@ refs and no shell. Field names are parameters.
 subagents (correctness, performance and SQL, conventions), a JSON Schema review, Instruction Files
 from `.review/rules.md` and Verification on blockers → Validate Anchors → Fingerprint.
 
+### New typeVersions: Claude Code 1.4, Chat Model 1.1, Task Tool 1.1
+
+When Claude sends a subagent to the background, the CLI writes a result for the turn that launched
+it ("I've launched the agent, I'll wait") and another once the subagent reports back. The Claude Code
+node (1.2/1.3 envelope), the Chat Model and the Task Tool answered from the first, so the item could
+carry that interim text, and their graceful timeout took the interim result as the end of the run.
+
+- **Claude Code 1.4** (the new default): `result`, `success`, `errorText` and the diagnostics come
+  from the final result, and the run stays open, and the graceful timeout keeps its wrap-up, while a
+  subagent is still out. 1 to 1.3 emit what they did, the Unified envelope override included.
+- **Chat Model 1.1** and **Task Tool 1.1** (the new defaults): the same, for the reply and for the
+  usage report. Version 1 is unchanged.
+
+A node keeps the version it was created with, so only nodes added from now on get it. On runs with
+several results `metrics.duration_ms` and `num_turns` still cover the last segment only; the cost is
+cumulative and right.
+
+### Fixes
+
+- **`diagnostics.subagentToolUses` counts subagent delegations again.** The CLI delegates through a
+  tool named `Agent` while still listing `Task` in `init`, so the Claude Code node reported 0 for
+  every run that used subagents. Both names are counted now, on every typeVersion: a wrong number
+  corrected, with the field and its shape unchanged.
+- **A number where a text parameter is set by an expression no longer crashes the node.** n8n
+  coerces only parameters that declare `validateType`, so `{{ $json.ticketId }}` resolving to 4711
+  made the Chat Model's Session ID fail with `.trim is not a function`. The same crash reached
+  Claude Code's Session ID, Prompt, Project Path, Binary Properties and executable path, the Task
+  Tool's description and process name, and the Usage node and tool. Each is read as text now.
+
 ### Known
 
-Three behaviours of the **existing** nodes, found while building the Agent and documented here
-rather than fixed in this release, because fixing them changes what existing runs emit:
+A behaviour of the **existing** nodes, found while building the Agent and documented here rather
+than fixed in this release, because fixing it changes what existing runs emit:
 
-- **`diagnostics.subagentToolUses` counts `Task` only.** The CLI now delegates through a tool named
-  `Agent` while still listing `Task` in `init`, so the Claude Code node reports 0 for a run that used
-  subagents, on every typeVersion. The Agent counts both names.
-- **Interim text when the model backgrounds a subagent.** The Claude Code node (1.2/1.3 envelope),
-  the Chat Model and the Task Tool answer from a result chosen before the background work finishes,
-  so the item can carry "I've launched the agents… let me wait". On such runs `duration_ms` and
-  `num_turns` cover only the last segment; the cost is right.
 - **Cumulative cost on resume.** A run that resumes a session (the Claude Code node's Continue, the
   Chat Model's Session ID, the Agent's Resume) reports a `total_cost_usd` and `modelUsage` that
   include every earlier run of that session. A collector that sums cost per execution counts those
