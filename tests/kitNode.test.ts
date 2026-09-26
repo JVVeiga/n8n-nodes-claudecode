@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { NodeOperationError, type INodeProperties } from 'n8n-workflow';
+import { NodeOperationError, type IDataObject, type INodeProperties } from 'n8n-workflow';
 import { runKitItems } from '../nodes/CodeReviewKit/CodeReviewKit.node';
 import { codeReviewKitDescription } from '../nodes/CodeReviewKit/description';
+import { fingerprint, normalizeSnippet, splitLines } from '../nodes/CodeReviewKit/fingerprint';
 import type { GitApi, GitResult } from '../nodes/CodeReviewKit/git';
 import { createFakeContext, type ParamMap } from './helpers/executeFunctions';
 
@@ -106,6 +107,16 @@ describe('Code Review Kit node — Diff Context', () => {
 			addedLines: { 'src/app.ts': [2, 9, 10], 'src/new.ts': [1, 2] },
 		});
 		assert.deepEqual(item.pairedItem, { item: 0 });
+	});
+
+	it('diffs up to the Head Ref it was given', async () => {
+		const t = await run(diffParams({ baseRef: 'main', headRef: 'feature' }));
+		await t.run();
+		assert.deepEqual(t.git.calls, [
+			['mergeBase', 'main', 'feature'],
+			['numstat', MERGE_BASE, 'feature'],
+			['patchU0', MERGE_BASE, 'feature'],
+		]);
 	});
 
 	it('adds the patch, truncated to the cap, when asked', async () => {
@@ -286,6 +297,30 @@ describe('Code Review Kit node — Fingerprint', () => {
 		assert.equal(out[0].fingerprint, null);
 		assert.match(out[1].fingerprint as string, /^[0-9a-f]{64}$/);
 		assert.deepEqual(git.calls, [['showFile', 'HEAD', 'src/app.ts']]);
+	});
+
+	it('reads the files at the Ref it was given', async () => {
+		const git = fakeGit({
+			showFile: (ref) =>
+				ref === 'release/1.2'
+					? { ok: APP }
+					: { problem: { message: `not at ${ref}` }, missing: true },
+		});
+		const fake = createFakeContext({
+			params: params({ ref: 'release/1.2', items: [{ path: 'src/app.ts', line: 9 }] }),
+		});
+		const [[item]] = await runKitItems(fake.ctx, { git: git.factory, pathExists });
+		assert.deepEqual(git.calls, [['showFile', 'release/1.2', 'src/app.ts']]);
+		assert.match((item.json.items as IDataObject[])[0].fingerprint as string, /^[0-9a-f]{64}$/);
+	});
+
+	it('hashes Context Lines either side of the anchor', async () => {
+		const t = await run(params({ contextLines: 1 }));
+		const [[item]] = await t.run();
+		const [first] = item.json.items as IDataObject[];
+		const snippet = normalizeSnippet(splitLines(APP), 9, 1) as string;
+		assert.equal(snippet, 'l7\nNEW9a\nNEW9b');
+		assert.equal(first.fingerprint, fingerprint('src/app.ts', 'bug', snippet));
 	});
 
 	it('gives the same fingerprint for the same snippet at another line', async () => {

@@ -158,6 +158,10 @@ describe('Code Review Kit — parseNumstat', () => {
 		assert.deepEqual(parseNumstat('3\t1\ta.ts\0'), [
 			{ path: 'a.ts', status: 'modified', additions: 3, deletions: 1 },
 		]);
+		// A rename in plain numstat: the new side is the second of the two paths.
+		assert.deepEqual(parseNumstat('1\t0\t\0before.txt\0after.txt\0'), [
+			{ path: 'after.txt', status: 'modified', additions: 1, deletions: 0 },
+		]);
 	});
 
 	it('returns nothing for an empty diff', () => {

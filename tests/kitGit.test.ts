@@ -81,6 +81,7 @@ describe('Code Review Kit — git.ts runs git with an argument array', () => {
 		assert.equal(calls[0].options.timeout, GIT_TIMEOUT_MS);
 		assert.equal(calls[0].options.maxBuffer, GIT_MAX_BUFFER);
 		assert.equal(calls[0].options.env.GIT_TERMINAL_PROMPT, '0');
+		assert.equal(calls[0].options.env.LC_ALL, 'C', 'messages the failure mapping can match');
 		assert.equal('shell' in calls[0].options, false);
 	});
 
