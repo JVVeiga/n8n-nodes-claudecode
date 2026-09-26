@@ -62,13 +62,13 @@ sections you get. See [Output Formats](#output-formats).
 
 **Start here** — [Install](#install) · [Your First Workflow](#your-first-workflow) · [Templates](./workflow-templates/) · [What people build with it](#what-people-build-with-it)
 
-**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Claude Code Chat Model](#claude-code-chat-model) · [Agent Tools](#claude-code-tools-for-ai-agents) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
+**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Claude Code Chat Model](#claude-code-chat-model) · [Agent Tools](#claude-code-tools-for-ai-agents) · [Claude Code Agent](#claude-code-agent) · [Claude Code Subagent](#claude-code-subagent) · [Code Review Kit](#code-review-kit) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
 
 **Also** — [Notes worth knowing](#notes-worth-knowing) · [Development & Contributing](#development--contributing) · [Credits](#credits)
 
 ## What people build with it
 
-Four templates ship in [`workflow-templates/`](./workflow-templates/), ready to import:
+Five templates ship in [`workflow-templates/`](./workflow-templates/), ready to import:
 
 | Template | Shape |
 |---|---|
@@ -76,6 +76,7 @@ Four templates ship in [`workflow-templates/`](./workflow-templates/), ready to 
 | [Documentation Generator](./workflow-templates/codebase-documentation-generator.json) | Schedule → agent reads the codebase → writes docs → commits |
 | [Customer Support Automation](./workflow-templates/customer-support-automation.json) | Support ticket → agent reproduces the issue → drafts a fix and a reply |
 | [Plan Limit Guard](./workflow-templates/plan-limit-guard.json) | Usage node checks remaining capacity → branches before the agent spends anything |
+| [Claude Code Review Team](./workflow-templates/claude-code-review-team.json) | Code Review Kit reads a diff → Agent with three reviewer subagents returns a verified review JSON → Kit anchors and fingerprints the items |
 
 Other things that fit the shape well: turning a Slack command into a pull request, triaging error
 logs into issues with a diagnosis attached, generating a migration script from a described schema
@@ -403,18 +404,26 @@ The grace is clamped to half the Timeout, so a large grace on a short Timeout ca
 
 Anything that changes what a node *emits* is gated behind its version, never switched on by a
 package upgrade. **A node keeps the version it was created with**, so upgrading the package never
-changes an existing workflow. New nodes start on the current default, `1.2`.
+changes an existing workflow. New nodes start on the current default, `1.4`.
 
-| | 1 | 1.1 | 1.2 (default) |
-|---|---|---|---|
-| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` |
-| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 |
-| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 |
-| Output shape | one per format | one per format | [one envelope](#output-formats) |
+| | 1 | 1.1 | 1.2 | 1.3 | 1.4 (default) |
+|---|---|---|---|---|---|
+| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` | `60` | `60` |
+| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 | same as 1.1 | same as 1.1 |
+| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 | same as 1.1 | same as 1.1 |
+| Output shape | one per format | one per format | [one envelope](#output-formats) | one envelope | one envelope |
+| Attach All Binaries `Auto` | off | off | off | on | on |
+| A subagent in the background | answers from the first result | same as 1 | same as 1 | same as 1 | answers from the final result |
 
-All three get the diagnostics, the session ID and the self-describing error message. Nothing else is
-version-gated: [Attachments](#attachments) work identically on all three, because they change what
-goes *in* rather than what comes out.
+All of them get the diagnostics, the session ID and the self-describing error message.
+[Attachments](#attachments) work on every version; only what Attach All's `Auto` means differs.
+
+**1.4 and background subagents.** When Claude sends a subagent to the background, the CLI writes a
+result for the turn that launched it ("I've launched the agent, I'll wait") and another once the
+subagent reports back. Below 1.4 the item's `result` can be that first, interim text. From 1.4 the
+answer, `success`, `errorText` and the diagnostics come from the final result, and the graceful
+timeout waits for a subagent still out instead of treating the interim result as the end of the
+run. The Chat Model and the Task Tool got the same change as their version 1.1.
 
 To give an existing node the newer output shape without recreating it, set **Output Envelope** to
 `Unified` in Additional Options. It defaults to `Auto`, which routes by version and changes nothing.
@@ -522,8 +531,9 @@ sections come with it:
 
 **Existing workflows are untouched.** A node keeps the typeVersion it was created with, so nodes
 built before 1.2 keep emitting exactly what they always did — a flat `duration_ms` and
-`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. Only a
-newly added node starts on 1.2. To move an old one, delete and re-add it.
+`total_cost_usd` on Text, `messageCount` on Messages, a nested `metrics` on Structured. A newly
+added node starts on the current default, which keeps this envelope. To move an old one, set
+Output Envelope to `Unified`, or delete and re-add it.
 
 What 1.2 changes, for anyone porting a workflow across:
 
@@ -556,6 +566,10 @@ What you get over the native Anthropic Chat Model:
 in-process tools (`mcp__n8n__<tool name>`) and executed *inside its session*, so the Agent sees
 one model turn per call while each Tool sub-node still logs its executions. Two Agent features
 therefore do not apply — human-in-the-loop tool approval and *Return Intermediate Steps*.
+
+**Version 1.1** (the default for a new node) answers from the run's final result when Claude sent a
+subagent to the background, and its graceful timeout waits for that subagent; version 1 can answer
+with the interim "I've launched the agent" text. See [Node versions](#node-versions).
 **Require Specific Output Format works**: the model hands back the formatting call the Agent's
 parser expects.
 
@@ -593,7 +607,9 @@ OpenAI models included:
 Agent sends one `task` string, Claude Code runs it in the configured Project Path (reading files,
 running commands, writing code), and the result comes back as text. Timeout, budget cap, tool
 restrictions and per-execution Authentication are all per-tool options. Failures — timeouts
-included — return as text the Agent can read and react to, never as a dead run.
+included — return as text the Agent can read and react to, never as a dead run. Version 1.1 (the
+default for a new node) returns the final result when Claude sent a subagent to the background;
+version 1 can return the interim text. See [Node versions](#node-versions).
 
 **Claude Code Usage Tool** — a zero-argument tool that returns the account's plan usage
 (utilisation and reset time per window) as a JSON report, with the same scope-retry and opt-in
@@ -665,6 +681,249 @@ session, no turns and no tokens. A row from it would be a line of zeros in a tab
 > nodes (`usableAsTool`). Those expose every node parameter and — for the main node — a
 > zero-argument schema unless you hand-write `$fromAI()` expressions. They keep working, but the
 > dedicated tools above are the supported path.
+
+## Claude Code Agent
+
+A root node that runs Claude Code over each item, as the Claude Code node does, and opens it to the
+canvas: n8n tools plug into it, Claude Code Subagent nodes give it a team, and a run can be made to
+end in a JSON object that matches a schema. The per-run settings of the Claude Code node (Project
+Path, Model, Effort, Max Turns, Timeout, Authentication, attachments, the three tool selectors, Max
+Budget, Timeout Wrap-Up Grace) work the same here.
+
+It is a separate node rather than a new version of Claude Code, so no stored workflow changes.
+
+### Connections
+
+| Input | Takes | |
+|---|---|---|
+| main | the items to run on | one run per item |
+| **Subagents** (`ai_agent`) | Claude Code Subagent nodes, any number | see [Claude Code Subagent](#claude-code-subagent) |
+| **Tools** (`ai_tool`) | any tool sub-node: Code Tool, Call Workflow Tool, a node used as a tool, MCP Client Tool | handed to Claude Code as `mcp__n8n__<tool name>` |
+| **Parser** (`ai_outputParser`) | one Structured Output Parser | read only when Output Mode is Output Parser |
+
+Connected tools run inside Claude Code's session over the same bridge as the Chat Model, and each
+tool node logs its own calls. An MCP Client Tool arrives as a toolkit, and n8n names its tools
+`<Node name>_<tool>` with spaces turned into underscores: a node called *MCP Client* exposing
+`lookup` becomes `mcp__n8n__MCP_Client_lookup`. **Restrict Built-in Tools** cannot unplug a
+connected tool, because the bridged names are always added on top. `diagnostics.bridgedTools` lists
+what was bridged.
+
+**Keep connected tools read-only.** The Agent usually reads code it did not write, and that code can
+carry text written to steer a model. A tool that can merge, post or delete gives such text somewhere
+to go. Publish the result from a node after the Agent, where the workflow decides and the model does
+not.
+
+### Parameters that matter
+
+| Parameter | What it does |
+|---|---|
+| **Output Mode** | `Text` (default), `JSON Schema` or `Output Parser`. The two schema modes emit the object as `structured`; `result` keeps the text |
+| **JSON Schema** | the schema, in JSON Schema mode. Its top level must be `"type": "object"`; anything else fails the item before a process starts |
+| **Instruction Files** | one path per line, relative to Project Path, appended to the system prompt |
+| **Session** | `New` (default) or `Resume` |
+| **Session ID or Key** | with Resume: a session UUID, or any stable key (a ticket, chat or user id) hashed into a deterministic session id. The first run with a key creates the session, later runs resume it |
+| **Subagent Orchestration** | `Auto` (default, Claude decides) or `Required` |
+| **Verification** | a second run that tries to refute the structured items; see below |
+| Options → **Allow Claude.ai Connectors** | off by default; see [Cost](#cost) |
+| Options → **Report Usage to Workflow**, **Process Name** | the same collector call as the sub-nodes, after every run including failures and timeouts |
+| Options → **Include Transcript** | adds `messages`, off by default |
+
+**Output Parser mode unwraps.** n8n's Structured Output Parser wraps your schema as `{ output: … }`.
+The Agent sends the inner schema, so `structured` is your object in both schema modes and
+`$json.structured.<field>` reads the same either way.
+
+**Structured output can fail in two ways, and both fail the item.** The model can run out of retries
+(the SDK stops after 5 attempts with `error_max_structured_output_retries`), or it can give up and
+answer in prose, which the CLI still reports as a success, only without the object. The Agent counts
+a run as successful only when the object is present. Both failures carry `errorType:
+'structured_output'` with `metrics` and `diagnostics`, reach the error output under *Continue (using
+error output)*, and `diagnostics.structuredOutput.attempts` says how many times the model tried.
+
+**Instruction Files are for rules that are not in `CLAUDE.md`.** The repository's `CLAUDE.md` loads
+on its own. Each file is wrapped in a tag naming it and joined, after the node's System Prompt, into
+the one text appended to Claude Code's system prompt. A missing file is skipped and listed in
+`diagnostics.instructions.missing`, so one list works across repositories that do not all have it. A
+path that leaves the Project Path, directly or through a link, or a file over 256 KB, fails the item.
+
+**Required orchestration asks, it cannot force.** It adds a line to the prompt asking Claude to
+delegate to every connected subagent at least once. `diagnostics.subagents` shows whether each one
+ran, and the workflow decides what to do about one that did not.
+
+### Verification
+
+With Output Mode JSON Schema or Output Parser, **Verification** checks the items of one array in the
+structured object before they leave the node. A second run resumes the same session, receives the
+selected items with their indices, tries to refute each one from the repository, and answers
+`{ keep, drop }`. The node applies that verdict, not the model: a dropped item leaves the array, and
+an item the verifier did not mention is kept and listed in `unjudged`.
+
+| Setting | |
+|---|---|
+| **Enabled** | off by default |
+| **Items Path** | dot path to the array inside `structured`, e.g. `items` or `review.comments`. Required |
+| **Only Items Where Field**, **Equals Any Of** | check only items whose field has one of these comma-separated values, e.g. `severity` and `blocker`. The rest are kept unchecked |
+| **Verifier Instructions** | what the second run is told. The default asks it to read the code and give a concrete reason for every drop |
+
+A verification that fails (an error, a timeout, no verdict) drops nothing: the item keeps the
+unverified array and `verification.status` is `failed` with the reason. An empty selection skips the
+second run (`status: 'skipped'`). An Items Path that does not name an array can only be found out
+after the first run has been paid for, so it also ends as `failed` and the answer is kept.
+
+The second run has its own full Timeout, and costs a second run.
+
+### Output
+
+The Claude Code node's 1.2 envelope (`result`, `success`, `errorText`, `metrics`, `diagnostics`),
+plus the fields below, each absent when unused. Shortened from real runs:
+
+```json
+{
+  "result": "{\"summary\":\"…\",\"verdict\":\"REQUEST_CHANGES\",\"items\":[…]}",
+  "success": true,
+  "errorText": "",
+  "structured": {
+    "summary": "Adds a slug helper and uses it in the post routes.",
+    "verdict": "REQUEST_CHANGES",
+    "items": [
+      { "path": "src/slug.ts", "line": 12, "type": "bug", "severity": "blocker", "body": "…" }
+    ]
+  },
+  "verification": {
+    "status": "verified",
+    "checked": 2,
+    "kept": 1,
+    "dropped": 1,
+    "unjudged": [],
+    "droppedItems": [
+      { "index": 1, "reason": "Lines 7-8 throw on an empty or blank title.", "item": { … } }
+    ],
+    "costUsd": 0.032469
+  },
+  "metrics": { "duration_ms": 9471, "num_turns": 5, "total_cost_usd": 0.061199,
+               "usage": { … }, "modelUsage": { … }, "session_id": "6c56ca50-…" },
+  "diagnostics": {
+    "resolvedModel": "claude-haiku-4-5",
+    "subagentToolUses": 2,
+    "subagents": [
+      { "name": "alpha", "invocations": 1, "completed": 1, "totalTokens": 8707, "toolUses": 0, "durationMs": 1885 },
+      { "name": "beta",  "invocations": 1, "completed": 1, "totalTokens": 8658, "toolUses": 0, "durationMs": 1495 }
+    ],
+    "bridgedTools": ["mcp__n8n__secret_code", "mcp__n8n__MCP_Client_mcp_secret"],
+    "instructions": { "loaded": [".review/rules.md"], "missing": [] },
+    "structuredOutput": { "mode": "jsonSchema", "attempts": 1 },
+    "sessionState": "resumed"
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `structured` | the validated object, in the schema modes. After Verification, without the dropped items |
+| `verification` | the verdict applied, and `costUsd`, the second run's own share of the cost |
+| `diagnostics.subagents` | one entry per connected subagent, in name order, from the run's task events. One that never ran shows `invocations: 0` |
+| `diagnostics.subagentToolUses` | delegations, counted under both tool names the CLI uses (`Agent` and `Task`) |
+| `diagnostics.sessionState` | with Resume only: `resumed`, or `created` when there was no session under that id yet |
+
+**The answer is the last result.** Subagents run in the background by default, so the CLI writes a
+result for the turn that launched them ("I've launched the agents, let me wait") and another once
+their work is in. The Agent reads the last one.
+
+### Cost
+
+- **Every item is a full Claude Code run.** Subagents are separate contexts billed on top, and
+  `metrics.total_cost_usd` includes them. Verification is a second run.
+- **Max Budget (USD) is checked between turns, not during one.** A single large turn can overshoot
+  it: measured, a run capped at 0.50 ended at 1.31. Treat it as a stop condition. Timeout and Max
+  Turns are the hard limits.
+- **claude.ai connectors are off by default.** A full claude.ai login connects the account's cloud
+  connectors (mail, drive and the like) into every run, even when no settings are loaded, and their
+  tool schemas are paid for on every turn: one measured run carried about 320k extra tokens. The
+  Agent turns them off unless **Allow Claude.ai Connectors** is on. MCP servers configured in the
+  project are not affected.
+- **A resumed session reports a cumulative cost.** On a run that resumes a session,
+  `total_cost_usd` and `modelUsage` include every earlier run of that session, while `num_turns`,
+  `duration_ms` and `usage` cover the run alone. Measured: a key's first execution cost 0.0031 and
+  its second reported 0.0053, of which 0.0022 was its own. **A collector must not sum
+  `total_cost_usd` across executions of one session**; keep the latest value per `session_id`, or
+  subtract consecutive ones. The Claude Code node's Continue and the Chat Model's Session ID behave
+  the same way. Inside one execution the Agent handles it for Verification: `metrics` counts both
+  runs once, and `verification.costUsd` is the difference.
+- **Report Usage sends one report per CLI run.** A resume that found nothing and then created the
+  session is two runs, and two reports. A verification run is not reported on its own; the item's
+  report carries the combined metrics.
+
+### Limits
+
+- **Sessions live in the n8n process's `~/.claude`.** A session resumes from any Project Path on the
+  same machine, but it does not follow a run to another queue-mode worker: there, Resume finds
+  nothing and creates a new session under the same id (`sessionState: 'created'`), without the
+  earlier conversation. Keep session work on one worker, or share `~/.claude` between them.
+- **Parallel work inside one run means subagents.** n8n runs the branches of one execution one after
+  another, so three Agent nodes on three branches take three times as long. Three subagents on one
+  Agent can work at the same time.
+- **The Alpine note above applies.** The official image has no `bash`; disallow **Bash** or use an
+  image with a shell.
+
+## Claude Code Subagent
+
+A sub-node that defines one specialist for a Claude Code Agent: its name, when to use it, its
+instructions, model and tools. It runs nothing by itself. Connect it to the Agent's **Subagents**
+input and the Agent hands the definition to Claude Code, which delegates to it as it works. A
+subagent runs in its own context inside the Agent's session, with the Agent's authentication and
+Project Path.
+
+It connects over n8n's `ai_agent` connection type, so the editor offers it only on the Agent's
+Subagents input and refuses to wire it into n8n's own AI Agent.
+
+| Parameter | |
+|---|---|
+| **Name** | lowercase letters, digits and hyphens, unique among one Agent's subagents. Two with the same name fail the item before anything runs |
+| **When to Use** | what the orchestrator reads to decide when to delegate |
+| **Instructions** | the subagent's system prompt |
+| **Model** | `Inherit From Agent` (default) or any model in the list |
+| Options → **Effort** | `Inherit From Agent` or a level |
+| Options → **Max Turns** | per delegation. 0 inherits |
+| Options → **Allowed Tools** | the built-in tools this subagent may use. Leave it and the next one empty to inherit every tool the Agent has |
+| Options → **Additional Allowed Tool Names** | comma-separated names added to the allowlist. A tool connected to the Agent is `mcp__n8n__<tool name>` |
+| Options → **Disallowed Tools** | comma-separated names this subagent may not use |
+| Options → **Skip Project CLAUDE.md** | run without the CLAUDE.md files, for a subagent that gets everything from its delegation |
+
+Each delegation appears on the Subagent node's own execution log: the prompt it was handed as input,
+and the status, summary, tokens, tool uses and duration as output. The CLI does not stream a
+subagent's own messages, so that summary is the record of what it did.
+
+## Code Review Kit
+
+The deterministic half of a review bot. It has no model: it runs `git` in a clone and reshapes
+findings.
+
+| Operation | Takes | Returns |
+|---|---|---|
+| **Diff Context** | Project Path, Base Ref, Head Ref | `mergeBase`, `files[]` (`path`, `status`, `additions`, `deletions`, plus `oldPath` on a rename), `addedLines`, and with Include Patch the zero-context patch as `patch` and `patchTruncated` |
+| **Validate Anchors** | Items, Added Lines | `valid[]`, and `moved[]` as `{ item, reason }` |
+| **Fingerprint** | Project Path, Ref, Items | `items[]`, each with a `fingerprint` |
+| **Dedupe** | New Items, Previous Items | `new[]`, `repeated[]` as `{ item, previous }`, `resolved[]` |
+
+- **Diff Context** starts at the merge base of Base Ref and Head Ref, as a pull request does.
+  `addedLines` maps each file to the new-file line numbers of its added lines, which are the lines
+  GitHub accepts a review comment on (the RIGHT side).
+- **Validate Anchors** discards nothing. An item on an added line goes to `valid`; any other goes to
+  `moved` with the reason: file not in the diff or deleted, line not added, path or line missing.
+- **Fingerprint** is a sha256 of the path, the type and the anchor line with **Context Lines**
+  (default 2) either side, read at Ref, trimmed and with whitespace collapsed. Lines inserted above
+  the snippet leave it unchanged; editing the snippet changes it. An item that cannot be
+  fingerprinted keeps its place with `fingerprint: null` and an `error`.
+- **Dedupe** matches on fingerprint. `repeated` pairs each new item with its previous one, so a
+  posted comment's id travels with it, and `resolved` lists previous items still open (status
+  `open` by default) whose fingerprint no longer appears.
+
+The field names (path, line, type, fingerprint, status and the open value) are parameters, so the
+Kit is not tied to one bot's JSON. Refs are checked before git runs: letters, digits and
+`. / _ @ ^ ~ -`, never starting with `-`. git runs with an argument list and no shell, and nothing in
+the clone is modified. In Docker the clone has to be inside the container.
+
+The [Claude Code Review Team](./workflow-templates/claude-code-review-team.json) template wires the
+three new nodes together.
 
 ## Usage & Plan Limits
 
@@ -970,7 +1229,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 662 tests — node:test, no framework, no extra dependencies
+npm test    # 1166 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -987,7 +1246,7 @@ fixture moved and why. Fixes to old behaviour belong in a new node version, not 
 marked `FROZEN QUIRK` in the tests with the finding it corresponds to. Improvements go in
 `v12.ts`.
 
-There is also a Docker suite that runs real n8n with the node installed and asserts 39 named
+There is also a Docker suite that runs real n8n with the node installed and asserts 90 named
 behaviours against real executions — including that an attached image, PDF or document actually
 reaches the model, which no unit test can prove. It lives in `scripts/e2e/`, which **is** versioned;
 only what it generates (`workflows/`, `results.json`, `run-*.log`, `.pack/`) is gitignored. It costs

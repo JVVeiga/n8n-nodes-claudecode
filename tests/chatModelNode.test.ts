@@ -71,9 +71,10 @@ describe('the node description — what the editor sees', () => {
 		assert.ok(auth, 'authSource present — the reserved name `authentication` is a known trap');
 	});
 
-	it('is named claudeCodeChatModel, version 1', () => {
+	it('is named claudeCodeChatModel, versions 1 and 1.1, defaulting to 1.1', () => {
 		assert.equal(description.name, 'claudeCodeChatModel');
-		assert.equal(description.version, 1);
+		assert.deepEqual(description.version, [1, 1.1]);
+		assert.equal(description.defaultVersion, 1.1);
 	});
 });
 

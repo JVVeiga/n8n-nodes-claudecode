@@ -1,0 +1,27 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.codeReviewKit",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Development", "Utility"],
+	"alias": [
+		"code review",
+		"review",
+		"pull request",
+		"diff",
+		"git",
+		"anchor",
+		"fingerprint",
+		"dedupe",
+		"findings",
+		"claude",
+		"revisão",
+		"revisao de codigo"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#code-review-kit"
+			}
+		]
+	}
+}

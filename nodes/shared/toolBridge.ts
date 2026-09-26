@@ -38,6 +38,24 @@ export type BindableTool = {
 	metadata?: Record<string, unknown>;
 };
 
+const isToolkit = (value: unknown): value is { tools: unknown[] } =>
+	typeof value === 'object' &&
+	value !== null &&
+	Array.isArray((value as { tools?: unknown }).tools);
+
+/**
+ * What `getInputConnectionData('ai_tool', i)` returns, as a flat tool list: nothing, one tool, a
+ * toolkit (an MCP Client node hands over a `StructuredToolkit`), or an array mixing tools and
+ * toolkits. Order is preserved.
+ */
+export function flattenTools(raw: unknown): BindableTool[] {
+	if (raw === undefined || raw === null) return [];
+	const entries = Array.isArray(raw) ? raw : [raw];
+	return entries.flatMap((entry) =>
+		isToolkit(entry) ? (entry.tools as BindableTool[]) : [entry as BindableTool],
+	);
+}
+
 type JsonSchema = {
 	type?: string;
 	properties?: Record<string, JsonSchema>;

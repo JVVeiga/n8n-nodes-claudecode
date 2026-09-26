@@ -30,6 +30,8 @@ export type UsageReportInput = {
 	messages: SDKMessage[];
 	durationMs: number;
 	diagnostics: IDataObject | null;
+	/** Metrics the caller already combined, for a report that covers more than one run. */
+	metrics?: IDataObject;
 };
 
 export function buildUsageReport(input: UsageReportInput): IDataObject {
@@ -39,7 +41,7 @@ export function buildUsageReport(input: UsageReportInput): IDataObject {
 		caller_workflow_id: input.callerWorkflowId,
 		caller_execution_id: input.callerExecutionId,
 		node_name: input.nodeName,
-		metrics: buildRunMetrics(input.messages, input.durationMs),
+		metrics: input.metrics ?? buildRunMetrics(input.messages, input.durationMs),
 		diagnostics: input.diagnostics,
 	};
 }
@@ -70,7 +72,11 @@ export const buildRunKey = (
 	nodeName: string,
 	itemIndex: number,
 	seq: number,
-): string => `${executionId || 'no-execution'}:${nodeName}:${itemIndex}:${seq}`;
+	runIndex?: number,
+): string =>
+	runIndex === undefined
+		? `${executionId || 'no-execution'}:${nodeName}:${itemIndex}:${seq}`
+		: `${executionId || 'no-execution'}:${nodeName}:${runIndex}:${itemIndex}:${seq}`;
 
 /** A counter per supplied instance: supplyData runs once per execution, so this numbers the
  * calls that instance served. */
@@ -89,6 +95,9 @@ export type RunContext = {
 	nodeName: string;
 	/** The input item this instance was supplied for. Part of the key — see buildRunKey. */
 	itemIndex: number;
+	/** The node's run within the execution. Set by a main node, which a loop can run again with
+	 * the same item indexes; absent, the key keeps its sub-node shape. */
+	runIndex?: number;
 };
 
 /**
@@ -122,6 +131,10 @@ export async function reportRun(input: {
 	authMode: AuthMode;
 	/** Where a build failure is recorded. Optional so a caller without one still cannot throw. */
 	debug?: DebugLogger;
+	/** Diagnostics the caller already built, richer than the ones built here from `params`. */
+	diagnostics?: IDataObject;
+	/** Metrics the caller already combined; built from `messages` when absent. */
+	metrics?: IDataObject;
 }): Promise<void> {
 	const { usage } = input;
 	if (!usage) return;
@@ -138,22 +151,26 @@ export async function reportRun(input: {
 					usage.context.nodeName,
 					usage.context.itemIndex,
 					usage.nextSeq(),
+					usage.context.runIndex,
 				),
 				callerWorkflowId: usage.context.workflowId,
 				callerExecutionId: usage.context.executionId,
 				nodeName: usage.context.nodeName,
 				messages: input.messages,
 				durationMs: input.durationMs,
+				metrics: input.metrics,
 				// The main node's builder, called here rather than injected: `shared/` already depends
 				// on `ClaudeCode/` for types, and an injected function would only hide which one runs.
-				diagnostics: buildDiagnostics({
-					messages: input.messages,
-					params: input.params,
-					// Always set by shared/subNodeParams.ts; read straight rather than defaulted twice.
-					permissionMode: input.params.additional.permissionMode as string,
-					appliedEffort: input.appliedEffort,
-					authMode: input.authMode,
-				}) as unknown as IDataObject,
+				diagnostics:
+					input.diagnostics ??
+					(buildDiagnostics({
+						messages: input.messages,
+						params: input.params,
+						// Always set by shared/subNodeParams.ts; read straight rather than defaulted twice.
+						permissionMode: input.params.additional.permissionMode as string,
+						appliedEffort: input.appliedEffort,
+						authMode: input.authMode,
+					}) as unknown as IDataObject),
 			}),
 		);
 	} catch (error) {

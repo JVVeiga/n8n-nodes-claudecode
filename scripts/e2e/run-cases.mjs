@@ -79,7 +79,41 @@ const PATCH_CHAT_MODEL_SESSION =
 	"db.prepare('UPDATE workflow_entity SET nodes = ? WHERE id = ?').run(JSON.stringify(nodes), row.id);" +
 	"console.log(JSON.stringify({ workflow: row.id, sessionId: process.argv[1] }));";
 
+// case84a must be the FIRST use of its session key, or its `created` proves nothing. The key is a
+// literal in the workflow, so a re-run would find the previous pass's session and report
+// `resumed`. Deleting that session (the node's own hash of the key) resets it without touching
+// the workflow, and 84b then resumes what 84a created in this pass.
+const RESET_CASE84_SESSION =
+	"const { DatabaseSync } = require('node:sqlite');" +
+	"const fs = require('node:fs'); const path = require('node:path');" +
+	"const db = new DatabaseSync('/home/node/.n8n/database.sqlite', { readOnly: true });" +
+	"const row = db.prepare(\"SELECT nodes FROM workflow_entity WHERE name LIKE 'case84a%'\").get();" +
+	"const agent = JSON.parse(row.nodes).find((n) => String(n.type).endsWith('.claudeCodeAgent'));" +
+	"const { toSessionUuid } = require('/home/node/.n8n/nodes/node_modules/@joaoveiga/n8n-nodes-claudecode/dist/nodes/shared/session.js');" +
+	'const uuid = toSessionUuid(agent.parameters.sessionKey.trim());' +
+	"const root = '/home/node/.claude/projects'; const removed = [];" +
+	'for (const dir of fs.existsSync(root) ? fs.readdirSync(root) : []) {' +
+	'  for (const entry of [uuid + ".jsonl", uuid]) {' +
+	'    const p = path.join(root, dir, entry);' +
+	'    if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); removed.push(p); }' +
+	'  }' +
+	'}' +
+	'console.log(JSON.stringify({ uuid, removed }));';
+
+const LAST_EXECUTION_ID =
+	"const { DatabaseSync } = require('node:sqlite');" +
+	"const db = new DatabaseSync('/home/node/.n8n/database.sqlite', { readOnly: true });" +
+	"const r = db.prepare('SELECT id FROM execution_entity WHERE workflowId = ? ORDER BY id DESC LIMIT 1').get(process.argv[1]);" +
+	"console.log(r ? r.id : '');";
+
 for (const { id, name } of ids) {
+	if (name.startsWith('case84a')) {
+		const reset = execFileSync('docker', ['exec', CONTAINER, 'node', '-e', RESET_CASE84_SESSION], {
+			encoding: 'utf8',
+		}).trim();
+		process.stdout.write(`\n    reset case84 session: ${reset}\n`);
+	}
+
 	// case65b resumes the Claude session case65a's chat model opened, in a SEPARATE execution —
 	// the real round-trip. It must be patched in from outside: a sub-node's output is not on the
 	// `main` chain, so no expression in the workflow can read it (measured — the first case65
@@ -210,6 +244,36 @@ for (const { id, name } of ids) {
 			modelRuns[nodeName] = { sessionState: json.sessionState, sessionId: json.sessionId };
 		}
 	}
+	// Every node's own run log, keyed by name: how many runs and on which connection types. For a
+	// sub-node this is the only proof it was actually used — a tool that ran, a subagent that was
+	// delegated to — as opposed to an answer the model produced on its own.
+	const nodeRuns = {};
+	for (const [nodeName, list] of Object.entries(runData)) {
+		const first = list?.[0]?.data ?? {};
+		const types = Object.keys(first);
+		const sample = types.length ? first[types[0]]?.[0]?.[0]?.json : undefined;
+		nodeRuns[nodeName] = {
+			runs: Array.isArray(list) ? list.length : 0,
+			types,
+			sample: sample === undefined ? null : JSON.stringify(sample).slice(0, 400),
+		};
+	}
+	// The Code Review Kit's nodes, whole: case88 asserts exact values across all of them, which the
+	// 400-character nodeRuns sample cannot carry.
+	const kitRuns = {};
+	for (const [nodeName, list] of Object.entries(runData)) {
+		if (!/^Kit /.test(nodeName)) continue;
+		kitRuns[nodeName] = list?.[0]?.data?.main?.[0]?.[0]?.json ?? null;
+	}
+	let executionId = null;
+	try {
+		executionId =
+			execFileSync('docker', ['exec', CONTAINER, 'node', '-e', LAST_EXECUTION_ID, id], {
+				encoding: 'utf8',
+			}).trim() || null;
+	} catch {
+		executionId = null;
+	}
 	const nodeError = cc?.error ?? parsed?.data?.resultData?.error ?? null;
 
 	// A credential that cannot authenticate never reaches an item or a node error: the CLI takes a
@@ -217,6 +281,14 @@ for (const { id, name } of ids) {
 	// went wrong is in the raw log. Counted here rather than asserted on the timeout message,
 	// because "it timed out" is also what a network problem looks like.
 	const authFailures = (raw.match(/"error":"authentication_failed"/g) ?? []).length;
+
+	// What the nodes with debug on logged per message: a background subagent shows as a
+	// task_notification, and the interim answer as an extra result.
+	const debugLines = raw.split('\n').filter((l) => /\| debug \|/.test(l));
+	const backgroundRun = {
+		results: debugLines.filter((l) => /\| Result message /.test(l)).length,
+		notifications: debugLines.filter((l) => /"subtype":"task_notification"/.test(l)).length,
+	};
 
 	// The CLI writes the node error to the log even when the JSON blob omits it.
 	const loggedError =
@@ -237,13 +309,17 @@ for (const { id, name } of ids) {
 		hasTopLevelErrorField: items[0] ? Object.prototype.hasOwnProperty.call(items[0], 'error') : null,
 		setItemJson: setItems[0]?.json ?? null,
 		authFailures,
+		backgroundRun,
 		errorMessage: nodeError?.message ?? loggedError,
 		errorDescription: nodeError?.description ?? null,
 		errorType: nodeError?.type ?? null,
 		errorContextKeys: nodeError?.context ? Object.keys(nodeError.context).sort() : null,
 		errorContext: nodeError?.context ?? null,
+		executionId,
 		toolRuns,
 		modelRuns,
+		nodeRuns,
+		kitRuns,
 		usageReports,
 		outputBranchIndex: (() => {
 			const main = cc?.data?.main;

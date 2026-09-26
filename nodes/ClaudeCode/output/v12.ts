@@ -6,6 +6,7 @@ import {
 	findInit,
 	isUser,
 	lastResult,
+	withFinalResultOnly,
 } from '../../shared/sdkMessage';
 import { resolveResultText } from './resultText';
 import { buildRunMetrics } from './metrics';
@@ -46,6 +47,8 @@ export type V12Input = {
 	includeTranscript: boolean;
 	/** Wall time measured by the runner. Used when the SDK reported no duration of its own. */
 	durationMs: number;
+	/** Resolve the answer from the last result rather than the first. */
+	finalResultOnly?: boolean;
 };
 
 type ResultLike = {
@@ -62,7 +65,9 @@ export function buildV12Output(input: V12Input): IDataObject {
 	const { messages } = input;
 	// The LAST result, not the first — see F-07.
 	const result = lastResult(messages) as ResultLike | undefined;
-	const resolved = resolveResultText(messages);
+	const resolved = resolveResultText(
+		input.finalResultOnly ? withFinalResultOnly(messages) : messages,
+	);
 
 	const envelope: IDataObject = {
 		result: resolved.text,

@@ -2,7 +2,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { assistantMessages, findInit } from '../shared/sdkMessage';
 import { resolveResultText } from '../ClaudeCode/output/resultText';
 import { collectRunMetrics } from '../ClaudeCode/timeout';
-import { bridgedToolName, FORMAT_TOOL_NAME } from './toolBridge';
+import { bridgedToolName, FORMAT_TOOL_NAME } from '../shared/toolBridge';
 
 /**
  * What one run means to LangChain: the answer text, the usage numbers, and — exactly one case —

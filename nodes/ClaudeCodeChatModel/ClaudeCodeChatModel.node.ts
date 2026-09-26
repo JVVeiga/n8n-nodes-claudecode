@@ -113,6 +113,7 @@ export async function supplyChatModel(
 	const model = new ClaudeCodeChat({
 		params: settings.params,
 		systemPromptMode: settings.systemPromptMode,
+		finalResultOnly: settings.finalResultOnly,
 		auth: authOutcome.auth,
 		query: deps.query,
 		debug,

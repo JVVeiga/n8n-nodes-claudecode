@@ -1,6 +1,6 @@
 import type { SDKMessage, query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { DebugLogger } from '../shared/debug';
-import { isResult } from '../shared/sdkMessage';
+import { hasPendingSubagentTask, isResult } from '../shared/sdkMessage';
 import { logMessage } from './messageLog';
 import type { PromptStream } from './promptStream';
 import type { GraceWindow, TerminationReason } from './timeout';
@@ -66,6 +66,12 @@ export type RunInput = {
 	 * needs afterwards is still in `messages`, so this is observation, not routing.
 	 */
 	onMessage?: (message: SDKMessage) => void;
+	/**
+	 * A result that arrives while a background subagent is still running is interim: the CLI
+	 * writes another when the subagent reports back. When set, such a result neither closes the
+	 * input stream nor stops the graceful timeout. Off by default.
+	 */
+	pendingTasksKeepRunOpen?: boolean;
 };
 
 export async function runQuery(input: RunInput): Promise<RunOutcome> {
@@ -90,6 +96,9 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 		promptStream.close();
 	};
 
+	const isInterim = () =>
+		input.pendingTasksKeepRunOpen === true && hasPendingSubagentTask(messages);
+
 	const wrapUpTimer =
 		graceWindow.wrapUpAtMs === null
 			? undefined
@@ -97,7 +106,8 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 					// The run may have finished in the meantime. The SDK emits no result message until a
 					// turn ends, so one already present means there is nothing left to interrupt — bail
 					// out rather than bill a wrap-up turn and report a completed run as a timeout.
-					if (streamClosed || messages.some(isResult)) return;
+					if (streamClosed) return;
+					if (input.pendingTasksKeepRunOpen !== true && messages.some(isResult)) return;
 
 					timedOut = true;
 					terminationReason = 'timeout_graceful';
@@ -132,7 +142,7 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 			// result message is the signal to close it. Without this the query would never end.
 			if (isResult(message)) {
 				if (!wrapUpRequested) {
-					closeStream();
+					if (!isInterim()) closeStream();
 				} else if (++resultsSinceInterrupt >= 2) {
 					// First result was the interrupt's; this one is the summary.
 					wrapUpSucceeded = true;

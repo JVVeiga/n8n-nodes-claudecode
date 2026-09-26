@@ -1,9 +1,60 @@
-import type { INodeTypeDescription } from 'n8n-workflow';
+import type { INodeProperties, INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
-import { MODEL_OPTIONS } from './models';
+import { modelProperty } from '../../shared/runOptions';
 import { BUILT_IN_TOOL_OPTIONS } from './toolOptions';
 import { ADDITIONAL_OPTIONS } from './additionalOptions';
 import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../../shared/authDescription';
+
+export const ATTACH_ALL_BINARIES_PROPERTY: INodeProperties = {
+	displayName: 'Attach All Binaries',
+	name: 'attachAllBinaries',
+	type: 'options',
+	// Three states rather than a boolean, and the reason is not style.
+	//
+	// A schema default cannot be made version-aware: the Workflow constructor calls
+	// `NodeHelpers.getNodeParameters(...)` and writes every schema default into
+	// `node.parameters` before execution (n8n-workflow workflow.js:49), so a parameter
+	// absent from a stored workflow still arrives carrying the schema's value. A plain
+	// boolean defaulting to `true` therefore turns attachments ON in every workflow saved
+	// before this release — proven by e2e case50, which caught exactly that.
+	//
+	// `auto` moves the decision out of the schema and into params.ts, where it CAN read the
+	// typeVersion. Same shape as Output Envelope's auto/unified in additionalOptions.ts.
+	// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
+	options: [
+		{
+			name: 'Auto (On for New Nodes)',
+			value: 'auto',
+			description:
+				'On for nodes created at version 1.3 or later, off below it — so upgrading the package never starts attaching files in a workflow you already built',
+		},
+		{
+			name: 'On',
+			value: 'on',
+			description: 'Always send every binary property on the item, whatever the node version',
+		},
+		{ name: 'Off', value: 'off', description: 'Never send anything unless named below' },
+	],
+	default: 'auto',
+	description:
+		'Whether to send every binary property on the input item to Claude. Images, PDFs and small text files are attached directly to the request; anything larger or of a type that cannot be attached is written to a temporary directory Claude can read from. Auto is on for newly added nodes and off for ones built before this existed, so an upgrade changes nothing. An item with no binary data is unaffected either way.',
+};
+
+export const BINARY_PROPERTIES_PROPERTY: INodeProperties = {
+	displayName: 'Binary Properties',
+	name: 'binaryProperties',
+	type: 'string',
+	default: '',
+	// Shown only on Off, which is also what makes it READ: n8n strips a parameter whose
+	// display condition is not met before the node sees it, so a workflow that names
+	// properties while Attach All is Auto resolves an empty list and attaches nothing.
+	// Naming properties means "not all of them", so requiring Off is the honest contract.
+	displayOptions: { show: { attachAllBinaries: ['off'] } },
+	placeholder: 'data, screenshot, export',
+	description:
+		'Comma-separated binary property names on the input item to send to Claude. Only available when Attach All Binaries is Off. Leave empty for a text-only request. A name that is not on the item fails that item, naming the property — a run that silently answers without the evidence is worse than one that stops.',
+	hint: 'Images, PDFs and small text files are attached directly; larger or unsupported types are staged to a temporary directory Claude reads from',
+};
 
 /**
  * The node's declarative schema: ~350 lines of pure data with no branching in it. It lived inside
@@ -29,8 +80,11 @@ export const claudeCodeDescription: INodeTypeDescription = {
 	//   1.3  Attach All Binaries set to Auto now means ON. Below 1.3 Auto means off, so a stored
 	//        workflow that carries binary data does not start attaching it on a package upgrade.
 	//        Everything else is identical to 1.2 — the output shape did not move.
-	version: [1, 1.1, 1.2, 1.3],
-	defaultVersion: 1.3,
+	//   1.4  When a subagent runs in the background the CLI writes an interim result before the
+	//        final one; the answer and diagnostics come from the final result, and the graceful
+	//        timeout waits for a pending subagent instead of bailing on the interim result.
+	version: [1, 1.1, 1.2, 1.3, 1.4],
+	defaultVersion: 1.4,
 	subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 	description:
 		'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',
@@ -93,17 +147,7 @@ export const claudeCodeDescription: INodeTypeDescription = {
 				"Resume this specific session, taken from a previous run's diagnostics.sessionId. Leave empty to continue the most recent conversation in the working directory — which every execution on this instance shares, so concurrent runs will collide.",
 			placeholder: 'e.g. 0b7f2c1e-...',
 		},
-		{
-			displayName: 'Model',
-			name: 'model',
-			type: 'options',
-			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
-			// Aliases first, then pinned IDs newest-first — see description/models.ts.
-			options: MODEL_OPTIONS,
-			default: 'sonnet',
-			description:
-				'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
-		},
+		modelProperty(),
 		{
 			displayName: 'Effort',
 			name: 'effort',
@@ -160,55 +204,8 @@ export const claudeCodeDescription: INodeTypeDescription = {
 			placeholder: '/home/user/projects/my-app',
 			hint: 'This sets the working directory for Claude Code, allowing it to access files and run commands in the specified project location',
 		},
-		{
-			displayName: 'Attach All Binaries',
-			name: 'attachAllBinaries',
-			type: 'options',
-			// Three states rather than a boolean, and the reason is not style.
-			//
-			// A schema default cannot be made version-aware: the Workflow constructor calls
-			// `NodeHelpers.getNodeParameters(...)` and writes every schema default into
-			// `node.parameters` before execution (n8n-workflow workflow.js:49), so a parameter
-			// absent from a stored workflow still arrives carrying the schema's value. A plain
-			// boolean defaulting to `true` therefore turns attachments ON in every workflow saved
-			// before this release — proven by e2e case50, which caught exactly that.
-			//
-			// `auto` moves the decision out of the schema and into params.ts, where it CAN read the
-			// typeVersion. Same shape as Output Envelope's auto/unified above.
-			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
-			options: [
-				{
-					name: 'Auto (On for New Nodes)',
-					value: 'auto',
-					description:
-						'On for nodes created at version 1.3 or later, off below it — so upgrading the package never starts attaching files in a workflow you already built',
-				},
-				{
-					name: 'On',
-					value: 'on',
-					description: 'Always send every binary property on the item, whatever the node version',
-				},
-				{ name: 'Off', value: 'off', description: 'Never send anything unless named below' },
-			],
-			default: 'auto',
-			description:
-				'Whether to send every binary property on the input item to Claude. Images, PDFs and small text files are attached directly to the request; anything larger or of a type that cannot be attached is written to a temporary directory Claude can read from. Auto is on for newly added nodes and off for ones built before this existed, so an upgrade changes nothing. An item with no binary data is unaffected either way.',
-		},
-		{
-			displayName: 'Binary Properties',
-			name: 'binaryProperties',
-			type: 'string',
-			default: '',
-			// Shown only on Off, which is also what makes it READ: n8n strips a parameter whose
-			// display condition is not met before the node sees it, so a workflow that names
-			// properties while Attach All is Auto resolves an empty list and attaches nothing.
-			// Naming properties means "not all of them", so requiring Off is the honest contract.
-			displayOptions: { show: { attachAllBinaries: ['off'] } },
-			placeholder: 'data, screenshot, export',
-			description:
-				'Comma-separated binary property names on the input item to send to Claude. Only available when Attach All Binaries is Off. Leave empty for a text-only request. A name that is not on the item fails that item, naming the property — a run that silently answers without the evidence is worse than one that stops.',
-			hint: 'Images, PDFs and small text files are attached directly; larger or unsupported types are staged to a temporary directory Claude reads from',
-		},
+		ATTACH_ALL_BINARIES_PROPERTY,
+		BINARY_PROPERTIES_PROPERTY,
 		{
 			displayName: 'Output Format',
 			name: 'outputFormat',

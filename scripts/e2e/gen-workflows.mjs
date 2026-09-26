@@ -4,6 +4,7 @@
 // UI without digging through JSON.
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 
 const OUT = new URL('./workflows/', import.meta.url).pathname;
 rmSync(OUT, { recursive: true, force: true });
@@ -856,6 +857,7 @@ function agentWorkflow({
 	taskTool, // { nodeName, toolDescription, projectPath, options } -> the dedicated claudeCodeTaskTool
 	usageTool, // { nodeName, toolDescription } -> the dedicated claudeCodePlanUsageTool
 	twoItems = false, // a two-item Code node between the trigger and the Agent
+	modelVersion = 1, // the Chat Model's typeVersion
 }) {
 	const nodes = [
 		{
@@ -931,7 +933,7 @@ function agentWorkflow({
 		// NOT 'Claude Code…': run-cases.mjs must keep reading the Agent's output, not the model's.
 		name: 'CC Chat Model',
 		type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeChatModel',
-		typeVersion: 1,
+		typeVersion: modelVersion,
 		position: [220, 220],
 		...(auth?.cred
 			? { credentials: { [auth.cred.type]: { id: auth.cred.id, name: auth.cred.name } } }
@@ -968,7 +970,7 @@ function agentWorkflow({
 			id: nextId(),
 			name: taskTool.nodeName,
 			type: '@joaoveiga/n8n-nodes-claudecode.claudeCodeTaskTool',
-			typeVersion: 1,
+			typeVersion: taskTool.version ?? 1,
 			position: [480, 380],
 		});
 		for (const agent of agentNames) link(taskTool.nodeName, 'ai_tool', agent);
@@ -1321,6 +1323,583 @@ cases.push({
 		testCaseNotes:
 			'Target of case71. Named without a "case" prefix so run-cases does not execute it directly.',
 	},
+});
+
+// ---------------------------------------------------------------------------------------------
+// Claude Code Agent cases (80-86): the root node, with n8n tools, Subagent sub-nodes and an output
+// parser on its own inputs. The root is named 'Claude Code Agent' so run-cases reads its item;
+// nothing else in these workflows starts with 'Claude Code'. Haiku at low effort keeps a full pass
+// of these cases in cents — none of them is about the model's quality.
+const AGENT_TYPE = '@joaoveiga/n8n-nodes-claudecode.claudeCodeAgent';
+const SUBAGENT_TYPE = '@joaoveiga/n8n-nodes-claudecode.claudeCodeSubagent';
+const MCP_PATH = 'e2e-case80';
+const WF_TARGET_ID = 'case80wftarget00';
+const MCP_SERVER_ID = 'case80mcpserver0';
+
+function agentRootWorkflow({ name, notes, params = {}, options = {}, subNodes = [], onError }) {
+	const nodes = [
+		{
+			parameters: {},
+			id: nextId(),
+			name: 'When clicking Execute',
+			type: 'n8n-nodes-base.manualTrigger',
+			typeVersion: 1,
+			position: [0, 0],
+		},
+		{
+			parameters: {
+				projectPath: PROJECT,
+				model: 'claude-haiku-4-5',
+				effort: 'low',
+				maxTurns: 12,
+				timeout: 180,
+				...params,
+				// Bash is disallowed because this image has no bash (see case66); a model that tries
+				// it burns turns on "No suitable shell found".
+				options: { debug: true, maxBudgetUsd: 0.3, disallowedTools: ['Bash'], ...options },
+			},
+			id: nextId(),
+			name: 'Claude Code Agent',
+			type: AGENT_TYPE,
+			typeVersion: 1,
+			position: [260, 0],
+			...(onError ? { onError } : {}),
+		},
+	];
+	const connections = {
+		'When clicking Execute': { main: [[{ node: 'Claude Code Agent', type: 'main', index: 0 }]] },
+	};
+	subNodes.forEach(({ connection, node }, i) => {
+		nodes.push({ id: nextId(), position: [120 + i * 180, 260], ...node });
+		connections[node.name] = { [connection]: [[{ node: 'Claude Code Agent', type: connection, index: 0 }]] };
+	});
+	return {
+		id: stableId(name),
+		name,
+		nodes,
+		connections,
+		settings: { executionOrder: 'v1' },
+		active: false,
+		pinData: {},
+		meta: { testCaseNotes: notes },
+	};
+}
+
+const subagentNode = (nodeName, agentName, codeword) => ({
+	connection: 'ai_agent',
+	node: {
+		// NOT 'Claude Code…': run-cases must keep reading the root's item.
+		name: nodeName,
+		type: SUBAGENT_TYPE,
+		typeVersion: 1,
+		parameters: {
+			agentName,
+			whenToUse: `Knows the ${agentName} codeword. Ask it for the codeword.`,
+			instructions: `Your codeword is ${codeword}. When asked for it, reply with the codeword only. Do not use any tools.`,
+			model: 'inherit',
+			options: { maxTurns: 3 },
+		},
+	},
+});
+
+const CASE81_SCHEMA = JSON.stringify({
+	type: 'object',
+	properties: { capital: { type: 'string' }, sum: { type: 'integer' } },
+	required: ['capital', 'sum'],
+});
+
+cases.push(
+	agentRootWorkflow({
+		name: 'case80 agent - four tool shapes on the root, each one called',
+		notes:
+			'Code Tool with a JSON-schema input, Call Workflow Tool (published target), MCP Client Tool ' +
+			'against an MCP Server Trigger in this instance (a toolkit, flattened by the node) and an ' +
+			'HTTP Request node used as a tool. EXPECT: the answer carries CODE-Q7, WF-8052, MCP-6130 ' +
+			'and ok; diagnostics.bridgedTools lists four mcp__n8n__ names; every tool node has a run.',
+		params: {
+			prompt:
+				'Call each of these tools exactly once: secret_code with suffix "Q7", findings_token, ' +
+				'health_check, and the MCP secret tool. Then reply with exactly one line and nothing ' +
+				'else: CODE=<secret_code result> TOKEN=<token from findings_token> ' +
+				'HEALTH=<status from health_check> MCP=<MCP secret>',
+		},
+		subNodes: [
+			{
+				connection: 'ai_tool',
+				node: {
+					name: 'secret_code',
+					type: '@n8n/n8n-nodes-langchain.toolCode',
+					typeVersion: 1.3,
+					parameters: {
+						description: 'Returns a secret code built from the suffix you pass.',
+						language: 'javaScript',
+						jsCode: 'return "CODE-" + query.suffix;',
+						specifyInputSchema: true,
+						schemaType: 'manual',
+						inputSchema: JSON.stringify({
+							type: 'object',
+							properties: { suffix: { type: 'string', description: 'Suffix for the code' } },
+							required: ['suffix'],
+						}),
+					},
+				},
+			},
+			{
+				connection: 'ai_tool',
+				node: {
+					name: 'findings_token',
+					type: '@n8n/n8n-nodes-langchain.toolWorkflow',
+					typeVersion: 2.2,
+					parameters: {
+						description: 'Returns the findings token. Takes no meaningful input.',
+						workflowId: { __rl: true, mode: 'id', value: WF_TARGET_ID },
+						workflowInputs: {
+							mappingMode: 'defineBelow',
+							value: {},
+							matchingColumns: [],
+							schema: [],
+							attemptToConvertTypes: false,
+							convertFieldsToString: false,
+						},
+					},
+				},
+			},
+			{
+				connection: 'ai_tool',
+				node: {
+					name: 'MCP Client',
+					type: '@n8n/n8n-nodes-langchain.mcpClientTool',
+					typeVersion: 1.4,
+					parameters: {
+						endpointUrl: `http://localhost:5678/mcp/${MCP_PATH}`,
+						serverTransport: 'httpStreamable',
+						authentication: 'none',
+						include: 'all',
+						options: {},
+					},
+				},
+			},
+			{
+				connection: 'ai_tool',
+				node: {
+					name: 'health_check',
+					type: 'n8n-nodes-base.httpRequestTool',
+					typeVersion: 4.2,
+					parameters: {
+						toolDescription: 'Returns the health status of the n8n server.',
+						url: 'http://localhost:5678/healthz',
+						options: {},
+					},
+				},
+			},
+		],
+	}),
+	agentRootWorkflow({
+		name: 'case81 agent - JSON Schema mode returns the object',
+		notes: 'Output Mode JSON Schema. EXPECT: success, structured = { capital: Paris, sum: 42 }.',
+		params: {
+			prompt: 'What is the capital of France, and what is 17 + 25? Answer in the structured output.',
+			outputMode: 'jsonSchema',
+			jsonSchema: CASE81_SCHEMA,
+		},
+	}),
+	agentRootWorkflow({
+		name: 'case81b agent - an impossible schema fails the item as structured_output',
+		notes:
+			'allOf of two conflicting consts: no object can satisfy it, so the CLI exhausts its ' +
+			'StructuredOutput retries (spikes S-C case d). Continue On Fail. EXPECT: one failure item, ' +
+			'details.errorType structured_output, details.metrics carrying the real cost.',
+		params: {
+			// Insistent on purpose. A mild prompt let Haiku give up in prose after 3 tries (a success
+			// with no object); the retry limit is the other shape, where the SDK also THROWS after
+			// the result — and that throw once turned this item into an execution_error.
+			prompt:
+				'Answer ONLY by calling the StructuredOutput tool with n set to 7. If it is rejected, ' +
+				'call it again with n = 7. Never answer in plain text.',
+			outputMode: 'jsonSchema',
+			jsonSchema: JSON.stringify({
+				type: 'object',
+				properties: { n: { allOf: [{ const: 7 }, { const: 8 }] } },
+				required: ['n'],
+			}),
+		},
+		onError: 'continueRegularOutput',
+	}),
+	agentRootWorkflow({
+		name: 'case82 agent - Output Parser mode returns the user object, unwrapped',
+		notes:
+			'Structured Output Parser 1.2 on the Output Parser input. Its getSchema() wraps the user ' +
+			'schema in { output }. EXPECT: structured = { colour: blue…, legs: 8 } with no output key.',
+		params: {
+			prompt:
+				'What colour is a clear daytime sky, and how many legs does a spider have? Answer in the structured output.',
+			outputMode: 'outputParser',
+		},
+		subNodes: [
+			{
+				connection: 'ai_outputParser',
+				node: {
+					name: 'Structured Parser',
+					type: '@n8n/n8n-nodes-langchain.outputParserStructured',
+					typeVersion: 1.2,
+					// schemaType/inputSchema, not jsonSchema — see case64.
+					parameters: {
+						schemaType: 'manual',
+						inputSchema: JSON.stringify({
+							type: 'object',
+							properties: { colour: { type: 'string' }, legs: { type: 'integer' } },
+							required: ['colour', 'legs'],
+						}),
+					},
+				},
+			},
+		],
+	}),
+	agentRootWorkflow({
+		name: 'case83 agent - two Subagent sub-nodes, orchestration Required',
+		notes:
+			'Two Claude Code Subagent sub-nodes, each holding a codeword only it knows. EXPECT: both ' +
+			'codewords in the answer, diagnostics.subagents with invocations >= 1 each, ' +
+			'subagentToolUses >= 2, and an ai_agent run on each sub-node.',
+		params: {
+			prompt: 'Find out the alpha codeword and the beta codeword, then reply with exactly: ALPHA=<codeword> BETA=<codeword>',
+			subagentOrchestration: 'required',
+		},
+		subNodes: [
+			subagentNode('Subagent alpha', 'alpha', 'ORCHID-4417'),
+			subagentNode('Subagent beta', 'beta', 'GRANITE-9023'),
+		],
+	}),
+	// The same literal key in two workflows: 84b finds 84a's session by the deterministic hash alone.
+	// run-cases deletes that session before 84a, so 84a is a real first use on every pass.
+	agentRootWorkflow({
+		name: 'case84a agent session - a literal key creates the session',
+		notes: 'Session Resume, key e2e-case84-conversation-key. EXPECT: OK, sessionState created.',
+		params: {
+			prompt: 'Memorize this codeword: TANGERINE-58. Reply with exactly: OK',
+			sessionMode: 'resume',
+			sessionKey: 'e2e-case84-conversation-key',
+		},
+	}),
+	agentRootWorkflow({
+		name: 'case84b agent session - the same key resumes it in a new execution',
+		notes:
+			'Same key, separate execution, nothing patched. EXPECT: the answer is TANGERINE-58, ' +
+			'sessionState resumed.',
+		params: {
+			prompt: 'What is the codeword I asked you to memorize? Reply with only the codeword.',
+			sessionMode: 'resume',
+			sessionKey: 'e2e-case84-conversation-key',
+		},
+	}),
+	agentRootWorkflow({
+		name: 'case85 agent - Instruction Files, one present and one missing',
+		notes:
+			'fixture-project/.agent/rules.md carries MARMOT-3361; .agent/missing.md does not exist. ' +
+			'Bash, Read, Grep and Glob are disallowed, so the model cannot read the file itself. ' +
+			'EXPECT: the answer has the codeword in one turn, diagnostics.instructions loaded/missing ' +
+			'name each.',
+		params: {
+			prompt: 'What is the house codeword? Do not use any tools. Reply with only the codeword.',
+			instructionFiles: '.agent/rules.md\n.agent/missing.md',
+		},
+		options: { disallowedTools: ['Bash', 'Read', 'Grep', 'Glob'] },
+	}),
+	agentRootWorkflow({
+		name: 'case86 agent - Report Usage to Workflow reaches the collector',
+		notes:
+			'Report Usage to case71collector. EXPECT: a collector execution with process_name ' +
+			'e2e-agent, a run_key and metrics.total_cost_usd.',
+		params: { prompt: FAST_PROMPT },
+		options: { reportUsageTo: 'case71collector0', processName: 'e2e-agent' },
+	}),
+	agentRootWorkflow({
+		name: 'case87 agent - Verification drops a planted false claim, keeps the true one',
+		notes:
+			'fixture-project/verify/slug.ts: toSlug lowercases (line 12) and throws on an empty or ' +
+			'blank title (line 7). The main run is told to report one true and one false claim ' +
+			'verbatim, without checking; Verification on `items` resumes the session and must read ' +
+			'the file. Report Usage to case71collector as e2e-agent-verify. EXPECT: ' +
+			'verification.status verified, the "does not validate" claim dropped with a reason, the ' +
+			'lowercase claim kept, 0 < verification.costUsd < metrics.total_cost_usd, and exactly one ' +
+			'usage report carrying the item\'s total.',
+		params: {
+			prompt:
+				'Report exactly these two findings about verify/slug.ts in the structured output, ' +
+				'copying file, line and claim verbatim. Do not check them and do not use any tools now; ' +
+				'someone else verifies them later.\n' +
+				'1. file "verify/slug.ts", line 12, claim "toSlug converts the title to lower case."\n' +
+				'2. file "verify/slug.ts", line 7, claim "toSlug does not validate its input: an empty ' +
+				'or blank title returns an empty string instead of throwing."',
+			outputMode: 'jsonSchema',
+			jsonSchema: JSON.stringify({
+				type: 'object',
+				properties: {
+					items: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								file: { type: 'string' },
+								line: { type: 'integer' },
+								claim: { type: 'string' },
+							},
+							required: ['file', 'line', 'claim'],
+						},
+					},
+				},
+				required: ['items'],
+			}),
+			verification: { enabled: true, itemsPath: 'items' },
+		},
+		options: { reportUsageTo: 'case71collector0', processName: 'e2e-agent-verify' },
+	}),
+);
+
+// case88: the Code Review Kit against the repo kit-repo.sh builds in the container (see its header
+// for the expected diff). No model runs, so no spend. The nodes are named 'Kit …' — run-cases
+// records each one's item under kitRuns, and none of them may start with 'Claude Code'.
+const KIT_TYPE = '@joaoveiga/n8n-nodes-claudecode.codeReviewKit';
+const KIT_REPO = '/home/node/kit-repo';
+const sha256 = (text) => createHash('sha256').update(text).digest('hex');
+// Computed here from the formula, independently of the node: the fingerprint of the bug finding at
+// src/calc.js:10 with two context lines, as the previous run would have stored it.
+const KIT_BUG_FINGERPRINT = sha256(
+	'src/calc.js\0bug\0}\nfunction mul(a, b) {\nreturn a * b;\n}\nmodule.exports = { add, sub, mul };',
+);
+
+function kitWorkflow() {
+	const name = 'case88 kit - diff context, anchors, fingerprint and dedupe on a known diff';
+	const inputs = {
+		findings: [
+			{ path: 'src/calc.js', line: 10, type: 'bug', title: 'mul ignores overflow' },
+			{ path: 'src/calc.js', line: 6, type: 'style', title: 'on an unchanged line' },
+			{ path: 'docs/notes.md', line: 1, type: 'docs', title: 'in a deleted file' },
+		],
+		shifted: [{ path: 'src/calc.js', line: 13, type: 'bug' }],
+		previous: [
+			{ id: 101, fingerprint: KIT_BUG_FINGERPRINT, status: 'open', title: 'mul ignores overflow' },
+			{ id: 102, fingerprint: sha256('fixed since the last run'), status: 'open', title: 'gone' },
+			{ id: 103, fingerprint: sha256('dismissed long ago'), status: 'dismissed', title: 'dismissed' },
+		],
+	};
+	const kit = (nodeName, x, parameters) => ({
+		parameters,
+		id: nextId(),
+		name: nodeName,
+		type: KIT_TYPE,
+		typeVersion: 1,
+		position: [x, 0],
+	});
+	const nodes = [
+		{ parameters: {}, id: nextId(), name: 'When clicking Execute', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: [0, 0] },
+		{
+			parameters: { jsCode: `return [{ json: ${JSON.stringify(inputs)} }];` },
+			id: nextId(),
+			name: 'Inputs',
+			type: 'n8n-nodes-base.code',
+			typeVersion: 2,
+			position: [200, 0],
+		},
+		kit('Kit Diff', 400, {
+			operation: 'diffContext',
+			projectPath: KIT_REPO,
+			baseRef: 'kit-base',
+			headRef: 'HEAD',
+			includePatch: true,
+		}),
+		kit('Kit Anchors', 600, {
+			operation: 'validateAnchors',
+			items: "={{ $('Inputs').item.json.findings }}",
+			addedLines: '={{ $json.addedLines }}',
+		}),
+		kit('Kit Fingerprint', 800, {
+			operation: 'fingerprint',
+			projectPath: KIT_REPO,
+			ref: 'HEAD',
+			items: "={{ $('Inputs').item.json.findings }}",
+		}),
+		kit('Kit Fingerprint Shifted', 1000, {
+			operation: 'fingerprint',
+			projectPath: KIT_REPO,
+			ref: 'kit-shifted',
+			items: "={{ $('Inputs').item.json.shifted }}",
+		}),
+		// Typed as JSON text rather than an expression, so the text path runs in a real n8n too.
+		kit('Kit Fingerprint Edited', 1200, {
+			operation: 'fingerprint',
+			projectPath: KIT_REPO,
+			ref: 'kit-edited',
+			items: JSON.stringify([{ path: 'src/calc.js', line: 10, type: 'bug' }]),
+		}),
+		kit('Kit Dedupe', 1400, {
+			operation: 'dedupe',
+			newItems: "={{ $('Kit Fingerprint').item.json.items }}",
+			previousItems: "={{ $('Inputs').item.json.previous }}",
+		}),
+	];
+	const chain = ['When clicking Execute', 'Inputs', 'Kit Diff', 'Kit Anchors', 'Kit Fingerprint', 'Kit Fingerprint Shifted', 'Kit Fingerprint Edited', 'Kit Dedupe'];
+	const connections = {};
+	for (let i = 0; i < chain.length - 1; i++) {
+		connections[chain[i]] = { main: [[{ node: chain[i + 1], type: 'main', index: 0 }]] };
+	}
+	return {
+		id: stableId(name),
+		name,
+		nodes,
+		connections,
+		settings: { executionOrder: 'v1' },
+		active: false,
+		pinData: {},
+		meta: {
+			testCaseNotes:
+				'Repo built by kit-repo.sh at /home/node/kit-repo. EXPECT: the addedLines/files table in ' +
+				'its header; anchors 1 valid + 2 moved with distinct reasons; the fingerprint equal at ' +
+				'HEAD:10 and kit-shifted:13, different at kit-edited:10; dedupe 2 new, 1 repeated (101), ' +
+				'1 resolved (102).',
+		},
+	};
+}
+
+cases.push(kitWorkflow());
+
+// A subagent sent to the background makes the CLI write an interim result ("launched, waiting")
+// before the final one. The value is in a file only the subagent is told to read — plain data,
+// because a subagent refused to repeat a codeword from a file that phrased it as an instruction.
+const BACKGROUND_TASK =
+	'Use the Agent tool to start ONE general-purpose subagent with run_in_background set to true, ' +
+	"giving it this task: 'Read the file /workspace/data/stock.csv with the Read tool and reply " +
+	"with only the sku on its one data row.' Do not read any file yourself. Once it is " +
+	'launched, wait for the subagent to report back, then reply with exactly: ' +
+	'SKU=<the sku the subagent reported>';
+
+cases.push(
+	workflow({
+		name: 'case89 Claude Code 1.4 - answers after a background subagent',
+		notes:
+			'typeVersion 1.4. EXPECT: the result carries SKU=KESTREL-5082 (from the subagent), ' +
+			'not the interim "launched/waiting" text, and equals the LAST result in the transcript.',
+		version: 1.4,
+		claude: { prompt: BACKGROUND_TASK, effort: 'low', maxTurns: 20, timeout: 240 },
+	}),
+	agentWorkflow({
+		name: 'case90 Chat Model 1.1 - answers after a background subagent',
+		notes:
+			'Chat Model typeVersion 1.1 under an AI Agent. EXPECT: the Agent output carries ' +
+			'SKU=KESTREL-5082, not the interim text.',
+		prompts: [BACKGROUND_TASK],
+		modelVersion: 1.1,
+		modelOptions: { timeout: 240, maxTurns: 20, disallowedTools: ['Bash'] },
+	}),
+	agentWorkflow({
+		name: 'case91 Task Tool 1.1 - answers after a background subagent',
+		notes:
+			'Task Tool typeVersion 1.1; the outer Chat Model cannot delegate itself and does not log. ' +
+			'EXPECT: the tool’s own response carries SKU=KESTREL-5082, not the interim text.',
+		prompts: [
+			`Call the Background_Delegate tool with the task: "${BACKGROUND_TASK}". Then reply with exactly what the tool returned.`,
+		],
+		modelOptions: { timeout: 300, maxTurns: 8, debug: false, disallowedTools: ['Task', 'Agent', 'Bash'] },
+		taskTool: {
+			nodeName: 'Background Delegate',
+			version: 1.1,
+			toolDescription:
+				'Runs a task with Claude Code inside the /workspace project. Input: one clear task in natural language. Returns the result as text.',
+			projectPath: '/workspace',
+			options: {
+				timeout: 240,
+				maxTurns: 20,
+				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+			},
+		},
+	}),
+);
+
+// case80's targets. Neither is named `case…`, so run-cases never executes them directly, and both
+// must be PUBLISHED: a Call Workflow Tool resolves the published version, and an MCP Server
+// Trigger is only served once published — and then only after n8n restarts (n8n-up.sh does both).
+cases.push(
+	{
+		id: WF_TARGET_ID,
+		name: 'target80 findings token (called by case80)',
+		nodes: [
+			{
+				parameters: { inputSource: 'passthrough' },
+				id: nextId(),
+				name: 'When Executed by Another Workflow',
+				type: 'n8n-nodes-base.executeWorkflowTrigger',
+				typeVersion: 1.1,
+				position: [0, 0],
+			},
+			{
+				parameters: { jsCode: "return [{ json: { token: 'WF-8052', open: 3 } }];" },
+				id: nextId(),
+				name: 'Token',
+				type: 'n8n-nodes-base.code',
+				typeVersion: 2,
+				position: [220, 0],
+			},
+		],
+		connections: {
+			'When Executed by Another Workflow': { main: [[{ node: 'Token', type: 'main', index: 0 }]] },
+		},
+		settings: { executionOrder: 'v1' },
+		active: true,
+		pinData: {},
+		meta: { testCaseNotes: 'Target of case80’s Call Workflow Tool.' },
+	},
+	{
+		id: MCP_SERVER_ID,
+		name: 'target80 MCP server (called by case80)',
+		nodes: [
+			{
+				parameters: { path: MCP_PATH, authentication: 'none' },
+				id: nextId(),
+				name: 'MCP Server Trigger',
+				type: '@n8n/n8n-nodes-langchain.mcpTrigger',
+				typeVersion: 2,
+				position: [0, 0],
+				// Without a webhookId the trigger imports but is never registered.
+				webhookId: 'e2e08000-0000-4000-8000-00000000c080',
+			},
+			{
+				parameters: {
+					description: 'Returns the MCP secret.',
+					language: 'javaScript',
+					jsCode: 'return "MCP-6130";',
+					specifyInputSchema: false,
+				},
+				id: nextId(),
+				name: 'mcp_secret',
+				type: '@n8n/n8n-nodes-langchain.toolCode',
+				typeVersion: 1.3,
+				position: [0, 220],
+			},
+		],
+		connections: { mcp_secret: { ai_tool: [[{ node: 'MCP Server Trigger', type: 'ai_tool', index: 0 }]] } },
+		settings: { executionOrder: 'v1' },
+		active: true,
+		pinData: {},
+		meta: { testCaseNotes: 'Target of case80’s MCP Client Tool.' },
+	},
+);
+
+// For the editor check only, never executed: an AI Agent and a free Subagent on one canvas, so a
+// browser can try to drag the subagent's output onto the AI Agent's Tool input (it must be refused).
+cases.push({
+	id: 'editor83misuse00',
+	name: 'editor83 misuse canvas (browser check, not executed)',
+	nodes: [
+		{ parameters: {}, id: nextId(), name: 'When clicking Execute', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: [0, 0] },
+		{ parameters: { promptType: 'define', text: 'hi', options: {} }, id: nextId(), name: 'AI Agent', type: '@n8n/n8n-nodes-langchain.agent', typeVersion: 3, position: [300, 0] },
+		{ parameters: { prompt: 'hi' }, id: nextId(), name: 'Claude Code Agent', type: AGENT_TYPE, typeVersion: 1, position: [800, 0] },
+		{ ...subagentNode('Subagent alpha', 'alpha', 'X').node, id: nextId(), position: [300, 400] },
+	],
+	connections: { 'When clicking Execute': { main: [[{ node: 'AI Agent', type: 'main', index: 0 }]] } },
+	settings: { executionOrder: 'v1' },
+	active: false,
+	pinData: {},
+	meta: { testCaseNotes: 'Canvas for the editor check. Named without "case" so run-cases skips it.' },
 });
 
 let n = 0;

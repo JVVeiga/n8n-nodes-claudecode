@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 const r = JSON.parse(readFileSync(new URL('./results.json', import.meta.url), 'utf8'));
-const get = (n) => r.find((c) => c.name.startsWith(n));
+// By exact slug: a prefix match let get('case81') pick case81b whenever it sorted first.
+const get = (n) => r.find((c) => c.name.split(' ')[0] === n);
 const det = (c) => c?.itemJson?.details ?? c?.itemJson ?? {};
 const ctx = (c) => c?.errorContext ?? {};
 
@@ -31,7 +33,7 @@ const checks = [
   // These are three SEPARATE runs, so cost, duration and session id legitimately differ. What must
   // match is the SHAPE — same envelope keys, same metric keys — and the answer to the same prompt.
   // Whether the three agree field-for-field on ONE run is a unit test's job (output.test.ts).
-  ['20 all three 1.2 formats share one envelope shape', () => {
+  ['20s 20m 20t all three 1.2 formats share one envelope shape', () => {
     const runs = ['case20s', 'case20m', 'case20t'].map((n) => get(n)?.itemJson);
     if (runs.some((j) => !j)) return false;
     const metricKeys = runs.map((j) => Object.keys(j.metrics).sort().join(','));
@@ -326,20 +328,230 @@ const checks = [
       !/NO_WINDOWS|Could not read/i.test(out)
     );
   }],
+
+  // Claude Code Agent (80-86). The root node's item is the v1.2 envelope plus `structured`.
+  ['80 all four tool shapes answer through the Agent', () => {
+    const c = get('case80');
+    const out = String(c?.itemJson?.result ?? '');
+    // CODE-Q7 needs the schema'd argument, WF-8052 the published target, MCP-6130 the MCP server
+    // behind a toolkit. `ok` alone is guessable; health_check's own run below is what proves it.
+    return c?.status === 'success' && c.itemJson?.success === true &&
+      /CODE-Q7/.test(out) && /WF-8052/.test(out) && /MCP-6130/.test(out) && /HEALTH=\W*ok/i.test(out);
+  }],
+  ['80 diagnostics.bridgedTools lists four mcp__n8n__ tools, the toolkit flattened', () => {
+    const t = get('case80')?.itemJson?.diagnostics?.bridgedTools ?? [];
+    return t.length === 4 && t.every((n) => n.startsWith('mcp__n8n__')) &&
+      t.some((n) => /mcp_secret$/.test(n)) && t.includes('mcp__n8n__secret_code');
+  }],
+  ['80 every tool node has its own run in the execution', () => {
+    const runs = get('case80')?.nodeRuns ?? {};
+    return ['secret_code', 'findings_token', 'MCP Client', 'health_check']
+      .every((n) => (runs[n]?.runs ?? 0) >= 1);
+  }],
+  ['81 JSON Schema mode emits the object as structured', () => {
+    const j = get('case81')?.itemJson;
+    return j?.success === true && /paris/i.test(String(j.structured?.capital)) &&
+      j.structured?.sum === 42 && j.diagnostics?.structuredOutput?.mode === 'jsonSchema';
+  }],
+  ['81b an impossible schema fails the item as structured_output, with metrics', () => {
+    const c = get('case81b');
+    const d = det(c);
+    return c?.status === 'success' && c.itemCount === 1 && d.errorType === 'structured_output' &&
+      typeof d.metrics?.total_cost_usd === 'number' && d.metrics.total_cost_usd > 0 &&
+      !('structured' in (c.itemJson ?? {}));
+  }],
+  // Two shapes reach the same failure: the CLI's retry limit (its own message) or the model
+  // giving up in prose (a success with no object). Printed so a pass records which one ran.
+  ['81b the failure shape and its StructuredOutput attempts are recorded', () => {
+    const d = det(get('case81b'));
+    const attempts = d.diagnostics?.structuredOutput?.attempts;
+    const text = String(get('case81b')?.itemJson?.error ?? d.error ?? '');
+    const shape = /finished without producing/.test(text) ? 'prose give-up' : 'retry limit';
+    console.log(`      81b shape: ${shape}, attempts: ${attempts}`);
+    return typeof attempts === 'number' && attempts >= 1;
+  }],
+  ['82 Output Parser mode emits the user object, not wrapped in output', () => {
+    const s = get('case82')?.itemJson?.structured;
+    return !!s && typeof s === 'object' && !('output' in s) &&
+      /blue/i.test(String(s.colour)) && s.legs === 8 &&
+      get('case82').itemJson.diagnostics?.structuredOutput?.mode === 'outputParser';
+  }],
+  ['83 both subagents answer — their codewords exist nowhere else', () => {
+    const j = get('case83')?.itemJson;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /ORCHID-4417/.test(out) && /GRANITE-9023/.test(out);
+  }],
+  ['83 diagnostics report both delegations', () => {
+    const d = get('case83')?.itemJson?.diagnostics ?? {};
+    const by = Object.fromEntries((d.subagents ?? []).map((s) => [s.name, s]));
+    return (by.alpha?.invocations ?? 0) >= 1 && (by.beta?.invocations ?? 0) >= 1 &&
+      d.subagentToolUses >= 2;
+  }],
+  ['83 each Subagent sub-node logs its delegation as an ai_agent run', () => {
+    const runs = get('case83')?.nodeRuns ?? {};
+    return ['Subagent alpha', 'Subagent beta'].every((n) => runs[n]?.types?.includes('ai_agent'));
+  }],
+  ['84a a literal session key creates the session on first use', () => {
+    const j = get('case84a')?.itemJson;
+    return j?.success === true && /OK/.test(String(j.result)) && j.diagnostics?.sessionState === 'created';
+  }],
+  ['84b the same key resumes it in a separate execution', () => {
+    const j = get('case84b')?.itemJson;
+    return j?.success === true && /TANGERINE-58/.test(String(j.result)) &&
+      j.diagnostics?.sessionState === 'resumed';
+  }],
+  ['85 an Instruction File reaches the model; a missing one is listed, not fatal', () => {
+    const j = get('case85')?.itemJson;
+    const i = j?.diagnostics?.instructions;
+    return j?.success === true && /MARMOT-3361/.test(String(j.result)) &&
+      JSON.stringify(i?.loaded) === '[".agent/rules.md"]' &&
+      JSON.stringify(i?.missing) === '[".agent/missing.md"]';
+  }],
+  // Bash/Read/Grep/Glob are disallowed and the run took one turn: the codeword can only have come
+  // from the Instruction File in the system prompt, not from the model reading the file.
+  ['85 the codeword came from the system prompt, in one turn with no file tools', () => {
+    const j = get('case85')?.itemJson;
+    return j?.metrics?.num_turns === 1;
+  }],
+  ['86 the Agent reports usage to the collector workflow', () => {
+    const c = get('case86');
+    const mine = (c?.usageReports ?? []).filter((r) => r.process_name === 'e2e-agent');
+    return c?.status === 'success' && mine.length >= 1 && mine.every((r) =>
+      typeof r.run_key === 'string' && r.run_key.includes(':') &&
+      typeof r.metrics?.total_cost_usd === 'number' && r.metrics.total_cost_usd > 0);
+  }],
+  // Verification (87). The false claim is refutable only by reading verify/slug.ts, which the
+  // main run was told not to do.
+  ['87 Verification drops the planted false claim with a reason', () => {
+    const v = get('case87')?.itemJson?.verification;
+    const dropped = v?.droppedItems ?? [];
+    return v?.status === 'verified' && v.checked === 2 && v.dropped === 1 && dropped.length === 1 &&
+      /does not validate/i.test(String(dropped[0].item?.claim)) &&
+      String(dropped[0].reason ?? '').trim().length > 0;
+  }],
+  ['87 the true claim is kept in structured', () => {
+    const j = get('case87')?.itemJson;
+    const items = j?.structured?.items ?? [];
+    return j?.success === true && items.length === 1 && /lower case/i.test(String(items[0].claim));
+  }],
+  ['87 metrics count both runs once; the verification cost is its own share', () => {
+    const j = get('case87')?.itemJson;
+    const cost = j?.verification?.costUsd;
+    return typeof cost === 'number' && cost > 0 &&
+      typeof j.metrics?.total_cost_usd === 'number' && j.metrics.total_cost_usd > cost;
+  }],
+  ['87 exactly one usage report for the item, carrying its total', () => {
+    const c = get('case87');
+    const mine = (c?.usageReports ?? []).filter((r) => r.process_name === 'e2e-agent-verify');
+    return mine.length === 1 &&
+      mine[0].metrics?.total_cost_usd === c.itemJson?.metrics?.total_cost_usd &&
+      mine[0].metrics?.num_turns === c.itemJson?.metrics?.num_turns;
+  }],
+  // Code Review Kit (88), on the repo kit-repo.sh builds with fixed identities and dates — so the
+  // merge base is a known SHA. The expected table is the script's header.
+  ['88 Diff Context: merge base, files and addedLines equal the fixture table', () => {
+    const d = get('case88')?.kitRuns?.['Kit Diff'];
+    const files = [...(d?.files ?? [])].sort((a, b) => a.path.localeCompare(b.path));
+    return d?.mergeBase === '61c8bec473220304a84c8748e4ade6282f06fe8b' &&
+      JSON.stringify(files) === JSON.stringify([
+        { path: 'docs/notes.md', status: 'deleted', additions: 0, deletions: 2 },
+        { path: 'src/calc.js', status: 'modified', additions: 5, deletions: 1 },
+        { path: 'src/new name.js', oldPath: 'src/old name.js', status: 'renamed', additions: 1, deletions: 0 },
+        { path: 'src/new.js', status: 'added', additions: 3, deletions: 0 },
+      ]) &&
+      JSON.stringify(d.addedLines) === JSON.stringify({
+        'src/calc.js': [2, 9, 10, 11, 12], 'src/new name.js': [5], 'src/new.js': [1, 2, 3],
+      }) &&
+      d.patchTruncated === false && String(d.patch).includes('+++ b/src/new name.js');
+  }],
+  ['88 Validate Anchors: one valid, two moved with distinct reasons', () => {
+    const a = get('case88')?.kitRuns?.['Kit Anchors'];
+    const reasons = (a?.moved ?? []).map((m) => m.reason);
+    return a?.valid?.length === 1 && a.valid[0].line === 10 &&
+      JSON.stringify(reasons) === JSON.stringify([
+        'line 6 is not an added line in src/calc.js',
+        'file is not in the diff (or was deleted): docs/notes.md',
+      ]);
+  }],
+  ['88 Fingerprint: sha256 of path, type and snippet; null with an error for a deleted file', () => {
+    const items = get('case88')?.kitRuns?.['Kit Fingerprint']?.items ?? [];
+    const expected = createHash('sha256')
+      .update('src/calc.js\0bug\0}\nfunction mul(a, b) {\nreturn a * b;\n}\nmodule.exports = { add, sub, mul };')
+      .digest('hex');
+    return items.length === 3 && items[0].fingerprint === expected &&
+      /^[0-9a-f]{64}$/.test(String(items[1].fingerprint)) &&
+      items[2].fingerprint === null && items[2].error === 'docs/notes.md does not exist at HEAD';
+  }],
+  ['88 Fingerprint survives three lines inserted above, changes when the snippet is edited', () => {
+    const k = get('case88')?.kitRuns ?? {};
+    const head = k['Kit Fingerprint']?.items?.[0]?.fingerprint;
+    const shifted = k['Kit Fingerprint Shifted']?.items?.[0]?.fingerprint;
+    const edited = k['Kit Fingerprint Edited']?.items?.[0]?.fingerprint;
+    return typeof head === 'string' && head === shifted && typeof edited === 'string' && edited !== head;
+  }],
+  ['88 Dedupe: two new, one repeated carrying the previous id, one resolved', () => {
+    const d = get('case88')?.kitRuns?.['Kit Dedupe'];
+    return get('case88')?.status === 'success' &&
+      d?.new?.length === 2 && d.new.map((i) => i.line).join() === '6,1' &&
+      d.repeated?.length === 1 && d.repeated[0].previous?.id === 101 && d.repeated[0].item?.line === 10 &&
+      d.resolved?.length === 1 && d.resolved[0].id === 102;
+  }],
+  ['89 Claude Code 1.4 answers with the subagent’s value, not the interim text', () => {
+    const j = get('case89')?.itemJson;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /SKU=KESTREL-5082/.test(out) && !/launch|waiting|wait for/i.test(out);
+  }],
+  ['89 the answer is the LAST result the CLI wrote', () => {
+    const j = get('case89')?.itemJson;
+    const results = (j?.messages ?? []).filter((m) => m.type === 'result');
+    return results.length >= 1 && results[results.length - 1].result === j.result;
+  }],
+  ['89 the subagent reported back and the CLI wrote more than one result', () => {
+    const b = get('case89')?.backgroundRun ?? {};
+    console.log(`      89 background: ${JSON.stringify(b)}`);
+    return b.notifications >= 1 && b.results >= 2;
+  }],
+  ['90 Chat Model 1.1 answers with the subagent’s value, not the interim text', () => {
+    const c = get('case90');
+    const out = String(c?.itemJson?.output ?? '');
+    return c?.status === 'success' && /SKU=KESTREL-5082/.test(out) && !/launch|waiting|wait for/i.test(out);
+  }],
+  ['90 the subagent reported back and the CLI wrote more than one result', () => {
+    const b = get('case90')?.backgroundRun ?? {};
+    console.log(`      90 background: ${JSON.stringify(b)}`);
+    return b.notifications >= 1 && b.results >= 2;
+  }],
+  ['91 Task Tool 1.1 returns the subagent’s value, not the interim text', () => {
+    const c = get('case91');
+    const out = String(c?.toolRuns?.['Background Delegate'] ?? '');
+    return c?.status === 'success' && /SKU=KESTREL-5082/.test(out) && !/launch|waiting|wait for/i.test(out);
+  }],
+  ['91 the subagent reported back and the CLI wrote more than one result', () => {
+    const b = get('case91')?.backgroundRun ?? {};
+    console.log(`      91 background: ${JSON.stringify(b)}`);
+    return b.notifications >= 1 && b.results >= 2;
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
 // FAIL puts three permanent red lines in every verdict, which is how a real failure gets ignored.
-// The leading number in the check name is the case it needs.
+// The leading number in the check name is the case it needs. Only those long-standing gaps skip:
+// a missing Agent or Kit case (80-88) means the pass did not cover them, and fails.
 const caseOf = (name) => `case${name.match(/^(\d+[a-z]?)/)?.[1] ?? ''}`;
+const mayBeAbsent = (name) => ['case14', 'case15', 'case16'].includes(caseOf(name));
 
 let pass = 0;
 let fail = 0;
 let skip = 0;
 for (const [name, fn] of checks) {
   if (!get(caseOf(name))) {
-    skip++;
-    console.log(`SKIP  ${name}  (no ${caseOf(name)} in results.json)`);
+    if (mayBeAbsent(name)) {
+      skip++;
+      console.log(`SKIP  ${name}  (no ${caseOf(name)} in results.json)`);
+    } else {
+      fail++;
+      console.log(`FAIL  ${name}  (no ${caseOf(name)} in results.json)`);
+    }
     continue;
   }
   let ok = false;

@@ -31,13 +31,16 @@ export const toToolName = (nodeName: string, fallback = 'Claude_Code_Tool'): str
 /**
  * Registers a tool's calls under its node on the canvas, the way n8n's own Code Tool does.
  * Every call is guarded: `addInputData` throws outside a real execution (an editor probe, for
- * instance), and logging must never be the thing that fails a run.
+ * instance), and logging must never be the thing that fails a run. A sub-node on another
+ * connection (the Subagent's ai_agent) passes its own type.
  */
-export const toolRunLog = (ctx: ISupplyDataFunctions): ToolRunLog => ({
+export const toolRunLog = (
+	ctx: ISupplyDataFunctions,
+	connectionType: NodeConnectionType = NodeConnectionType.AiTool,
+): ToolRunLog => ({
 	start: (payload) => {
 		try {
-			return ctx.addInputData(NodeConnectionType.AiTool, [[{ json: payload as IDataObject }]])
-				.index;
+			return ctx.addInputData(connectionType, [[{ json: payload as IDataObject }]]).index;
 		} catch {
 			return -1;
 		}
@@ -45,9 +48,7 @@ export const toolRunLog = (ctx: ISupplyDataFunctions): ToolRunLog => ({
 	end: (index, payload) => {
 		if (index < 0) return;
 		try {
-			void ctx.addOutputData(NodeConnectionType.AiTool, index, [
-				[{ json: payload as IDataObject }],
-			]);
+			void ctx.addOutputData(connectionType, index, [[{ json: payload as IDataObject }]]);
 		} catch {
 			// Logging must never fail the run.
 		}
@@ -59,7 +60,7 @@ export const toolRunLog = (ctx: ISupplyDataFunctions): ToolRunLog => ({
 				error instanceof NodeOperationError
 					? error
 					: new NodeOperationError(ctx.getNode(), error as Error);
-			void ctx.addOutputData(NodeConnectionType.AiTool, index, wrapped);
+			void ctx.addOutputData(connectionType, index, wrapped);
 		} catch {
 			// Same.
 		}

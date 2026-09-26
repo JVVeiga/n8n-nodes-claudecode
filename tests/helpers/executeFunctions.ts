@@ -25,6 +25,29 @@ export type FakeContextOptions = {
 	credentials?: Record<string, Record<string, unknown>>;
 	nodeName?: string;
 	continueOnFail?: boolean;
+	/**
+	 * What `getInputConnectionData(type)` returns, by connection type ('ai_tool', 'ai_agent',
+	 * 'ai_outputParser'). The value is handed back as given — one object, an array, or undefined
+	 * for a declared input with nothing connected. A type absent from the map throws.
+	 */
+	connections?: Record<string, unknown>;
+	/**
+	 * Model the members usage reporting reads: `getExecutionId`, `getWorkflow` and
+	 * `executeWorkflow`. Absent, all three stay unimplemented.
+	 */
+	workflow?: {
+		executionId?: string;
+		workflowId?: string;
+		executeWorkflowThrows?: boolean;
+		/** What `getWorkflowDataProxy(i).$runIndex` reports: the node's run within the execution. */
+		runIndex?: number;
+	};
+};
+
+export type ExecuteWorkflowCall = {
+	workflowId: string;
+	payload: unknown;
+	doNotWaitToFinish?: boolean;
 };
 
 export type LogEntry = {
@@ -42,6 +65,10 @@ export type FakeContext = {
 	cancel: () => void;
 	/** Names of parameters that were read, in order — proves a param is actually consumed. */
 	reads: string[];
+	/** Every `getInputConnectionData` call, in order. */
+	connectionReads: Array<{ type: string; itemIndex: number }>;
+	/** Every `executeWorkflow` call, when `workflow` is modelled. */
+	workflowCalls: ExecuteWorkflowCall[];
 	/** Replace a parameter mid-test (e.g. between items). */
 	setParam: (name: string, value: unknown) => void;
 	logsFor: (level: LogEntry['level']) => LogEntry[];
@@ -62,10 +89,14 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 	const nodeName = options.nodeName ?? 'Claude Code';
 	const continueOnFail = options.continueOnFail ?? false;
 	const credentials = options.credentials ?? {};
+	const connections = options.connections ?? {};
 
 	const logs: LogEntry[] = [];
 	const reads: string[] = [];
+	const connectionReads: Array<{ type: string; itemIndex: number }> = [];
 	const cancellationCallbacks: Array<() => void> = [];
+	const workflowCalls: ExecuteWorkflowCall[] = [];
+	const workflow = options.workflow;
 
 	const log =
 		(level: LogEntry['level']) =>
@@ -126,8 +157,44 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 			return credentials[name];
 		},
 
-		// Everything else the interface declares but these nodes never call.
-		getWorkflow: NOT_IMPLEMENTED('getWorkflow'),
+		getInputConnectionData: async (type: string, itemIndex: number) => {
+			connectionReads.push({ type, itemIndex });
+			if (!(type in connections)) {
+				throw new Error(
+					`FakeExecuteFunctions: getInputConnectionData('${type}') has no modelled ` +
+						`connection. Add '${type}' to the connections map — undefined as its value ` +
+						`models a declared input with nothing connected.`,
+				);
+			}
+			return connections[type];
+		},
+
+		...(workflow
+			? {
+					getExecutionId: () => workflow.executionId ?? 'exec-1',
+					getWorkflow: () => ({ id: workflow.workflowId ?? 'wf-1', name: 'Fake', active: false }),
+					getWorkflowDataProxy: () => ({ $runIndex: workflow.runIndex ?? 0 }),
+					executeWorkflow: async (
+						info: { id?: string },
+						inputData?: Array<{ json: unknown }>,
+						_cb?: unknown,
+						opts?: { doNotWaitToFinish?: boolean },
+					) => {
+						if (workflow.executeWorkflowThrows) {
+							throw new Error('collector workflow is unavailable');
+						}
+						workflowCalls.push({
+							workflowId: info.id ?? '',
+							payload: inputData?.[0]?.json,
+							doNotWaitToFinish: opts?.doNotWaitToFinish,
+						});
+						return { data: [], executionId: 'sub-exec' };
+					},
+				}
+			: {
+					// Everything else the interface declares but these nodes never call.
+					getWorkflow: NOT_IMPLEMENTED('getWorkflow'),
+				}),
 		helpers: new Proxy(
 			{
 				/**
@@ -160,6 +227,8 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 		ctx,
 		logs,
 		reads,
+		connectionReads,
+		workflowCalls,
 		cancel: () => {
 			for (const cb of cancellationCallbacks) cb();
 		},

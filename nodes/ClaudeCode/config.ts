@@ -1,7 +1,9 @@
+import type { AgentDefinition, OutputFormat } from '@anthropic-ai/claude-agent-sdk';
 import type { PromptStream } from './promptStream';
 import { buildAuthEnv, type AuthSelection } from '../shared/auth';
 import type { Problem } from '../shared/problem';
 import { checkProjectPath, isDirectory } from '../shared/projectPath';
+import { text } from '../shared/text';
 import { effectiveEffort, isUltracode } from './params';
 import { resolveGraceWindow, type GraceWindow } from './timeout';
 import type { ClaudeCodeParams, QueryOptions, SdkOptions } from './types';
@@ -49,6 +51,17 @@ export type ConfigDeps = {
 	 * deterministic id when resuming found nothing — which is what makes a stable conversation
 	 * key work with no storage anywhere. Not combined with `resume` by its only caller. */
 	newSessionId?: string;
+	/** Programmatic subagents, keyed by name. */
+	agents?: Record<string, AgentDefinition>;
+	/** Ask the SDK for a structured result validated against this JSON Schema. */
+	outputFormat?: OutputFormat;
+	/** false switches off the claude.ai cloud connectors a full login auto-connects; absent or
+	 * true leaves the CLI default. */
+	claudeAiConnectors?: boolean;
+	/** Appended after `additional.systemPrompt` in the preset's `append` slot. */
+	instructionsAppend?: string;
+	/** With a resume: continue in a new session, leaving the resumed one as it was. */
+	forkSession?: boolean;
 };
 
 export type ConfigResult = {
@@ -128,13 +141,12 @@ const APPLIERS: Applier[] = [
 		// Appended to Claude Code's own preset rather than replacing it, so the built-in agent
 		// behaviour survives a custom system prompt.
 		name: 'systemPrompt',
-		apply: ({ options, params }) => {
-			if (!params.additional.systemPrompt) return false;
-			options.systemPrompt = {
-				type: 'preset',
-				preset: 'claude_code',
-				append: params.additional.systemPrompt,
-			};
+		apply: ({ options, params, deps }) => {
+			const append = [params.additional.systemPrompt, deps.instructionsAppend]
+				.filter((part): part is string => typeof part === 'string' && part !== '')
+				.join('\n\n');
+			if (append === '') return false;
+			options.systemPrompt = { type: 'preset', preset: 'claude_code', append };
 			return true;
 		},
 	},
@@ -142,7 +154,7 @@ const APPLIERS: Applier[] = [
 		// A globally installed CLI instead of the one bundled with the SDK.
 		name: 'executablePath',
 		apply: ({ options, params }) => {
-			const path = params.additional.pathToClaudeCodeExecutable?.trim();
+			const path = text(params.additional.pathToClaudeCodeExecutable).trim();
 			if (!path) return false;
 			options.pathToClaudeCodeExecutable = path;
 			return true;
@@ -181,12 +193,17 @@ const APPLIERS: Applier[] = [
 		// Ultracode needs Workflow and Task, so add them rather than let a restriction silently
 		// disable orchestration — but only when a restriction was actually asked for.
 		name: 'restrictTools',
-		apply: ({ options, params, ultracode, note }) => {
-			const tools =
+		apply: ({ options, params, ultracode, deps, note }) => {
+			let tools =
 				ultracode && params.restrictTools.length > 0
 					? withOrchestration(params.restrictTools)
 					: params.restrictTools;
 			if (tools.length === 0) return false;
+			// Connected subagents are unreachable without the delegation tool, which the CLI calls
+			// `Agent` while listing `Task`.
+			if (deps.agents && Object.keys(deps.agents).length > 0) {
+				tools = Array.from(new Set([...tools, 'Agent', 'Task']));
+			}
 			options.tools = tools;
 			note('tools', tools);
 			return true;
@@ -374,6 +391,42 @@ const APPLIERS: Applier[] = [
 			if (!deps.newSessionId) return false;
 			options.sessionId = deps.newSessionId;
 			note('newSessionId', deps.newSessionId);
+			return true;
+		},
+	},
+	{
+		name: 'agents',
+		apply: ({ options, deps, note }) => {
+			if (!deps.agents || Object.keys(deps.agents).length === 0) return false;
+			options.agents = deps.agents;
+			note('agents', Object.keys(deps.agents));
+			return true;
+		},
+	},
+	{
+		name: 'outputFormat',
+		apply: ({ options, deps }) => {
+			if (!deps.outputFormat) return false;
+			options.outputFormat = deps.outputFormat;
+			return true;
+		},
+	},
+	{
+		// Merged, not assigned: ultracodeSetting may already have written `settings.ultracode`.
+		name: 'claudeAiConnectors',
+		apply: ({ options, deps }) => {
+			if (deps.claudeAiConnectors !== false) return false;
+			const current = typeof options.settings === 'object' ? options.settings : {};
+			options.settings = { ...current, disableClaudeAiConnectors: true };
+			return true;
+		},
+	},
+	{
+		name: 'forkSession',
+		apply: ({ options, deps, note }) => {
+			if (deps.forkSession !== true || !options.resume) return false;
+			options.forkSession = true;
+			note('forkSession', true);
 			return true;
 		},
 	},

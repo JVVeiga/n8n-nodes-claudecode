@@ -17,12 +17,32 @@ export type ResultMessage = Extract<SDKMessage, { type: 'result' }>;
 export type AssistantMessage = Extract<SDKMessage, { type: 'assistant' }>;
 export type UserMessage = Extract<SDKMessage, { type: 'user' }>;
 export type InitMessage = Extract<SDKMessage, { type: 'system'; subtype: 'init' }>;
+export type TaskStartedMessage = Extract<SDKMessage, { type: 'system'; subtype: 'task_started' }>;
+export type TaskNotificationMessage = Extract<
+	SDKMessage,
+	{ type: 'system'; subtype: 'task_notification' }
+>;
 
 export const isResult = (m: SDKMessage): m is ResultMessage => m.type === 'result';
 export const isAssistant = (m: SDKMessage): m is AssistantMessage => m.type === 'assistant';
 export const isUser = (m: SDKMessage): m is UserMessage => m.type === 'user';
 export const isInit = (m: SDKMessage): m is InitMessage =>
 	m.type === 'system' && m.subtype === 'init';
+export const isTaskStarted = (m: SDKMessage): m is TaskStartedMessage =>
+	m.type === 'system' && m.subtype === 'task_started';
+export const isTaskNotification = (m: SDKMessage): m is TaskNotificationMessage =>
+	m.type === 'system' && m.subtype === 'task_notification';
+
+/** True while a subagent that started has not reported back. Tasks without a `subagent_type`
+ * (background shells) are left out: one that never ends must not hold a run open. */
+export function hasPendingSubagentTask(messages: SDKMessage[]): boolean {
+	const pending = new Set<string>();
+	for (const m of messages) {
+		if (isTaskStarted(m) && typeof m.subagent_type === 'string') pending.add(m.task_id);
+		else if (isTaskNotification(m)) pending.delete(m.task_id);
+	}
+	return pending.size > 0;
+}
 
 /** A content block, described structurally: the SDK's own block union is wider than any one
  * consumer needs, and every field here is optional in at least one variant. */
@@ -54,6 +74,16 @@ export const lastResult = (messages: SDKMessage[]): ResultMessage | undefined =>
 	return undefined;
 };
 
+/**
+ * The messages with every result but the last removed. A subagent sent to the background makes
+ * the CLI write a result for the turn that launched it ("I'll wait for it") and another for each
+ * turn its notification starts; the answer is the last one.
+ */
+export const withFinalResultOnly = (messages: SDKMessage[]): SDKMessage[] => {
+	const final = lastResult(messages);
+	return final ? messages.filter((m) => !isResult(m) || m === final) : messages;
+};
+
 export const assistantMessages = (messages: SDKMessage[]): AssistantMessage[] =>
 	messages.filter(isAssistant);
 
@@ -81,3 +111,7 @@ export const countContent = (
 
 export const countToolUses = (messages: SDKMessage[], name: string): number =>
 	countContent(messages, (c) => c.type === 'tool_use' && c.name === name);
+
+/** The CLI invokes subagents through a tool named `Agent` while listing it as `Task` in init. */
+export const countSubagentToolUses = (messages: SDKMessage[]): number =>
+	countContent(messages, (c) => c.type === 'tool_use' && (c.name === 'Agent' || c.name === 'Task'));

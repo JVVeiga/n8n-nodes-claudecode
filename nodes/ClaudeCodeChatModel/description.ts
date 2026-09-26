@@ -1,6 +1,5 @@
 import type { INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
-import { MODEL_OPTIONS } from '../ClaudeCode/description/models';
 import { AUTHENTICATION_CREDENTIALS, AUTHENTICATION_PROPERTY } from '../shared/authDescription';
 import {
 	allowedToolsOption,
@@ -12,6 +11,7 @@ import {
 	maxBudgetOption,
 	maxThinkingTokensOption,
 	maxTurnsOption,
+	modelProperty,
 	processNameOption,
 	projectPathProperty,
 	reportUsageToOption,
@@ -33,7 +33,10 @@ export const claudeCodeChatModelDescription: INodeTypeDescription = {
 	name: 'claudeCodeChatModel',
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
-	version: 1,
+	// 1.1: answers from the run's final result when a subagent ran in the background, and the
+	// graceful timeout waits for a pending subagent.
+	version: [1, 1.1],
+	defaultVersion: 1.1,
 	description:
 		'Use Claude Code as the chat model for an AI Agent — its own tools, MCP servers and CLAUDE.md included. Each Agent call runs a full Claude Code session, so it costs more and takes longer than a plain chat model.',
 	defaults: {
@@ -45,17 +48,7 @@ export const claudeCodeChatModelDescription: INodeTypeDescription = {
 	credentials: AUTHENTICATION_CREDENTIALS,
 	properties: [
 		AUTHENTICATION_PROPERTY,
-		{
-			displayName: 'Model',
-			name: 'model',
-			type: 'options',
-			// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
-			// Aliases first, then pinned IDs newest-first — see ../ClaudeCode/description/models.ts.
-			options: MODEL_OPTIONS,
-			default: 'sonnet',
-			description:
-				'Claude model to use. Aliases auto-resolve to the latest version; pinned IDs stay fixed.',
-		},
+		modelProperty(),
 		{
 			displayName: 'Conversation Memory',
 			name: 'memorySource',

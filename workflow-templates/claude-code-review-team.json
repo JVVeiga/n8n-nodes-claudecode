@@ -1,0 +1,325 @@
+{
+  "name": "Claude Code Review Team",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Claude Code Review Team\n\nReviews the change between two git refs with three specialist subagents, checks the blocking findings a second time, and returns review items anchored on added lines with a stable fingerprint each.\n\n**Set up**\n1. In **Review Inputs**, set `projectPath` to a git clone the n8n process can read (in Docker, mounted into the container), and `base` / `head` to the refs to compare.\n2. Optional: add `.review/rules.md` to the repository with your team's review rules. A missing file is skipped and listed in `diagnostics.instructions.missing`.\n3. Adjust **Max Budget (USD)** on the Agent.\n\n**Output**: `items` on the last node carry `path`, `line`, `type`, `severity`, `body` and `fingerprint`. Findings that did not sit on an added line are in `moved` on **Validate Anchors**, with the reason.\n\nNothing here posts anywhere. Add your own node after **Fingerprint** to publish the review, and keep a human in the loop before it blocks a merge.",
+        "height": 520,
+        "width": 440,
+        "color": 7
+      },
+      "id": "review-team-note",
+      "name": "About This Workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -560
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "review-manual-trigger",
+      "name": "Start Review",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "review-input-project-path",
+              "name": "projectPath",
+              "value": "/path/to/your/repo",
+              "type": "string"
+            },
+            {
+              "id": "review-input-base",
+              "name": "base",
+              "value": "origin/main",
+              "type": "string"
+            },
+            {
+              "id": "review-input-head",
+              "name": "head",
+              "value": "HEAD",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "review-inputs",
+      "name": "Review Inputs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "diffContext",
+        "projectPath": "={{ $json.projectPath }}",
+        "baseRef": "={{ $json.base }}",
+        "headRef": "={{ $json.head }}",
+        "includePatch": true,
+        "maxPatchChars": 80000
+      },
+      "id": "review-diff-context",
+      "name": "Diff Context",
+      "type": "@joaoveiga/n8n-nodes-claudecode.codeReviewKit",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "prompt": "=Review the change in this repository from {{ $('Review Inputs').item.json.base }} to {{ $('Review Inputs').item.json.head }} (merge base {{ $json.mergeBase }}).\n\nChanged files:\n{{ $json.files.map(f => '- ' + f.path + ' (' + f.status + ', +' + (f.additions ?? 0) + ' -' + (f.deletions ?? 0) + ')').join('\\n') }}\n\nAdded lines, as { path: [line numbers in the new version of the file] }. Every review item must sit on one of these lines:\n{{ JSON.stringify($json.addedLines) }}\n\nZero-context patch{{ $json.patchTruncated ? ' (truncated: read the files for the rest)' : '' }}:\n{{ $json.patch }}\n\nDelegate the review to your subagents and give each of them the list of changed files. Then merge what they report: remove duplicates, remove anything you cannot confirm by reading the code, and move each finding onto the nearest added line it concerns. Write `body` as the comment a reviewer would post: what is wrong, why it matters, what to change. Set `verdict` to REQUEST_CHANGES when any item is a blocker, APPROVE otherwise. An empty `items` array is a valid answer.",
+        "projectPath": "={{ $('Review Inputs').item.json.projectPath }}",
+        "model": "sonnet",
+        "effort": "high",
+        "maxTurns": 40,
+        "timeout": 900,
+        "attachAllBinaries": "off",
+        "outputMode": "jsonSchema",
+        "jsonSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"Two or three sentences: what the change does and its main risk\"\n    },\n    \"verdict\": {\n      \"type\": \"string\",\n      \"enum\": [\"APPROVE\", \"REQUEST_CHANGES\"]\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"path\": { \"type\": \"string\", \"description\": \"File path relative to the repository root\" },\n          \"line\": { \"type\": \"integer\", \"description\": \"Line number in the new version of the file; must be an added line\" },\n          \"type\": { \"type\": \"string\", \"enum\": [\"bug\", \"security\", \"performance\", \"sql\", \"convention\", \"test\"] },\n          \"severity\": { \"type\": \"string\", \"enum\": [\"blocker\", \"major\", \"minor\", \"nit\"] },\n          \"body\": { \"type\": \"string\", \"description\": \"The review comment: what is wrong and what to change\" }\n        },\n        \"required\": [\"path\", \"line\", \"type\", \"severity\", \"body\"]\n      }\n    }\n  },\n  \"required\": [\"summary\", \"verdict\", \"items\"]\n}",
+        "instructionFiles": ".review/rules.md",
+        "sessionMode": "new",
+        "subagentOrchestration": "required",
+        "verification": {
+          "enabled": true,
+          "itemsPath": "items",
+          "filterField": "severity",
+          "filterValues": "blocker"
+        },
+        "options": {
+          "maxBudgetUsd": 3,
+          "disallowedTools": [
+            "Write",
+            "Edit",
+            "NotebookEdit"
+          ]
+        }
+      },
+      "id": "review-agent",
+      "name": "Review Team",
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCodeAgent",
+      "typeVersion": 1,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "agentName": "correctness",
+        "whenToUse": "Reviews changed code for defects that make it behave wrongly: logic errors, edge cases, error handling, broken contracts. Use on every review.",
+        "instructions": "You review a code change for defects that would make it behave wrongly. You are given the changed files; the added lines are the ones under review.\n\nRead the changed code, and enough of its callers and callees to know how it is used. Look for:\n- wrong conditions, inverted checks, off-by-one and boundary mistakes\n- null, undefined, empty and malformed input that is not handled\n- error paths that swallow a failure, report the wrong one, or leave state half-written\n- changes that break an existing caller, a public API or a stored data format\n- shared mutable state, race conditions, resources that are opened and never closed\n- security mistakes in the changed code: unchecked input reaching a query, a shell, a path or a template; secrets in code or logs\n\nReport only what you can point to in the code. For each finding give the file path, a line number in the new version of the file that is one of the added lines, a severity (blocker: will break production, corrupt or leak data; major: a real bug on a less common path; minor: a latent problem), and two or three sentences on what goes wrong, with which input, and what to change.\n\nDo not report style, naming or formatting. Do not edit any file. If you find nothing, say so plainly.",
+        "model": "inherit",
+        "options": {
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob"
+          ]
+        }
+      },
+      "id": "review-subagent-correctness",
+      "name": "Correctness Reviewer",
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCodeSubagent",
+      "typeVersion": 1,
+      "position": [
+        560,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "agentName": "performance-sql",
+        "whenToUse": "Reviews changed code for performance problems and database misuse: N+1 queries, unbounded reads, missing indexes, SQL injection, heavy migrations. Use when the change touches data access, loops over collections or hot paths.",
+        "instructions": "You review a code change for performance problems and database misuse. You are given the changed files; the added lines are the ones under review.\n\nLook for:\n- a query or remote call inside a loop (N+1)\n- reads with no LIMIT or pagination over tables that grow\n- filters, joins or sorts on columns that are not indexed\n- SQL built by concatenating input instead of binding parameters\n- multi-statement writes with no transaction around them\n- migrations that lock or rewrite a large table, or add a NOT NULL column with no default\n- work repeated inside a loop that could be done once, and algorithms that are quadratic in an input that grows\n- blocking calls on a request path\n\nWhen a finding depends on the schema, read the migrations, schema files or ORM models in the repository; do not guess at an index you can check. For each finding give the file path, an added line to anchor it on, a severity (blocker: injection, or a query that will time out at production size; major: a clear N+1 or unbounded read; minor: the rest), and the concrete fix.\n\nSkip micro-optimisations with no measurable effect. Do not edit any file. If you find nothing, say so plainly.",
+        "model": "inherit",
+        "options": {
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob"
+          ]
+        }
+      },
+      "id": "review-subagent-performance",
+      "name": "Performance and SQL Reviewer",
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCodeSubagent",
+      "typeVersion": 1,
+      "position": [
+        740,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "agentName": "conventions",
+        "whenToUse": "Checks a change against the conventions the repository already follows: structure, naming, error handling, logging, tests. Use on every review.",
+        "instructions": "You check a code change against the conventions this repository already follows. You are given the changed files; the added lines are the ones under review.\n\nFirst learn the conventions: read the project's CLAUDE.md and any review rules in the system prompt, then two or three existing files next to each changed file. Note how this codebase structures modules, names things, handles and reports errors, logs, and tests.\n\nThen report where the change departs from them:\n- a new pattern where the codebase already has an established one for the same job\n- behaviour added without tests where the neighbouring code is tested\n- error handling or logging that differs from the rest of the module\n- dead code, commented-out code, debugging output left in\n- a rule from the review rules that the change breaks\n\nIn every finding, name the existing file or rule that sets the convention. Give the file path and an added line to anchor it on. Severity is minor or nit, unless the departure hides a real bug, which makes it major. Do not report personal preferences the codebase does not share. Do not edit any file. If you find nothing, say so plainly.",
+        "model": "inherit",
+        "options": {
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob"
+          ],
+          "effort": "medium"
+        }
+      },
+      "id": "review-subagent-conventions",
+      "name": "Conventions Reviewer",
+      "type": "@joaoveiga/n8n-nodes-claudecode.claudeCodeSubagent",
+      "typeVersion": 1,
+      "position": [
+        920,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "validateAnchors",
+        "items": "={{ $json.structured.items }}",
+        "addedLines": "={{ $('Diff Context').item.json.addedLines }}"
+      },
+      "id": "review-validate-anchors",
+      "name": "Validate Anchors",
+      "type": "@joaoveiga/n8n-nodes-claudecode.codeReviewKit",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "fingerprint",
+        "projectPath": "={{ $('Review Inputs').item.json.projectPath }}",
+        "ref": "={{ $('Review Inputs').item.json.head }}",
+        "items": "={{ $json.valid }}",
+        "contextLines": 2
+      },
+      "id": "review-fingerprint",
+      "name": "Fingerprint",
+      "type": "@joaoveiga/n8n-nodes-claudecode.codeReviewKit",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Start Review": {
+      "main": [
+        [
+          {
+            "node": "Review Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Inputs": {
+      "main": [
+        [
+          {
+            "node": "Diff Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diff Context": {
+      "main": [
+        [
+          {
+            "node": "Review Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Team": {
+      "main": [
+        [
+          {
+            "node": "Validate Anchors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Anchors": {
+      "main": [
+        [
+          {
+            "node": "Fingerprint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Correctness Reviewer": {
+      "ai_agent": [
+        [
+          {
+            "node": "Review Team",
+            "type": "ai_agent",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Performance and SQL Reviewer": {
+      "ai_agent": [
+        [
+          {
+            "node": "Review Team",
+            "type": "ai_agent",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conventions Reviewer": {
+      "ai_agent": [
+        [
+          {
+            "node": "Review Team",
+            "type": "ai_agent",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {},
+  "versionId": "claude-code-review-team-v1",
+  "triggerCount": 0
+}

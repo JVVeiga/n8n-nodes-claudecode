@@ -73,7 +73,8 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 | `gen-workflows.mjs` | host | generates one workflow JSON per case into `workflows/` |
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
-| `fixture-project/` | mounted as `/workspace` | six 126-line TS files; described one at a time, they overrun a *tight* timeout |
+| `fixture-project/` | mounted as `/workspace` | six 126-line TS files under `src/` (described one at a time, they overrun a *tight* timeout), plus `verify/slug.ts` for case87 and `data/stock.csv` for case89-91 |
+| `kit-repo.sh` | container | builds case88's git repo at `/home/node/kit-repo` (fixed SHAs; its header is the expected diff) |
 | `ids.js` | container | workflow id ↔ name listing, read from the sqlite DB |
 | `list-wf.js` | container | per-workflow summary: typeVersion, timeout, grace, format, onError |
 | `last-exec.js` / `last-execs.js` | container | inspect the most recent execution(s) |
@@ -154,6 +155,60 @@ Two behaviours stay unit-only on purpose: the MIME fallback chain (declared type
 UTF-8 sniff) and an image over the 5 MB ceiling staging instead of inlining. Both are pure
 functions of `(mimeType, bytes)` with no environment dependency, which is the whole reason
 `mime.ts` takes no I/O.
+
+## The Claude Code Agent cases
+
+`case80`–`case86` drive the Agent root node on Haiku at low effort (~US$0.25 for all nine). What
+only a real n8n shows, and so what they assert on:
+
+- `case80` wires one tool of each shape the Agent must bridge: a Code Tool with a JSON-schema
+  input, a Call Workflow Tool, an HTTP Request node used as a tool, and an MCP Client Tool — which
+  arrives as a *toolkit* — pointed at an MCP Server Trigger in the same instance. Its two targets
+  (`case80wftarget00`, `case80mcpserver0`) must be **published**, and the running server only
+  serves `/mcp/e2e-case80` after a **restart** that follows the publish; `n8n-up.sh` does both and
+  probes the route with a real `initialize`.
+- `run-cases.mjs` records `nodeRuns` — every node's own run log. A tool node with a run, or a
+  Subagent node with an `ai_agent` run (`case83`), is the evidence the sub-node was used rather than
+  imitated by the model.
+- `case84a`/`case84b` share a literal session key. `run-cases.mjs` deletes that key's session from
+  the container before `case84a`, so it is a real first use (`created`) on every pass and `case84b`
+  resumes what it created.
+- `case81b`'s impossible schema ends one of two ways, at the model's whim: it gives up in prose (a
+  success with no object), or it exhausts the CLI's five retries, after which the SDK also throws.
+  Both must be a `structured_output` failure; the second once came out as an `execution_error`.
+- `editor83` is never executed: it is the canvas a browser uses to check that a Subagent cannot be
+  dragged onto the n8n AI Agent's Tool input, and where NDV parameters get toggled. **A browser
+  must never edit a `case…` workflow**: n8n 2.x autosaves, and an NDV toggle saved mid-sequence
+  once left case83 on Session = Resume with no key, failing the next run. A browser that exits
+  without closing also leaves an edit lock ("Editing in another tab") that the next one must take
+  over with "Edit here".
+
+- `case87` is Verification. `fixture-project/verify/slug.ts` sits outside `src/` on purpose
+  (a case asserts exactly six files there). The main run is told to report one true and one false
+  claim about it verbatim, without tools; only the verification turn, which forks the session,
+  can refute the false one, and only by reading the file. Its `verification.costUsd` is the
+  verification's own share: a forked result's `total_cost_usd` already includes the first run. It
+  reports usage to the collector, and exactly one report must carry the item's combined total.
+  That the fork leaves a keyed session untouched is covered by unit tests, not here.
+
+- `case88` is the Code Review Kit and calls no model, so it costs nothing. Its repo is built by
+  `kit-repo.sh` inside the container (by `n8n-up.sh`), never under `/workspace`: that is a bind
+  mount of `fixture-project/`, and a `.git` there would land in the host checkout. Fixed identities
+  and dates make the SHAs reproducible, so the verdict names the merge base. Fingerprint stability
+  is proven end to end with two extra branches: `kit-shifted` inserts three lines above the anchor,
+  `kit-edited` rewords it. `run-cases.mjs` records every `Kit …` node's whole item under `kitRuns`.
+
+## The background-subagent cases
+
+`case89`–`case91` pin Claude Code 1.4, the Chat Model 1.1 and the Task Tool 1.1, and ask for one
+general-purpose subagent with `run_in_background` set, which reads a sku from
+`fixture-project/data/stock.csv` — plain data: a subagent refused to repeat a codeword from a file
+that phrased it as an instruction. The CLI then writes an interim result ("waiting on the
+subagent") before the final one. Each case asserts the answer carries `SKU=KESTREL-5082` and no
+waiting text, and — from the debug log, which `run-cases.mjs` counts into `backgroundRun` — that a
+subagent reported back and more than one result was written, so a pass that never backgrounded
+fails instead of passing trivially. In `case91` the outer Chat Model cannot delegate and logs
+nothing, so the counts are the tool's own. About US$0.20 for the three.
 
 ## Retry a timing-sensitive failure before investigating it
 

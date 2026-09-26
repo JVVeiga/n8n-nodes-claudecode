@@ -1,4 +1,4 @@
-import type { IDataObject, ISupplyDataFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import type { DebugLogger } from './debug';
 import type { UsageReporter, UsageReporting } from './usageReport';
 
@@ -11,13 +11,33 @@ import type { UsageReporter, UsageReporting } from './usageReport';
  * module untestable without a fake n8n.
  */
 
+/** What reporting reads off n8n. Both a supply context and an execute context provide it. */
+export type UsageReportContext = Pick<
+	IExecuteFunctions,
+	'getNode' | 'getExecutionId' | 'getWorkflow' | 'executeWorkflow'
+>;
+
+/** The node's run within the execution: Loop Over Items runs a main node once per batch, each
+ * time with item indexes starting at 0. */
+export function readRunIndex(
+	ctx: Pick<IExecuteFunctions, 'getWorkflowDataProxy'>,
+	itemIndex: number,
+): number {
+	try {
+		const value: unknown = ctx.getWorkflowDataProxy(itemIndex).$runIndex;
+		return typeof value === 'number' ? value : 0;
+	} catch {
+		return 0;
+	}
+}
+
 /**
  * The whole reporting dependency, or undefined when no collector was chosen. One factory so both
  * node shells build it identically — the node names, the execution id and the counter all come
  * from the same place, and "configured" is a single question with a single answer.
  */
 export function usageReporting(
-	ctx: ISupplyDataFunctions,
+	ctx: UsageReportContext,
 	settings: { usageWorkflowId: string; processName: string },
 	debug: DebugLogger,
 	nextSeq: () => number,
@@ -55,7 +75,7 @@ export function usageReporting(
  * paid for is not.
  */
 export function createUsageReporter(
-	ctx: ISupplyDataFunctions,
+	ctx: UsageReportContext,
 	workflowId: string,
 	debug: DebugLogger,
 ): UsageReporter | undefined {

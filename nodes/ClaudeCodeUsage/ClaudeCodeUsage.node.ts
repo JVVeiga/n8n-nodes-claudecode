@@ -13,6 +13,7 @@ import { createHash } from 'crypto';
 import { buildAuthEnv } from '../shared/auth';
 import { readAuth } from '../shared/readAuth';
 import { checkProjectPath } from '../shared/projectPath';
+import { text } from '../shared/text';
 import { createDebugLogger } from '../shared/debug';
 import { claudeCodeUsageDescription } from './description';
 
@@ -66,10 +67,10 @@ export async function readUsageItems(
 	const readsByPath = new Map<string, Promise<CachedRead>>();
 
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-		const projectPath = (ctx.getNodeParameter('projectPath', itemIndex) as string).trim();
+		const projectPath = text(ctx.getNodeParameter('projectPath', itemIndex)).trim();
 		const timeout = ctx.getNodeParameter('timeout', itemIndex) as number;
 		const options = ctx.getNodeParameter('usageOptions', itemIndex, {}) as UsageOptions;
-		const executable = (options.pathToClaudeCodeExecutable ?? '').trim();
+		const executable = text(options.pathToClaudeCodeExecutable).trim();
 
 		// Validated before spawning — see checkProjectPath for why a bad path must not be left
 		// for the SDK's spawn-error handler to misdiagnose.

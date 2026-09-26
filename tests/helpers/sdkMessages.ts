@@ -56,6 +56,31 @@ export const userToolResult = (content = 'ok') =>
 		session_id: SESSION,
 	});
 
+/** A subagent delegation starting; `subagentType` undefined models a background shell. */
+export const taskStarted = (taskId: string, subagentType: string | undefined = 'alpha') =>
+	msg({
+		type: 'system',
+		subtype: 'task_started',
+		task_id: taskId,
+		tool_use_id: `toolu_${taskId}`,
+		description: `Task ${taskId}`,
+		...(subagentType === undefined ? {} : { subagent_type: subagentType }),
+		prompt: 'Do the part you were given.',
+		session_id: SESSION,
+	});
+
+export const taskNotified = (taskId: string, status = 'completed', summary = 'done') =>
+	msg({
+		type: 'system',
+		subtype: 'task_notification',
+		task_id: taskId,
+		tool_use_id: `toolu_${taskId}`,
+		status,
+		summary,
+		usage: { total_tokens: 100, tool_uses: 1, duration_ms: 500 },
+		session_id: SESSION,
+	});
+
 export const model = (over: Partial<Record<string, number>> = {}) => ({
 	inputTokens: 4,
 	outputTokens: 486,
@@ -234,3 +259,40 @@ export const streams = {
 export type StreamName = keyof typeof streams;
 
 export const STREAM_NAMES = Object.keys(streams) as StreamName[];
+
+export const INTERIM_TEXT =
+	"I've launched the agent in the background. I'll wait for it to report back before answering.";
+export const FINAL_TEXT = 'The subagent reported the codeword: ORCHID-313.';
+
+/**
+ * A subagent sent to the background, shaped after a recorded run: the turn that launched it ends
+ * in an interim result, and its notification starts a turn that ends in the final one. Not part
+ * of `streams`, which the golden fixtures iterate.
+ */
+export const backgroundSubagentRun = (): SDKMessage[] => [
+	init({ tools: ['Task', 'Read'] }),
+	assistantTool('Agent'),
+	taskStarted('a162'),
+	successResult({
+		result: INTERIM_TEXT,
+		num_turns: 1,
+		total_cost_usd: 0.0301,
+		duration_ms: 3120,
+		modelUsage: { 'claude-sonnet-5': model({ costUSD: 0.0301 }) },
+	}),
+	taskNotified('a162', 'completed', 'ORCHID-313'),
+	assistantText(FINAL_TEXT),
+	successResult({
+		result: FINAL_TEXT,
+		num_turns: 1,
+		total_cost_usd: 0.0517,
+		duration_ms: 2210,
+		modelUsage: {
+			'claude-sonnet-5': model({ costUSD: 0.0412 }),
+			'claude-haiku-5': model({ costUSD: 0.0105 }),
+		},
+	}),
+];
+
+/** The same run cut where it stands while the subagent is still out. */
+export const backgroundSubagentPending = (): SDKMessage[] => backgroundSubagentRun().slice(0, 4);
