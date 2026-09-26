@@ -259,3 +259,40 @@ export const streams = {
 export type StreamName = keyof typeof streams;
 
 export const STREAM_NAMES = Object.keys(streams) as StreamName[];
+
+export const INTERIM_TEXT =
+	"I've launched the agent in the background. I'll wait for it to report back before answering.";
+export const FINAL_TEXT = 'The subagent reported the codeword: ORCHID-313.';
+
+/**
+ * A subagent sent to the background, shaped after a recorded run: the turn that launched it ends
+ * in an interim result, and its notification starts a turn that ends in the final one. Not part
+ * of `streams`, which the golden fixtures iterate.
+ */
+export const backgroundSubagentRun = (): SDKMessage[] => [
+	init({ tools: ['Task', 'Read'] }),
+	assistantTool('Agent'),
+	taskStarted('a162'),
+	successResult({
+		result: INTERIM_TEXT,
+		num_turns: 1,
+		total_cost_usd: 0.0301,
+		duration_ms: 3120,
+		modelUsage: { 'claude-sonnet-5': model({ costUSD: 0.0301 }) },
+	}),
+	taskNotified('a162', 'completed', 'ORCHID-313'),
+	assistantText(FINAL_TEXT),
+	successResult({
+		result: FINAL_TEXT,
+		num_turns: 1,
+		total_cost_usd: 0.0517,
+		duration_ms: 2210,
+		modelUsage: {
+			'claude-sonnet-5': model({ costUSD: 0.0412 }),
+			'claude-haiku-5': model({ costUSD: 0.0105 }),
+		},
+	}),
+];
+
+/** The same run cut where it stands while the subagent is still out. */
+export const backgroundSubagentPending = (): SDKMessage[] => backgroundSubagentRun().slice(0, 4);

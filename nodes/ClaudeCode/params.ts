@@ -36,6 +36,10 @@ export const defaultGraceSeconds = (nodeVersion: number): number => (nodeVersion
  */
 export const attachAllByDefault = (nodeVersion: number): boolean => nodeVersion >= 1.3;
 
+/** From 1.4 a run answers from its final result, and a result written while a background
+ * subagent is still out neither ends the run nor stops the graceful timeout. */
+export const answersFromFinalResult = (nodeVersion: number): boolean => nodeVersion >= 1.4;
+
 /** Resolve the selector against the node version. Only `auto` consults the version. */
 export const resolveAttachAll = (selection: AttachAllSelection, nodeVersion: number): boolean => {
 	if (selection === 'on') return true;

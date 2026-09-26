@@ -55,6 +55,7 @@ export async function supplyClaudeCodeTool(
 		name: toToolName(ctx.getNode().name, 'Claude_Code_Task'),
 		description: settings.toolDescription,
 		params: settings.params,
+		finalResultOnly: settings.finalResultOnly,
 		auth: authOutcome.auth,
 		query: deps.query,
 		debug,

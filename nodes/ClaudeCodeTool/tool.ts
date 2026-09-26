@@ -3,6 +3,7 @@ import { DynamicStructuredTool, type ToolSchemaBase } from '@langchain/core/tool
 import { attachAbort } from '../shared/abort';
 import type { ToolRunLog } from '../shared/toolRunLog';
 import { preview } from '../shared/preview';
+import { withFinalResultOnly } from '../shared/sdkMessage';
 import type { AuthSelection } from '../shared/auth';
 import type { DebugLogger } from '../shared/debug';
 import { buildQueryOptions } from '../ClaudeCode/config';
@@ -39,6 +40,8 @@ export type ClaudeCodeTaskToolDeps = {
 	name: string;
 	description: string;
 	params: ClaudeCodeParams;
+	/** Answer from the run's final result and keep the run open for a background subagent. */
+	finalResultOnly?: boolean;
 	auth: AuthSelection;
 	query: typeof sdkQuery;
 	debug: DebugLogger;
@@ -114,13 +117,15 @@ export function buildClaudeCodeTaskTool(deps: ClaudeCodeTaskToolDeps): DynamicSt
 					debug: deps.debug,
 					messages,
 					getAppliedEffort: () => appliedEffort,
+					pendingTasksKeepRunOpen: deps.finalResultOnly === true,
 				});
+				const answered = deps.finalResultOnly ? withFinalResultOnly(messages) : messages;
 
 				// Reported before the text is shaped, so a timeout reports too — a run that spent
 				// money and ran out of time is exactly the one worth having in the table.
 				await reportRun({
 					usage: deps.usage,
-					messages,
+					messages: answered,
 					durationMs: run.durationMs,
 					params: deps.params,
 					appliedEffort: run.appliedEffort,
@@ -128,7 +133,7 @@ export function buildClaudeCodeTaskTool(deps: ClaudeCodeTaskToolDeps): DynamicSt
 					debug: deps.debug,
 				});
 
-				const text = resolveResultText(messages).text;
+				const text = resolveResultText(answered).text;
 				deps.debug.lazy('Claude Code task tool run finished', () => ({
 					task: preview(task, 800),
 					timedOut: run.timedOut,

@@ -10,6 +10,7 @@ import type { AuthSelection } from '../shared/auth';
 import type { DebugLogger } from '../shared/debug';
 import { attachAbort } from '../shared/abort';
 import { preview } from '../shared/preview';
+import { withFinalResultOnly } from '../shared/sdkMessage';
 import { buildQueryOptions } from '../ClaudeCode/config';
 import { createPromptStream } from '../ClaudeCode/promptStream';
 import { runQuery } from '../ClaudeCode/runner';
@@ -46,6 +47,8 @@ export type ChatModelDeps = {
 	/** DEC-CM4: append puts the Agent's system message into the preset's `append` slot; replace
 	 * hands it to the SDK as the whole system prompt. */
 	systemPromptMode: 'append' | 'replace';
+	/** Answer from the run's final result and keep the run open for a background subagent. */
+	finalResultOnly?: boolean;
 	auth: AuthSelection;
 	query: typeof sdkQuery;
 	debug: DebugLogger;
@@ -199,6 +202,7 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 				debug: deps.debug,
 				messages: sdkMessages,
 				getAppliedEffort: () => appliedEffort,
+				pendingTasksKeepRunOpen: deps.finalResultOnly === true,
 				onMessage: (message) => {
 					const delta = textDeltaOf(message);
 					if (delta === null || delta === '') return;
@@ -223,7 +227,7 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 			// was spent and would never appear in the table. Two attempts, two rows, distinct seq.
 			await reportRun({
 				usage: deps.usage,
-				messages: sdkMessages,
+				messages: deps.finalResultOnly ? withFinalResultOnly(sdkMessages) : sdkMessages,
 				durationMs: run.durationMs,
 				params: runParams,
 				appliedEffort: appliedEffort ?? null,
@@ -261,7 +265,9 @@ export class ClaudeCodeChat extends BaseChatModel<BaseChatModelCallOptions> {
 			const sessionState = session.state;
 
 			const { run, sdkMessages } = session.attempt;
-			const chat = resolveChatOutcome(sdkMessages);
+			const chat = resolveChatOutcome(
+				deps.finalResultOnly ? withFinalResultOnly(sdkMessages) : sdkMessages,
+			);
 
 			if (run.timedOut) {
 				throw new Error(

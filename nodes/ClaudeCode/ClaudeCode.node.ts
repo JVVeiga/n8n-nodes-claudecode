@@ -5,6 +5,7 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { withFinalResultOnly } from '../shared/sdkMessage';
 import type { AuthSelection } from '../shared/auth';
 import { createDebugLogger } from '../shared/debug';
 import { readAuth } from '../shared/readAuth';
@@ -15,7 +16,7 @@ import { claudeCodeDescription } from './description/properties';
 import { buildDiagnostics } from './diagnostics';
 import { buildTextFailureItem, type FailureContext } from './errors';
 import { buildOutputItem } from './output';
-import { checkPrompt, readParams } from './params';
+import { answersFromFinalResult, checkPrompt, readParams } from './params';
 import { createPromptStream } from './promptStream';
 import { runQuery } from './runner';
 import { itemFailer, settle, settleCaught, settleRun } from './settle';
@@ -141,6 +142,7 @@ export async function runItems(
 				...outcome.config.notes,
 			});
 
+			const finalResultOnly = answersFromFinalResult(params.nodeVersion);
 			const run = await runQuery({
 				queryOptions,
 				graceWindow,
@@ -150,11 +152,12 @@ export async function runItems(
 				debug,
 				messages,
 				getAppliedEffort: () => appliedEffort,
+				pendingTasksKeepRunOpen: finalResultOnly,
 			});
 			timedOut = run.timedOut;
 
 			const diagnostics = buildDiagnostics({
-				messages,
+				messages: finalResultOnly ? withFinalResultOnly(messages) : messages,
 				params,
 				permissionMode: queryOptions.options.permissionMode as string,
 				appliedEffort: run.appliedEffort,
@@ -206,6 +209,7 @@ export async function runItems(
 				// SDK reported none of its own rather than a fabricated 0.
 				durationMs: run.durationMs,
 				envelope: params.additional.outputEnvelope,
+				finalResultOnly,
 			});
 
 			returnData.push({ json: outputData, pairedItem: { item: itemIndex } });

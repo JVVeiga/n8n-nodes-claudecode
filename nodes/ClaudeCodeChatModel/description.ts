@@ -33,7 +33,10 @@ export const claudeCodeChatModelDescription: INodeTypeDescription = {
 	name: 'claudeCodeChatModel',
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
-	version: 1,
+	// 1.1: answers from the run's final result when a subagent ran in the background, and the
+	// graceful timeout waits for a pending subagent.
+	version: [1, 1.1],
+	defaultVersion: 1.1,
 	description:
 		'Use Claude Code as the chat model for an AI Agent — its own tools, MCP servers and CLAUDE.md included. Each Agent call runs a full Claude Code session, so it costs more and takes longer than a plain chat model.',
 	defaults: {

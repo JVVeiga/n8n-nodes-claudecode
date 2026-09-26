@@ -33,6 +33,8 @@ export type OutputInput = {
 	durationMs?: number;
 	/** `unified` forces the new shape on an older node. `auto` (the default) routes by version. */
 	envelope?: OutputEnvelope;
+	/** Answer from the last result. Only the unified envelope honours it. */
+	finalResultOnly?: boolean;
 };
 
 /** Below this, the legacy shapes. At or above it, the unified envelope. */
@@ -48,6 +50,7 @@ export function buildOutputItem(input: OutputInput): IDataObject {
 			diagnostics: input.diagnostics,
 			includeTranscript: input.includeTranscript,
 			durationMs: input.durationMs ?? 0,
+			finalResultOnly: input.finalResultOnly,
 		});
 	}
 

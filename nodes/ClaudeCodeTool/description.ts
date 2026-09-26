@@ -37,7 +37,10 @@ export const claudeCodeToolDescription: INodeTypeDescription = {
 	name: 'claudeCodeTaskTool',
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
-	version: 1,
+	// 1.1: answers from the run's final result when a subagent ran in the background, and the
+	// graceful timeout waits for a pending subagent.
+	version: [1, 1.1],
+	defaultVersion: 1.1,
 	description:
 		'Give an AI Agent a full coding agent as a tool: Claude Code runs one task per call — reading files, running commands, writing code in its project directory — and returns the result as text. Works with any Chat Model on the Agent.',
 	defaults: {

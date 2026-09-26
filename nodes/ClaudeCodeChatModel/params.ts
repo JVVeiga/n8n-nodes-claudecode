@@ -1,6 +1,7 @@
 import type { ClaudeCodeParams } from '../ClaudeCode/types';
 import {
 	readSubNodeParams,
+	subNodeAnswersFromFinalResult,
 	usageWorkflowId,
 	type SubNodeOptions,
 	type SubNodeReadContext,
@@ -50,6 +51,7 @@ export type ChatModelSettings = {
 	/** Empty when the node was not asked to report. */
 	usageWorkflowId: string;
 	processName: string;
+	finalResultOnly: boolean;
 };
 
 type ChatModelOptions = SubNodeOptions & {
@@ -88,5 +90,6 @@ export function readChatModelSettings(
 		debugEnabled: options.debug === true,
 		usageWorkflowId: usageWorkflowId(options.reportUsageTo),
 		processName: text(options.processName).trim(),
+		finalResultOnly: subNodeAnswersFromFinalResult(params.nodeVersion),
 	};
 }

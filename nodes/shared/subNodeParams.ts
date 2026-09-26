@@ -43,6 +43,10 @@ export type SubNodeOptions = {
 	processName?: string;
 };
 
+/** From 1.1 the Chat Model and the Task Tool answer from a run's final result and wait for a
+ * background subagent, as Claude Code does from 1.4. */
+export const subNodeAnswersFromFinalResult = (nodeVersion: number): boolean => nodeVersion >= 1.1;
+
 /** The workflowSelector parameter resolves to `{ __rl: true, value, mode }` when picked from the
  * list and to a plain string when typed — both mean the same workflow. */
 export const usageWorkflowId = (value: SubNodeOptions['reportUsageTo']): string =>

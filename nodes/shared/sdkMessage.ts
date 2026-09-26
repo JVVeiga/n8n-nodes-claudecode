@@ -74,6 +74,16 @@ export const lastResult = (messages: SDKMessage[]): ResultMessage | undefined =>
 	return undefined;
 };
 
+/**
+ * The messages with every result but the last removed. A subagent sent to the background makes
+ * the CLI write a result for the turn that launched it ("I'll wait for it") and another for each
+ * turn its notification starts; the answer is the last one.
+ */
+export const withFinalResultOnly = (messages: SDKMessage[]): SDKMessage[] => {
+	const final = lastResult(messages);
+	return final ? messages.filter((m) => !isResult(m) || m === final) : messages;
+};
+
 export const assistantMessages = (messages: SDKMessage[]): AssistantMessage[] =>
 	messages.filter(isAssistant);
 
