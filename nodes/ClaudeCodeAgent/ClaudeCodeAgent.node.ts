@@ -9,6 +9,7 @@ import { NodeOperationError } from 'n8n-workflow';
 import { query, type OutputFormat, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthMode } from '../shared/auth';
 import { createDebugLogger, type DebugLogger } from '../shared/debug';
+import { checkProjectPath } from '../shared/projectPath';
 import { findInit, lastResult } from '../shared/sdkMessage';
 import { readAuth } from '../shared/readAuth';
 import { readRunIndex, usageReporting } from '../shared/reportUsage';
@@ -149,6 +150,9 @@ export async function runAgentItems(
 			if (verificationProblem) {
 				throw fail(verificationProblem.message, verificationProblem.description);
 			}
+
+			const pathProblem = checkProjectPath(params.projectPath);
+			if (pathProblem) throw fail(pathProblem.message, pathProblem.description);
 
 			const instructions =
 				agent.instructionFiles.length > 0

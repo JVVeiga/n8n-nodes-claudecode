@@ -7,6 +7,7 @@ import type { query as sdkQuery, SDKMessage } from '@anthropic-ai/claude-agent-s
 import { NodeOperationError, type IDataObject } from 'n8n-workflow';
 import { z } from 'zod/v4';
 import { ClaudeCodeAgent, runAgentItems } from '../nodes/ClaudeCodeAgent/ClaudeCodeAgent.node';
+import { PROJECT_PATH_DESCRIPTION } from '../nodes/shared/projectPath';
 import { toSessionUuid } from '../nodes/shared/session';
 import { SUBAGENT_TAG, type SubagentInvocation } from '../nodes/shared/subagent';
 import { createFakeContext, type ParamMap } from './helpers/executeFunctions';
@@ -511,6 +512,17 @@ describe('ClaudeCodeAgent — instruction files', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('ClaudeCodeAgent — a Project Path that does not exist', () => {
+	it('fails with the shared "mount it" text before Instruction Files are read', async () => {
+		const { error, calls } = await execExpectingThrow({
+			params: { projectPath: '/definitely/not/here', instructionFiles: 'rules.md' },
+		});
+		assert.equal(calls.length, 0);
+		assert.equal(error.message, 'Project Path is not an existing directory: /definitely/not/here');
+		assert.equal(error.description, PROJECT_PATH_DESCRIPTION);
 	});
 });
 

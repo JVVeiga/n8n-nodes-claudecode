@@ -9,6 +9,7 @@ import type { GitApi, GitResult } from '../nodes/CodeReviewKit/git';
 import { createFakeContext, type ParamMap } from './helpers/executeFunctions';
 
 const REPO = process.cwd();
+const pathExists = (path: string) => path === REPO;
 const MERGE_BASE = '1f2e3d4c5b6a79881f2e3d4c5b6a79881f2e3d4c';
 
 const NUMSTAT =
@@ -74,7 +75,7 @@ const run = async (params: ParamMap, opts: { continueOnFail?: boolean; items?: n
 		continueOnFail: opts.continueOnFail,
 		items: Array.from({ length: opts.items ?? 1 }, () => ({ json: {} })),
 	});
-	return { git, fake, run: () => runKitItems(fake.ctx, { git: git.factory }) };
+	return { git, fake, run: () => runKitItems(fake.ctx, { git: git.factory, pathExists }) };
 };
 
 const diffParams = (over: ParamMap = {}): ParamMap => ({
@@ -140,6 +141,22 @@ describe('Code Review Kit node — Diff Context', () => {
 		}
 	});
 
+	it('checks the Project Path through the injected pathExists', async () => {
+		const git = fakeGit();
+		const checked: string[] = [];
+		const fake = createFakeContext({ params: diffParams({ projectPath: '/mounted/repo' }) });
+		const [[item]] = await runKitItems(fake.ctx, {
+			git: git.factory,
+			pathExists: (p) => {
+				checked.push(p);
+				return true;
+			},
+		});
+		assert.deepEqual(checked, ['/mounted/repo']);
+		assert.deepEqual(git.paths, ['/mounted/repo']);
+		assert.equal(item.json.mergeBase, MERGE_BASE);
+	});
+
 	it('surfaces a git failure with its fix', async () => {
 		const git = fakeGit({
 			mergeBase: () => ({
@@ -147,12 +164,15 @@ describe('Code Review Kit node — Diff Context', () => {
 			}),
 		});
 		const fake = createFakeContext({ params: diffParams() });
-		await assert.rejects(runKitItems(fake.ctx, { git: git.factory }), (error: unknown) => {
-			assert.ok(error instanceof NodeOperationError);
-			assert.equal(error.message, 'git merge-base failed: fatal: bad');
-			assert.equal(error.description, 'Fetch it first.');
-			return true;
-		});
+		await assert.rejects(
+			runKitItems(fake.ctx, { git: git.factory, pathExists }),
+			(error: unknown) => {
+				assert.ok(error instanceof NodeOperationError);
+				assert.equal(error.message, 'git merge-base failed: fatal: bad');
+				assert.equal(error.description, 'Fetch it first.');
+				return true;
+			},
+		);
 	});
 });
 
@@ -261,7 +281,7 @@ describe('Code Review Kit node — Fingerprint', () => {
 				],
 			}),
 		});
-		const [[item]] = await runKitItems(fake.ctx, { git: git.factory });
+		const [[item]] = await runKitItems(fake.ctx, { git: git.factory, pathExists });
 		const out = item.json.items as Array<Record<string, unknown>>;
 		assert.equal(out[0].fingerprint, null);
 		assert.match(out[1].fingerprint as string, /^[0-9a-f]{64}$/);
@@ -275,7 +295,7 @@ describe('Code Review Kit node — Fingerprint', () => {
 			const fake = createFakeContext({
 				params: params({ items: [{ path: 'src/app.ts', line, type: 'bug' }] }),
 			});
-			const [[item]] = await runKitItems(fake.ctx, { git: git.factory });
+			const [[item]] = await runKitItems(fake.ctx, { git: git.factory, pathExists });
 			return (item.json.items as Array<Record<string, unknown>>)[0].fingerprint;
 		};
 		assert.equal(await at(APP, 9), await at(shifted, 11));
@@ -304,7 +324,10 @@ describe('Code Review Kit node — Fingerprint', () => {
 			}),
 		});
 		const fake = createFakeContext({ params: params() });
-		await assert.rejects(runKitItems(fake.ctx, { git: git.factory }), /Not a valid object name/);
+		await assert.rejects(
+			runKitItems(fake.ctx, { git: git.factory, pathExists }),
+			/Not a valid object name/,
+		);
 
 		const t = await run(params({ ref: 'HEAD:src/app.ts' }));
 		await assert.rejects(t.run(), /Ref is not an accepted git ref/);

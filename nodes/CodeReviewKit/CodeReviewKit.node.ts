@@ -6,6 +6,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import type { Problem } from '../shared/problem';
+import { isDirectory } from '../shared/projectPath';
 import { codeReviewKitDescription } from './description';
 import { createGit } from './git';
 import { runOperation, type KitDeps } from './operations';
@@ -17,7 +18,7 @@ export class CodeReviewKit implements INodeType {
 	description: INodeTypeDescription = codeReviewKitDescription;
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-		return runKitItems(this, { git: createGit });
+		return runKitItems(this, { git: createGit, pathExists: isDirectory });
 	}
 }
 

@@ -10,25 +10,33 @@ import { parseAddedLinesParam, parseItemsParam } from './input';
 import type { KitParams } from './params';
 import { checkRef } from './refs';
 
-export type KitDeps = { git: (projectPath: string) => GitApi };
+export type KitDeps = {
+	git: (projectPath: string) => GitApi;
+	/** Whether a directory exists. Injected so the operations never touch a filesystem. */
+	pathExists: (path: string) => boolean;
+};
 
 export type KitOutcome = { json: IDataObject } | { problem: Problem };
 
-const requireProjectPath = (projectPath: string, operation: string): Problem | null =>
+const requireProjectPath = (
+	projectPath: string,
+	operation: string,
+	deps: KitDeps,
+): Problem | null =>
 	projectPath === ''
 		? {
 				message: `${operation} needs a Project Path`,
 				description:
 					'Point Project Path at the git clone to read, e.g. /workspace/my-repo. If n8n runs in Docker, the clone must be mounted into the container.',
 			}
-		: checkProjectPath(projectPath);
+		: checkProjectPath(projectPath, deps.pathExists);
 
 type DiffParams = Extract<KitParams, { operation: 'diffContext' }>;
 type FingerprintParams = Extract<KitParams, { operation: 'fingerprint' }>;
 
 async function diffContext(params: DiffParams, deps: KitDeps): Promise<KitOutcome> {
 	const invalid =
-		requireProjectPath(params.projectPath, 'Diff Context') ??
+		requireProjectPath(params.projectPath, 'Diff Context', deps) ??
 		checkRef(params.baseRef, 'Base Ref') ??
 		checkRef(params.headRef, 'Head Ref');
 	if (invalid) return { problem: invalid };
@@ -57,7 +65,7 @@ async function diffContext(params: DiffParams, deps: KitDeps): Promise<KitOutcom
 
 async function fingerprintOperation(params: FingerprintParams, deps: KitDeps): Promise<KitOutcome> {
 	const invalid =
-		requireProjectPath(params.projectPath, 'Fingerprint') ?? checkRef(params.ref, 'Ref');
+		requireProjectPath(params.projectPath, 'Fingerprint', deps) ?? checkRef(params.ref, 'Ref');
 	if (invalid) return { problem: invalid };
 	const items = parseItemsParam(params.items, 'Items');
 	if ('problem' in items) return items;
