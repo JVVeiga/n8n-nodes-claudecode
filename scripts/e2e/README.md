@@ -185,9 +185,11 @@ only a real n8n shows, and so what they assert on:
 
 - `case87` is Verification. `fixture-project/verify/slug.ts` sits outside `src/` on purpose
   (a case asserts exactly six files there). The main run is told to report one true and one false
-  claim about it verbatim, without tools; only the verification turn, which resumes the session,
+  claim about it verbatim, without tools; only the verification turn, which forks the session,
   can refute the false one, and only by reading the file. Its `verification.costUsd` is the
-  verification's own share: a resumed result's `total_cost_usd` already includes the first run.
+  verification's own share: a forked result's `total_cost_usd` already includes the first run. It
+  reports usage to the collector, and exactly one report must carry the item's combined total.
+  That the fork leaves a keyed session untouched is covered by unit tests, not here.
 
 - `case88` is the Code Review Kit and calls no model, so it costs nothing. Its repo is built by
   `kit-repo.sh` inside the container (by `n8n-up.sh`), never under `/workspace`: that is a bind

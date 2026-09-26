@@ -360,6 +360,16 @@ const checks = [
       typeof d.metrics?.total_cost_usd === 'number' && d.metrics.total_cost_usd > 0 &&
       !('structured' in (c.itemJson ?? {}));
   }],
+  // Two shapes reach the same failure: the CLI's retry limit (its own message) or the model
+  // giving up in prose (a success with no object). Printed so a pass records which one ran.
+  ['81b the failure shape and its StructuredOutput attempts are recorded', () => {
+    const d = det(get('case81b'));
+    const attempts = d.diagnostics?.structuredOutput?.attempts;
+    const text = String(get('case81b')?.itemJson?.error ?? d.error ?? '');
+    const shape = /finished without producing/.test(text) ? 'prose give-up' : 'retry limit';
+    console.log(`      81b shape: ${shape}, attempts: ${attempts}`);
+    return typeof attempts === 'number' && attempts >= 1;
+  }],
   ['82 Output Parser mode emits the user object, not wrapped in output', () => {
     const s = get('case82')?.itemJson?.structured;
     return !!s && typeof s === 'object' && !('output' in s) &&
@@ -397,6 +407,12 @@ const checks = [
       JSON.stringify(i?.loaded) === '[".agent/rules.md"]' &&
       JSON.stringify(i?.missing) === '[".agent/missing.md"]';
   }],
+  // Bash/Read/Grep/Glob are disallowed and the run took one turn: the codeword can only have come
+  // from the Instruction File in the system prompt, not from the model reading the file.
+  ['85 the codeword came from the system prompt, in one turn with no file tools', () => {
+    const j = get('case85')?.itemJson;
+    return j?.metrics?.num_turns === 1;
+  }],
   ['86 the Agent reports usage to the collector workflow', () => {
     const c = get('case86');
     const mine = (c?.usageReports ?? []).filter((r) => r.process_name === 'e2e-agent');
@@ -422,7 +438,14 @@ const checks = [
     const j = get('case87')?.itemJson;
     const cost = j?.verification?.costUsd;
     return typeof cost === 'number' && cost > 0 &&
-      typeof j.metrics?.total_cost_usd === 'number' && j.metrics.total_cost_usd >= cost;
+      typeof j.metrics?.total_cost_usd === 'number' && j.metrics.total_cost_usd > cost;
+  }],
+  ['87 exactly one usage report for the item, carrying its total', () => {
+    const c = get('case87');
+    const mine = (c?.usageReports ?? []).filter((r) => r.process_name === 'e2e-agent-verify');
+    return mine.length === 1 &&
+      mine[0].metrics?.total_cost_usd === c.itemJson?.metrics?.total_cost_usd &&
+      mine[0].metrics?.num_turns === c.itemJson?.metrics?.num_turns;
   }],
   // Code Review Kit (88), on the repo kit-repo.sh builds with fixed identities and dates — so the
   // merge base is a known SHA. The expected table is the script's header.
@@ -477,16 +500,23 @@ const checks = [
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
 // FAIL puts three permanent red lines in every verdict, which is how a real failure gets ignored.
-// The leading number in the check name is the case it needs.
+// The leading number in the check name is the case it needs. Only those long-standing gaps skip:
+// a missing Agent or Kit case (80-88) means the pass did not cover them, and fails.
 const caseOf = (name) => `case${name.match(/^(\d+[a-z]?)/)?.[1] ?? ''}`;
+const mayBeAbsent = (name) => ['case14', 'case15', 'case16'].includes(caseOf(name));
 
 let pass = 0;
 let fail = 0;
 let skip = 0;
 for (const [name, fn] of checks) {
   if (!get(caseOf(name))) {
-    skip++;
-    console.log(`SKIP  ${name}  (no ${caseOf(name)} in results.json)`);
+    if (mayBeAbsent(name)) {
+      skip++;
+      console.log(`SKIP  ${name}  (no ${caseOf(name)} in results.json)`);
+    } else {
+      fail++;
+      console.log(`FAIL  ${name}  (no ${caseOf(name)} in results.json)`);
+    }
     continue;
   }
   let ok = false;

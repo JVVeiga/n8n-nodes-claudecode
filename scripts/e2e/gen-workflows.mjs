@@ -1595,11 +1595,14 @@ cases.push(
 		name: 'case85 agent - Instruction Files, one present and one missing',
 		notes:
 			'fixture-project/.agent/rules.md carries MARMOT-3361; .agent/missing.md does not exist. ' +
-			'EXPECT: the answer has the codeword, diagnostics.instructions loaded/missing name each.',
+			'Bash, Read, Grep and Glob are disallowed, so the model cannot read the file itself. ' +
+			'EXPECT: the answer has the codeword in one turn, diagnostics.instructions loaded/missing ' +
+			'name each.',
 		params: {
 			prompt: 'What is the house codeword? Do not use any tools. Reply with only the codeword.',
 			instructionFiles: '.agent/rules.md\n.agent/missing.md',
 		},
+		options: { disallowedTools: ['Bash', 'Read', 'Grep', 'Glob'] },
 	}),
 	agentRootWorkflow({
 		name: 'case86 agent - Report Usage to Workflow reaches the collector',
@@ -1615,9 +1618,10 @@ cases.push(
 			'fixture-project/verify/slug.ts: toSlug lowercases (line 12) and throws on an empty or ' +
 			'blank title (line 7). The main run is told to report one true and one false claim ' +
 			'verbatim, without checking; Verification on `items` resumes the session and must read ' +
-			'the file. EXPECT: verification.status verified, the "does not validate" claim dropped ' +
-			'with a reason, the lowercase claim kept, verification.costUsd > 0 and metrics.total_cost_usd ' +
-			'>= it.',
+			'the file. Report Usage to case71collector as e2e-agent-verify. EXPECT: ' +
+			'verification.status verified, the "does not validate" claim dropped with a reason, the ' +
+			'lowercase claim kept, 0 < verification.costUsd < metrics.total_cost_usd, and exactly one ' +
+			'usage report carrying the item\'s total.',
 		params: {
 			prompt:
 				'Report exactly these two findings about verify/slug.ts in the structured output, ' +
@@ -1647,6 +1651,7 @@ cases.push(
 			}),
 			verification: { enabled: true, itemsPath: 'items' },
 		},
+		options: { reportUsageTo: 'case71collector0', processName: 'e2e-agent-verify' },
 	}),
 );
 

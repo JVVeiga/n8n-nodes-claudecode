@@ -27,7 +27,7 @@ commit() {
 	GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" git commit -q -m "$2"
 }
 
-git init -q -b main .
+git init -q -b main --object-format=sha1 .
 
 printf '%s\n' \
 	'"use strict";' \
