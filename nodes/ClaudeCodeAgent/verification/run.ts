@@ -26,7 +26,7 @@ const messageOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
 /**
- * Checks the selected items in a turn that resumes the main run's session. Nothing here fails the
+ * Checks the selected items in a fork of the main run's session. Nothing here fails the
  * item: whatever goes wrong, the answer already paid for is kept unverified and marked failed.
  */
 export async function verifyStructured<

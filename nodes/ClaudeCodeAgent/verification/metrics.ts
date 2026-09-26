@@ -9,7 +9,7 @@ const sum = (a: number | null, b: number | null): number | null =>
 const round = (value: number): number => Math.round(value * 1e10) / 1e10;
 
 /**
- * The item's metrics when a verification run resumed the main run's session. A resumed result's
+ * The item's metrics when a verification run forked the main run's session. A forked result's
  * `total_cost_usd` and `modelUsage` already include the session's earlier runs, while
  * `num_turns`, `duration_ms` and `usage` cover that query alone.
  */

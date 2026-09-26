@@ -371,6 +371,7 @@ describe('buildQueryOptions — the applier table', () => {
 			'agents',
 			'outputFormat',
 			'claudeAiConnectors',
+			'forkSession',
 		]);
 	});
 
@@ -417,9 +418,16 @@ describe('buildQueryOptions — the applier table', () => {
 				agents: { reviewer: { description: 'Reviews code', prompt: 'You review code.' } },
 				outputFormat: { type: 'json_schema', schema: { type: 'object' } },
 				claudeAiConnectors: false,
+				forkSession: true,
 			}),
 		);
 		assert.deepEqual(names, APPLIER_NAMES);
+	});
+
+	it('forkSession applies only to a resume', () => {
+		assert.deepEqual(applied({}, deps({ forkSession: true })), ['effortCapture']);
+		const names = applied({ operation: 'continue', sessionId: 'abc' }, deps({ forkSession: true }));
+		assert.ok(names.includes('forkSession'));
 	});
 
 	it('stops at the first problem — a later applier cannot undo an earlier failure', () => {

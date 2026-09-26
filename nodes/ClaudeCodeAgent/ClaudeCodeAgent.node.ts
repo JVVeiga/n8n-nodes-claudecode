@@ -207,7 +207,12 @@ export async function runAgentItems(
 			const runTurn = async (
 				session: SessionRequest,
 				budget: { timeoutSeconds: number },
-				turn: { content: PromptContent; outputFormat: OutputFormat | undefined; label: string },
+				turn: {
+					content: PromptContent;
+					outputFormat: OutputFormat | undefined;
+					label: string;
+					forkSession?: boolean;
+				},
 				sdkMessages: SDKMessage[],
 			): Promise<Attempt> => {
 				// Each attempt needs its own stream: the previous one was closed by its run.
@@ -231,6 +236,7 @@ export async function runAgentItems(
 					instructionsAppend: instructions?.append,
 					claudeAiConnectors: agent.allowConnectors ? undefined : false,
 					newSessionId: session && 'create' in session ? session.create : undefined,
+					forkSession: turn.forkSession,
 				});
 				if ('problem' in outcome) {
 					throw fail(outcome.problem.message, outcome.problem.description);
@@ -412,6 +418,9 @@ export async function runAgentItems(
 								content: turn.content,
 								outputFormat: turn.outputFormat,
 								label: 'Starting Claude Code Agent verification run',
+								// A fork, so the next execution with this Session Key continues after the
+								// main run's answer, not after the verifier's turn.
+								forkSession: true,
 							},
 							[],
 						),

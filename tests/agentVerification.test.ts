@@ -170,6 +170,8 @@ describe('Claude Code Agent Verification — a verdict is applied', () => {
 		assert.deepEqual(optionsOf(0).outputFormat, { type: 'json_schema', schema: SCHEMA });
 		assert.equal(optionsOf(1).resume, MAIN_SESSION);
 		assert.equal(optionsOf(1).sessionId, undefined);
+		assert.equal(optionsOf(0).forkSession, undefined);
+		assert.equal(optionsOf(1).forkSession, true, 'the verifier never writes into the session');
 		assert.deepEqual(optionsOf(1).outputFormat, { type: 'json_schema', schema: VERDICT_SCHEMA });
 
 		assert.equal(json.success, true);
@@ -303,6 +305,21 @@ describe('Claude Code Agent Verification — metrics', () => {
 			'claude-sonnet-5': model({ outputTokens: 420, costUSD: 0.05 }),
 		});
 		assert.equal(metrics.session_id, MAIN_SESSION);
+		assert.equal(verificationOf(json).costUsd, 0.02);
+	});
+
+	it('the item points at the main session, not at the verifier’s fork', async () => {
+		const FORK = '0f0f0f0f-1111-4222-8333-444455556666';
+		const forked = verifierRun({ keep: [0, 1, 2], drop: [] }).map((m) =>
+			'session_id' in m ? ({ ...m, session_id: FORK } as SDKMessage) : m,
+		);
+		const { json } = await exec({
+			params: { ...verifying(), sessionMode: 'resume', sessionKey: 'ticket-42' },
+			streams: [{ messages: mainRun() }, { messages: forked }],
+		});
+		assert.equal(metricsOf(json).session_id, MAIN_SESSION);
+		assert.equal((json.diagnostics as IDataObject).sessionId, MAIN_SESSION);
+		assert.equal(metricsOf(json).total_cost_usd, 0.05);
 		assert.equal(verificationOf(json).costUsd, 0.02);
 	});
 

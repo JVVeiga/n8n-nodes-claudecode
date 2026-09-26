@@ -59,6 +59,8 @@ export type ConfigDeps = {
 	claudeAiConnectors?: boolean;
 	/** Appended after `additional.systemPrompt` in the preset's `append` slot. */
 	instructionsAppend?: string;
+	/** With a resume: continue in a new session, leaving the resumed one as it was. */
+	forkSession?: boolean;
 };
 
 export type ConfigResult = {
@@ -415,6 +417,15 @@ const APPLIERS: Applier[] = [
 			if (deps.claudeAiConnectors !== false) return false;
 			const current = typeof options.settings === 'object' ? options.settings : {};
 			options.settings = { ...current, disableClaudeAiConnectors: true };
+			return true;
+		},
+	},
+	{
+		name: 'forkSession',
+		apply: ({ options, deps, note }) => {
+			if (deps.forkSession !== true || !options.resume) return false;
+			options.forkSession = true;
+			note('forkSession', true);
 			return true;
 		},
 	},
