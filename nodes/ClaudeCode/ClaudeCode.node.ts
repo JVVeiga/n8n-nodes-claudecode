@@ -9,9 +9,7 @@ import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthSelection } from '../shared/auth';
 import { createDebugLogger } from '../shared/debug';
 import { readAuth } from '../shared/readAuth';
-import { collectAttachments } from './attachments/collect';
-import { planAttachments, stagedHintBlock } from './attachments/plan';
-import { stageAttachments } from './attachments/stage';
+import { prepareAttachments } from './attachments/prepare';
 import type { StagedAttachments } from './attachments/types';
 import { buildQueryOptions } from './config';
 import { claudeCodeDescription } from './description/properties';
@@ -26,7 +24,7 @@ import {
 } from './errors';
 import { buildOutputItem } from './output';
 import { checkPrompt, readParams } from './params';
-import { createPromptStream, type PromptContent } from './promptStream';
+import { createPromptStream } from './promptStream';
 import { runQuery } from './runner';
 
 /**
@@ -111,27 +109,12 @@ export async function runItems(
 			// output discarded.
 			ctx.onExecutionCancellation(() => abortController.abort());
 
-			const collected = await collectAttachments(ctx, itemIndex, params.attachments);
-			if ('problem' in collected) {
-				throw fail(collected.problem.message, collected.problem.description);
+			const prepared = await prepareAttachments(ctx, itemIndex, params.attachments, params.prompt);
+			if ('problem' in prepared) {
+				throw fail(prepared.problem.message, prepared.problem.description);
 			}
-			const plan = planAttachments(collected.attachments, params.attachments, collected.skipped);
-			if (plan.toStage.length > 0) {
-				staged = stageAttachments(plan.toStage);
-				if (plan.report?.staged) plan.report.staged.dir = staged.dir;
-			}
-
-			// Attachments first, prompt last: content before the question is Anthropic's guidance
-			// for documents, and it reads as "here are the files, here is what I want". With no
-			// attachments this stays the plain string it has always been — no blocks, no fs call.
-			const promptContent: PromptContent =
-				plan.blocks.length === 0 && staged === null
-					? params.prompt
-					: [
-							...plan.blocks,
-							...(staged ? [stagedHintBlock(staged.dir, plan.report?.staged?.files ?? [])] : []),
-							{ type: 'text' as const, text: params.prompt },
-						];
+			staged = prepared.staged;
+			const { plan, promptContent } = prepared;
 
 			// A stream, not a string: control requests such as interrupt() only exist in streaming
 			// input mode, and interrupt() is what makes a timed-out run report its real cost.

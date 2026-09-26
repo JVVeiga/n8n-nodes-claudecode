@@ -23,9 +23,7 @@ import {
 import type { SuppliedSubagent } from '../shared/subagent';
 import { buildToolBridge } from '../shared/toolBridge';
 import { createSequence, reportRun, type UsageReporting } from '../shared/usageReport';
-import { collectAttachments } from '../ClaudeCode/attachments/collect';
-import { planAttachments, stagedHintBlock } from '../ClaudeCode/attachments/plan';
-import { stageAttachments } from '../ClaudeCode/attachments/stage';
+import { prepareAttachments } from '../ClaudeCode/attachments/prepare';
 import type { StagedAttachments } from '../ClaudeCode/attachments/types';
 import { buildQueryOptions } from '../ClaudeCode/config';
 import { buildRunMetrics } from '../ClaudeCode/output/metrics';
@@ -165,27 +163,20 @@ export async function runAgentItems(
 			const abortController = new AbortController();
 			ctx.onExecutionCancellation(() => abortController.abort());
 
-			const collected = await collectAttachments(ctx, itemIndex, params.attachments);
-			if ('problem' in collected) {
-				throw fail(collected.problem.message, collected.problem.description);
-			}
-			const plan = planAttachments(collected.attachments, params.attachments, collected.skipped);
-			if (plan.toStage.length > 0) {
-				staged = stageAttachments(plan.toStage);
-				if (plan.report?.staged) plan.report.staged.dir = staged.dir;
-			}
-
 			const orchestration =
 				agent.orchestration === 'required' ? orchestrationInstruction(subagentNames) : null;
-			const promptContent: PromptContent =
-				plan.blocks.length === 0 && staged === null && orchestration === null
-					? params.prompt
-					: [
-							...plan.blocks,
-							...(staged ? [stagedHintBlock(staged.dir, plan.report?.staged?.files ?? [])] : []),
-							{ type: 'text' as const, text: params.prompt },
-							...(orchestration ? [{ type: 'text' as const, text: orchestration }] : []),
-						];
+			const prepared = await prepareAttachments(
+				ctx,
+				itemIndex,
+				params.attachments,
+				params.prompt,
+				orchestration ? [orchestration] : [],
+			);
+			if ('problem' in prepared) {
+				throw fail(prepared.problem.message, prepared.problem.description);
+			}
+			staged = prepared.staged;
+			const { plan, promptContent } = prepared;
 
 			const bridge = buildToolBridge(connections.tools, (toolName, error) =>
 				debug.error(`Bridged tool failed: ${toolName}`, {
