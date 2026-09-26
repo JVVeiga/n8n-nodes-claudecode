@@ -285,7 +285,7 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 			displayOptions: { show: { sessionMode: ['resume'] } },
 			placeholder: 'e.g. {{ $json.ticketId }}',
 			description:
-				'A session UUID from a previous run, or any stable key (a ticket, chat or user ID), hashed into a deterministic session ID. Sessions live on this n8n container’s disk under the Project Path.',
+				'A session UUID from a previous run, or any stable key (a ticket, chat or user ID), hashed into a deterministic session ID. Sessions are stored in the ~/.claude directory of the n8n process, so a resume must run on the same machine (not on another queue-mode worker).',
 		},
 		{
 			displayName: 'Subagent Orchestration',
