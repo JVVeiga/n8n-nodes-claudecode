@@ -17,6 +17,20 @@ export type UsageReportContext = Pick<
 	'getNode' | 'getExecutionId' | 'getWorkflow' | 'executeWorkflow'
 >;
 
+/** The node's run within the execution: Loop Over Items runs a main node once per batch, each
+ * time with item indexes starting at 0. */
+export function readRunIndex(
+	ctx: Pick<IExecuteFunctions, 'getWorkflowDataProxy'>,
+	itemIndex: number,
+): number {
+	try {
+		const value: unknown = ctx.getWorkflowDataProxy(itemIndex).$runIndex;
+		return typeof value === 'number' ? value : 0;
+	} catch {
+		return 0;
+	}
+}
+
 /**
  * The whole reporting dependency, or undefined when no collector was chosen. One factory so both
  * node shells build it identically — the node names, the execution id and the counter all come

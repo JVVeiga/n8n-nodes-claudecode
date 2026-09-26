@@ -35,7 +35,13 @@ export type FakeContextOptions = {
 	 * Model the members usage reporting reads: `getExecutionId`, `getWorkflow` and
 	 * `executeWorkflow`. Absent, all three stay unimplemented.
 	 */
-	workflow?: { executionId?: string; workflowId?: string; executeWorkflowThrows?: boolean };
+	workflow?: {
+		executionId?: string;
+		workflowId?: string;
+		executeWorkflowThrows?: boolean;
+		/** What `getWorkflowDataProxy(i).$runIndex` reports: the node's run within the execution. */
+		runIndex?: number;
+	};
 };
 
 export type ExecuteWorkflowCall = {
@@ -167,6 +173,7 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 			? {
 					getExecutionId: () => workflow.executionId ?? 'exec-1',
 					getWorkflow: () => ({ id: workflow.workflowId ?? 'wf-1', name: 'Fake', active: false }),
+					getWorkflowDataProxy: () => ({ $runIndex: workflow.runIndex ?? 0 }),
 					executeWorkflow: async (
 						info: { id?: string },
 						inputData?: Array<{ json: unknown }>,

@@ -72,7 +72,11 @@ export const buildRunKey = (
 	nodeName: string,
 	itemIndex: number,
 	seq: number,
-): string => `${executionId || 'no-execution'}:${nodeName}:${itemIndex}:${seq}`;
+	runIndex?: number,
+): string =>
+	runIndex === undefined
+		? `${executionId || 'no-execution'}:${nodeName}:${itemIndex}:${seq}`
+		: `${executionId || 'no-execution'}:${nodeName}:${runIndex}:${itemIndex}:${seq}`;
 
 /** A counter per supplied instance: supplyData runs once per execution, so this numbers the
  * calls that instance served. */
@@ -91,6 +95,9 @@ export type RunContext = {
 	nodeName: string;
 	/** The input item this instance was supplied for. Part of the key — see buildRunKey. */
 	itemIndex: number;
+	/** The node's run within the execution. Set by a main node, which a loop can run again with
+	 * the same item indexes; absent, the key keeps its sub-node shape. */
+	runIndex?: number;
 };
 
 /**
@@ -144,6 +151,7 @@ export async function reportRun(input: {
 					usage.context.nodeName,
 					usage.context.itemIndex,
 					usage.nextSeq(),
+					usage.context.runIndex,
 				),
 				callerWorkflowId: usage.context.workflowId,
 				callerExecutionId: usage.context.executionId,

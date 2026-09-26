@@ -162,6 +162,11 @@ describe('run_key identifies a call, not a session', () => {
 		// counters would both start at 1.
 		assert.notEqual(buildRunKey('1', 'X', 0, 1), buildRunKey('1', 'X', 1, 1), 'two items');
 	});
+
+	it('a run index adds one segment, and without one the key is unchanged', () => {
+		assert.equal(buildRunKey('123', 'Agent', 0, 1, 2), '123:Agent:2:0:1');
+		assert.equal(buildRunKey('123', 'Agent', 0, 1, undefined), '123:Agent:0:1');
+	});
 });
 
 describe('the chat model reports each call', () => {

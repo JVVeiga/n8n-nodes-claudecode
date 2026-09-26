@@ -314,7 +314,7 @@ describe('Claude Code Agent Verification — metrics', () => {
 		});
 		assert.equal(fake.workflowCalls.length, 1);
 		const payload = fake.workflowCalls[0].payload as Record<string, unknown>;
-		assert.equal(payload.run_key, 'exec-1:Claude Code Agent:0:1');
+		assert.equal(payload.run_key, 'exec-1:Claude Code Agent:0:0:1');
 		assert.deepEqual(payload.metrics, json.metrics);
 		assert.equal((payload.metrics as IDataObject).total_cost_usd, 0.05);
 	});

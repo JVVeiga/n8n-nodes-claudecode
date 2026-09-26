@@ -41,6 +41,8 @@ type ExecOpts = {
 	/** One stream per query() call, in order; the last repeats. */
 	streamsPerCall?: FakeQueryOptions[];
 	reporting?: boolean;
+	/** The node's run index within the execution, as n8n's data proxy reports it. */
+	runIndex?: number;
 };
 
 const agentParams = (over: ParamMap = {}): ParamMap => ({
@@ -77,7 +79,7 @@ async function exec(opts: ExecOpts = {}) {
 			ai_outputParser: undefined,
 			...opts.connections,
 		},
-		...(opts.reporting ? { workflow: {} } : {}),
+		...(opts.reporting ? { workflow: { runIndex: opts.runIndex } } : {}),
 	});
 	const { fake: query, calls } = sequencedQuery(
 		opts.streamsPerCall ?? [opts.stream ?? { messages: streams.success() }],
@@ -576,7 +578,7 @@ describe('ClaudeCodeAgent — usage reporting', () => {
 		assert.equal(call.doNotWaitToFinish, true);
 		const payload = call.payload as Record<string, unknown>;
 		assert.equal(payload.process_name, 'Claude Code Agent');
-		assert.equal(payload.run_key, 'exec-1:Claude Code Agent:0:1');
+		assert.equal(payload.run_key, 'exec-1:Claude Code Agent:0:0:1');
 		assert.equal(typeof payload.metrics, 'object');
 		assert.deepEqual((payload.diagnostics as Record<string, unknown>).bridgedTools, [
 			'mcp__n8n__lookup_order',
@@ -628,10 +630,19 @@ describe('ClaudeCodeAgent — usage reporting', () => {
 		});
 		assert.deepEqual(
 			fake.workflowCalls.map((c) => (c.payload as { run_key: string }).run_key),
-			['exec-1:Claude Code Agent:0:1', 'exec-1:Claude Code Agent:0:2'],
+			['exec-1:Claude Code Agent:0:0:1', 'exec-1:Claude Code Agent:0:0:2'],
 		);
 		const last = fake.workflowCalls[1].payload as { diagnostics: Record<string, unknown> };
 		assert.equal(last.diagnostics.sessionState, 'created');
+	});
+
+	it('keys stay unique when a loop runs the node again in the same execution', async () => {
+		const first = await exec({ reporting: true, params: reporting, runIndex: 0 });
+		const second = await exec({ reporting: true, params: reporting, runIndex: 1 });
+		const keyOf = (f: typeof first) =>
+			(f.fake.workflowCalls[0].payload as { run_key: string }).run_key;
+		assert.equal(keyOf(first), 'exec-1:Claude Code Agent:0:0:1');
+		assert.equal(keyOf(second), 'exec-1:Claude Code Agent:1:0:1');
 	});
 
 	it('nothing is reported when no workflow is chosen, and nothing before a run', async () => {

@@ -11,7 +11,7 @@ import type { AuthMode } from '../shared/auth';
 import { createDebugLogger, type DebugLogger } from '../shared/debug';
 import { findInit, lastResult } from '../shared/sdkMessage';
 import { readAuth } from '../shared/readAuth';
-import { usageReporting } from '../shared/reportUsage';
+import { readRunIndex, usageReporting } from '../shared/reportUsage';
 import {
 	runWithSession,
 	toSessionUuid,
@@ -188,7 +188,16 @@ export async function runAgentItems(
 			);
 
 			const usage = usageReporting(ctx, agent, debug, createSequence(), itemIndex);
-			if (usage) reporting = { usage, authMode: auth.mode, debug };
+			if (usage) {
+				reporting = {
+					usage: {
+						...usage,
+						context: { ...usage.context, runIndex: readRunIndex(ctx, itemIndex) },
+					},
+					authMode: auth.mode,
+					debug,
+				};
+			}
 
 			let appliedEffort: string | undefined;
 			const mainFormat: OutputFormat | undefined = schema
