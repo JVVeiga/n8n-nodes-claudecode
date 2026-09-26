@@ -3,6 +3,7 @@ import type { PromptStream } from './promptStream';
 import { buildAuthEnv, type AuthSelection } from '../shared/auth';
 import type { Problem } from '../shared/problem';
 import { checkProjectPath, isDirectory } from '../shared/projectPath';
+import { text } from '../shared/text';
 import { effectiveEffort, isUltracode } from './params';
 import { resolveGraceWindow, type GraceWindow } from './timeout';
 import type { ClaudeCodeParams, QueryOptions, SdkOptions } from './types';
@@ -153,7 +154,7 @@ const APPLIERS: Applier[] = [
 		// A globally installed CLI instead of the one bundled with the SDK.
 		name: 'executablePath',
 		apply: ({ options, params }) => {
-			const path = params.additional.pathToClaudeCodeExecutable?.trim();
+			const path = text(params.additional.pathToClaudeCodeExecutable).trim();
 			if (!path) return false;
 			options.pathToClaudeCodeExecutable = path;
 			return true;

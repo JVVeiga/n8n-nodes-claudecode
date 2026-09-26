@@ -5,6 +5,7 @@ import {
 	type SubNodeOptions,
 	type SubNodeReadContext,
 } from '../shared/subNodeParams';
+import { text } from '../shared/text';
 
 /**
  * The only place this node reads parameters, mirroring the main node's `params.ts` contract:
@@ -68,7 +69,7 @@ export function readChatModelSettings(
 	// Read with a fallback because n8n STRIPS a parameter whose displayOptions condition is not
 	// met: in Memory mode the field is hidden and resolves to '' here, which is exactly the
 	// intent — the same mechanism that governs Binary Properties on the main node.
-	const sessionId = (ctx.getNodeParameter('sessionId', itemIndex, '') as string).trim();
+	const sessionId = text(ctx.getNodeParameter('sessionId', itemIndex, '')).trim();
 	const memoryMode = resolveMemoryMode(
 		ctx.getNodeParameter('memorySource', itemIndex, 'auto') as MemorySourceSelection,
 		sessionId,
@@ -86,6 +87,6 @@ export function readChatModelSettings(
 		memoryMode,
 		debugEnabled: options.debug === true,
 		usageWorkflowId: usageWorkflowId(options.reportUsageTo),
-		processName: (options.processName ?? '').trim(),
+		processName: text(options.processName).trim(),
 	};
 }

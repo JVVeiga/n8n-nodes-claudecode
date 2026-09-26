@@ -1,5 +1,6 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import type { ClaudeCodeParams, EffortSelection, ThinkingSelection } from '../ClaudeCode/types';
+import { text } from './text';
 
 /**
  * The run parameters every sub-node reads.
@@ -45,7 +46,7 @@ export type SubNodeOptions = {
 /** The workflowSelector parameter resolves to `{ __rl: true, value, mode }` when picked from the
  * list and to a plain string when typed — both mean the same workflow. */
 export const usageWorkflowId = (value: SubNodeOptions['reportUsageTo']): string =>
-	(typeof value === 'string' ? value : (value?.value ?? '')).trim();
+	text(typeof value === 'object' && value !== null ? value.value : value).trim();
 
 /**
  * Builds the params a sub-node hands to `buildQueryOptions`. `prompt` stays empty on purpose —
@@ -66,7 +67,7 @@ export function readSubNodeParams(
 		effort: options.effort ?? 'high',
 		maxTurns: options.maxTurns ?? 25,
 		timeoutSeconds: options.timeout ?? 300,
-		projectPath: ctx.getNodeParameter('projectPath', itemIndex, '') as string,
+		projectPath: text(ctx.getNodeParameter('projectPath', itemIndex, '')),
 		outputFormat: 'text',
 		allowedTools: options.allowedTools ?? [],
 		disallowedTools: options.disallowedTools ?? [],

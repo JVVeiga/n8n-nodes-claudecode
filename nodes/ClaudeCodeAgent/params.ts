@@ -3,6 +3,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import { parseBinaryPropertyNames } from '../ClaudeCode/params';
 import type { AttachAllSelection, ClaudeCodeParams, EffortSelection } from '../ClaudeCode/types';
 import { readSubNodeParams, usageWorkflowId, type SubNodeOptions } from '../shared/subNodeParams';
+import { text } from '../shared/text';
 import type { OutputMode } from './outputSchema';
 import { DEFAULT_VERIFIER_INSTRUCTIONS } from './verification/prompt';
 import type { ItemFilter } from './verification/select';
@@ -45,10 +46,6 @@ type AgentOptions = Omit<SubNodeOptions, 'effort' | 'maxTurns' | 'timeout'> & {
 	allowClaudeAiConnectors?: boolean;
 };
 
-/** An expression can resolve to a number, null or an array where the field expects text. */
-const text = (value: unknown): string =>
-	typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);
-
 /** A list field: an array from an expression is taken as the list, text is split. */
 const list = (value: unknown, separator: RegExp | string): string[] =>
 	(Array.isArray(value) ? value.map(text) : text(value).split(separator))
@@ -73,15 +70,12 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 	const run: ClaudeCodeParams = {
 		...base,
 		prompt: text(ctx.getNodeParameter('prompt', itemIndex, '')),
-		projectPath: text(base.projectPath),
 		attachments: {
 			...base.attachments,
 			all: resolveAgentAttachAll(
 				ctx.getNodeParameter('attachAllBinaries', itemIndex, 'auto') as AttachAllSelection,
 			),
-			names: parseBinaryPropertyNames(
-				ctx.getNodeParameter('binaryProperties', itemIndex, '') as string,
-			),
+			names: parseBinaryPropertyNames(ctx.getNodeParameter('binaryProperties', itemIndex, '')),
 		},
 		additional: {
 			...base.additional,

@@ -7,6 +7,7 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 import { createDebugLogger } from '../shared/debug';
 import { readAuth } from '../shared/readAuth';
+import { text } from '../shared/text';
 import { toolRunLog, toToolName } from '../shared/toolRunLog';
 import type { readUsage as realReadUsage } from '../ClaudeCodeUsage/readUsage';
 import { claudeCodeUsageToolDescription } from './description';
@@ -40,7 +41,7 @@ export async function supplyClaudeCodeUsageTool(
 	itemIndex: number,
 ): Promise<SupplyData> {
 	const options = ctx.getNodeParameter('options', itemIndex, {}) as UsageToolNodeOptions;
-	const toolDescription = (ctx.getNodeParameter('toolDescription', itemIndex) as string).trim();
+	const toolDescription = text(ctx.getNodeParameter('toolDescription', itemIndex)).trim();
 	const debug = createDebugLogger(ctx.logger, options.debug === true);
 
 	const authOutcome = await readAuth(ctx, itemIndex);
@@ -60,8 +61,8 @@ export async function supplyClaudeCodeUsageTool(
 		readUsage: deps.readUsage,
 		options: {
 			timeoutMs: Math.max(5, options.timeout ?? 60) * 1000,
-			cwd: (ctx.getNodeParameter('projectPath', itemIndex, '') as string).trim() || undefined,
-			pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable?.trim() || undefined,
+			cwd: text(ctx.getNodeParameter('projectPath', itemIndex, '')).trim() || undefined,
+			pathToClaudeCodeExecutable: text(options.pathToClaudeCodeExecutable).trim() || undefined,
 			declareProfileScope: options.declareProfileScope !== false,
 			probeIfUnavailable: options.probeIfUnavailable === true,
 			includeAccountEmail: options.includeAccountEmail === true,

@@ -1,5 +1,6 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import type { Problem } from '../shared/problem';
+import { text } from '../shared/text';
 import type { AttachmentSpec } from './attachments/types';
 import type {
 	AdditionalOptions,
@@ -51,8 +52,8 @@ const ATTACHMENT_DEFAULTS = {
 } as const;
 
 /** Split the Binary Properties field on commas and whitespace, dropping empties. */
-export const parseBinaryPropertyNames = (raw: string): string[] =>
-	raw
+export const parseBinaryPropertyNames = (raw: unknown): string[] =>
+	text(raw)
 		.split(/[\s,]+/)
 		.map((name) => name.trim())
 		.filter((name) => name !== '');
@@ -70,9 +71,7 @@ function readAttachmentSpec(
 			ctx.getNodeParameter('attachAllBinaries', itemIndex, 'auto') as AttachAllSelection,
 			nodeVersion,
 		),
-		names: parseBinaryPropertyNames(
-			ctx.getNodeParameter('binaryProperties', itemIndex, '') as string,
-		),
+		names: parseBinaryPropertyNames(ctx.getNodeParameter('binaryProperties', itemIndex, '')),
 		// `??`, not `||`: 0 is a meaningful value for the text limit — it means "stage every text
 		// file" — and `||` would silently turn it back into 256.
 		inlineTextLimitKb: additional.inlineTextLimitKb ?? ATTACHMENT_DEFAULTS.inlineTextLimitKb,
@@ -93,13 +92,13 @@ export function readParams(ctx: IExecuteFunctions, itemIndex: number): ClaudeCod
 		operation: ctx.getNodeParameter('operation', itemIndex) as Operation,
 		// Read for every operation, not just `continue`: reading it conditionally meant the shape of
 		// the params object depended on the operation, and every consumer had to know that.
-		sessionId: (ctx.getNodeParameter('sessionId', itemIndex, '') as string).trim(),
-		prompt: ctx.getNodeParameter('prompt', itemIndex) as string,
+		sessionId: text(ctx.getNodeParameter('sessionId', itemIndex, '')).trim(),
+		prompt: text(ctx.getNodeParameter('prompt', itemIndex)),
 		model: ctx.getNodeParameter('model', itemIndex) as string,
 		effort: ctx.getNodeParameter('effort', itemIndex, 'high') as EffortSelection,
 		maxTurns: ctx.getNodeParameter('maxTurns', itemIndex) as number,
 		timeoutSeconds: ctx.getNodeParameter('timeout', itemIndex) as number,
-		projectPath: ctx.getNodeParameter('projectPath', itemIndex) as string,
+		projectPath: text(ctx.getNodeParameter('projectPath', itemIndex)),
 		outputFormat: ctx.getNodeParameter('outputFormat', itemIndex) as OutputFormat,
 		allowedTools: ctx.getNodeParameter('allowedTools', itemIndex, []) as string[],
 		disallowedTools: ctx.getNodeParameter('disallowedTools', itemIndex, []) as string[],

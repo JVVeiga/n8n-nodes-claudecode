@@ -5,6 +5,7 @@ import {
 	type SubNodeOptions,
 	type SubNodeReadContext,
 } from '../shared/subNodeParams';
+import { text } from '../shared/text';
 
 /**
  * The only place this node reads parameters. The run parameters come from
@@ -32,9 +33,9 @@ export function readClaudeCodeToolSettings(
 
 	return {
 		params: readSubNodeParams(ctx, itemIndex, options),
-		toolDescription: (ctx.getNodeParameter('toolDescription', itemIndex) as string).trim(),
+		toolDescription: text(ctx.getNodeParameter('toolDescription', itemIndex)).trim(),
 		debugEnabled: options.debug === true,
 		usageWorkflowId: usageWorkflowId(options.reportUsageTo),
-		processName: (options.processName ?? '').trim(),
+		processName: text(options.processName).trim(),
 	};
 }
