@@ -13,18 +13,12 @@ import type { StagedAttachments } from './attachments/types';
 import { buildQueryOptions } from './config';
 import { claudeCodeDescription } from './description/properties';
 import { buildDiagnostics } from './diagnostics';
-import {
-	buildTextFailureItem,
-	itemFailer,
-	settle,
-	settleCaught,
-	settleRun,
-	type FailureContext,
-} from './errors';
+import { buildTextFailureItem, type FailureContext } from './errors';
 import { buildOutputItem } from './output';
 import { checkPrompt, readParams } from './params';
 import { createPromptStream } from './promptStream';
 import { runQuery } from './runner';
+import { itemFailer, settle, settleCaught, settleRun } from './settle';
 
 /**
  * The node is a thin shell now. Everything it does lives in a named module:

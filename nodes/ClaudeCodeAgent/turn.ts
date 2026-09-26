@@ -8,7 +8,7 @@ import {
 } from '../shared/session';
 import type { ToolBridge } from '../shared/toolBridge';
 import { buildQueryOptions } from '../ClaudeCode/config';
-import type { ItemFailer } from '../ClaudeCode/errors';
+import type { ItemFailer } from '../ClaudeCode/settle';
 import { createPromptStream, type PromptContent } from '../ClaudeCode/promptStream';
 import { runQuery } from '../ClaudeCode/runner';
 import type { ClaudeCodeParams, RunOutcome } from '../ClaudeCode/types';

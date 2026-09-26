@@ -11,15 +11,15 @@ import { lastResult } from '../shared/sdkMessage';
 import { buildToolBridge } from '../shared/toolBridge';
 import { prepareAttachments } from '../ClaudeCode/attachments/prepare';
 import type { StagedAttachments } from '../ClaudeCode/attachments/types';
+import type { FailureContext } from '../ClaudeCode/errors';
 import {
 	itemFailer,
 	settle,
 	settleCaught,
 	settleRun,
 	settleStructuredFailure,
-	type FailureContext,
 	type ItemFailer,
-} from '../ClaudeCode/errors';
+} from '../ClaudeCode/settle';
 import { claudeCodeAgentDescription } from './description';
 import { orchestrationInstruction } from './orchestration';
 import { buildAgentDiagnostics, buildAgentOutput } from './output';
