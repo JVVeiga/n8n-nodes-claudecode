@@ -295,6 +295,17 @@ describe('ClaudeCodeAgent — tools', () => {
 		assert.ok(optionsOf(0).allowedTools?.includes('mcp__n8n__lookup_order'));
 		assert.ok(optionsOf(0).allowedTools?.includes('mcp__n8n__refund'));
 	});
+
+	it('two tools with one name are refused, naming the nodes to rename', async () => {
+		const from = (sourceNodeName: string) => ({ ...tool('lookup'), metadata: { sourceNodeName } });
+		const { error, calls } = await execExpectingThrow({
+			connections: { ai_tool: [from('Orders API'), tool('refund'), from('Orders DB')] },
+		});
+		assert.equal(calls.length, 0);
+		assert.match(error.message, /"lookup"/);
+		assert.match(error.description ?? '', /"Orders API" and "Orders DB"/);
+		assert.match(error.description ?? '', /[Rr]ename/);
+	});
 });
 
 describe('ClaudeCodeAgent — subagents', () => {

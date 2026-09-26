@@ -40,7 +40,7 @@ import { checkPrompt } from '../ClaudeCode/params';
 import { createPromptStream, type PromptContent } from '../ClaudeCode/promptStream';
 import { runQuery } from '../ClaudeCode/runner';
 import type { ClaudeCodeParams, RunOutcome } from '../ClaudeCode/types';
-import { readConnections } from './connections';
+import { checkToolNames, readConnections } from './connections';
 import { claudeCodeAgentDescription } from './description';
 import { readInstructions } from './instructions';
 import { orchestrationInstruction } from './orchestration';
@@ -129,6 +129,8 @@ export async function runAgentItems(
 			// Everything that can refuse the item does so here, before a file is staged or a
 			// process spawned.
 			const connections = await readConnections(ctx, itemIndex);
+			const toolNameProblem = checkToolNames(connections.tools);
+			if (toolNameProblem) throw fail(toolNameProblem.message, toolNameProblem.description);
 			const subagents = buildSubagents(connections.subagents);
 			if ('problem' in subagents) {
 				throw fail(subagents.problem.message, subagents.problem.description);

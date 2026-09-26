@@ -1,5 +1,6 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
+import type { Problem } from '../shared/problem';
 import { flattenTools, type BindableTool } from '../shared/toolBridge';
 
 export type ConnectionReadContext = {
@@ -27,4 +28,27 @@ export async function readConnections(
 		subagents,
 		parser: Array.isArray(parser) ? parser[0] : parser,
 	};
+}
+
+const sourceOf = (tool: BindableTool): string => {
+	const name = tool.metadata?.sourceNodeName;
+	return typeof name === 'string' && name !== '' ? `"${name}"` : 'an unnamed node';
+};
+
+/** The bridge registers tools by name, so two with one name cannot both reach the run. */
+export function checkToolNames(tools: BindableTool[]): Problem | null {
+	const byName = new Map<string, BindableTool[]>();
+	for (const tool of tools) byName.set(tool.name, [...(byName.get(tool.name) ?? []), tool]);
+	for (const [name, same] of byName) {
+		if (same.length < 2) continue;
+		const sources = same.map(sourceOf);
+		return {
+			message: `Two connected tools are both named "${name}"`,
+			description:
+				`${sources.slice(0, -1).join(', ')} and ${sources[sources.length - 1]} give a tool the ` +
+				'same name. A tool node is named after the node, so rename one of them; for an MCP ' +
+				'Client, leave the tool out of one of its Tools to Include.',
+		};
+	}
+	return null;
 }
