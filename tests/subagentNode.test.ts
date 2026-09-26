@@ -168,7 +168,7 @@ describe('Claude Code Subagent — the run log', () => {
 
 	it('records a status other than completed as output, not as an error', () => {
 		const { fake, subagent } = supply();
-		subagent.log?.({ ...invocation, status: 'failed', summary: null, totalTokens: null });
+		subagent.log!({ ...invocation, status: 'failed', summary: null, totalTokens: null });
 		const output = fake.runData[1].payload as Array<Array<{ json: IDataObject }>>;
 		assert.equal(output[0][0].json.status, 'failed');
 		assert.equal(output[0][0].json.summary, null);
@@ -176,7 +176,7 @@ describe('Claude Code Subagent — the run log', () => {
 
 	it('is a no-op when addInputData throws', () => {
 		const { fake, subagent } = supply({}, { addInputDataThrows: true });
-		assert.doesNotThrow(() => subagent.log?.(invocation));
+		assert.doesNotThrow(() => subagent.log!(invocation));
 		assert.deepEqual(fake.runData, []);
 	});
 

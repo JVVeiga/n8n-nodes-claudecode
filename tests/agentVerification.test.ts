@@ -15,6 +15,8 @@ import {
 	init,
 	model,
 	successResult,
+	taskNotified,
+	taskStarted,
 } from './helpers/sdkMessages';
 
 const MAIN_SESSION = '7c1f0a2e-5b1d-4c3e-9f00-1a2b3c4d5e6f';
@@ -252,6 +254,42 @@ describe('Claude Code Agent Verification — a verdict is applied', () => {
 		assert.equal(optionsOf(2).resume, uuid);
 	});
 
+	it('resumes the session the main result reported, not the one init announced', async () => {
+		const [first, ...rest] = mainRun();
+		const announced = { ...first, session_id: 'init-announced-id' } as SDKMessage;
+		const { optionsOf } = await exec({
+			params: verifying(),
+			streams: [
+				{ messages: [announced, ...rest] },
+				{ messages: verifierRun({ keep: [0, 1, 2], drop: [] }) },
+			],
+		});
+		assert.equal(optionsOf(1).resume, MAIN_SESSION);
+	});
+
+	it('subagents the verifier delegates to are logged on their nodes too', async () => {
+		const logged: Array<{ name: string; status: string | null }> = [];
+		const reviewer = {
+			[SUBAGENT_TAG]: 1,
+			name: 'reviewer',
+			definition: { description: 'reviews', prompt: 'You review.' },
+			log: (i: { name: string; status: string | null }) => logged.push(i),
+		};
+		const [head, ...tail] = verifierRun({ keep: [0, 1, 2], drop: [] });
+		await exec({
+			params: verifying(),
+			connections: { ai_agent: [reviewer] },
+			streams: [
+				{ messages: mainRun() },
+				{ messages: [head, taskStarted('v1', 'reviewer'), taskNotified('v1'), ...tail] },
+			],
+		});
+		assert.deepEqual(
+			logged.map((i) => [i.name, i.status]),
+			[['reviewer', 'completed']],
+		);
+	});
+
 	it('an item the verifier did not judge is kept and listed as unjudged', async () => {
 		const { json } = await exec({
 			params: verifying(),
@@ -419,12 +457,14 @@ describe('Claude Code Agent Verification — a failed check drops nothing', () =
 		assert.equal(verificationOf(json).costUsd, 0.04);
 	});
 
-	it('a verifier run that times out', async () => {
+	it('a verifier run that times out, on the node’s own Timeout', { timeout: 20_000 }, async () => {
+		const startedAt = Date.now();
 		const { json } = await failedWith(
 			{ messages: [init({ sessionId: MAIN_SESSION })], hang: true },
 			{ timeout: 1, options: { wrapUpGraceSeconds: 0 } },
 		);
 		assertKeptEverything(json, /timed out after 1s/);
+		assert.ok(Date.now() - startedAt < 5_000, 'stopped by the 1s Timeout, not a default');
 	});
 
 	it('a verdict that does not match its schema', async () => {

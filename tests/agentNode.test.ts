@@ -280,6 +280,7 @@ describe('ClaudeCodeAgent — a plain run', () => {
 		});
 		assert.equal(json.success, false);
 		assert.notEqual(json.result, 'Launched; waiting.');
+		assert.match(json.errorText as string, /subagent crashed/);
 	});
 });
 
@@ -310,6 +311,13 @@ describe('ClaudeCodeAgent — tools', () => {
 });
 
 describe('ClaudeCodeAgent — subagents', () => {
+	it('an empty list, which n8n hands over when nothing is connected, means no subagents', async () => {
+		const { json, optionsOf } = await exec({ connections: { ai_agent: [] } });
+		assert.equal(json.success, true);
+		assert.equal(optionsOf(0).agents, undefined);
+		assert.equal('subagents' in diagnosticsOf(json), false);
+	});
+
 	it('hands them to the SDK sorted by name and reports each one', async () => {
 		const { json, optionsOf } = await exec({
 			connections: { ai_agent: [subagent('zeta'), subagent('alpha')] },
@@ -466,6 +474,8 @@ describe('ClaudeCodeAgent — structured output', () => {
 		const details = json.details as Record<string, unknown>;
 		assert.equal(details.errorType, 'structured_output');
 		assert.equal(typeof details.metrics, 'object');
+		const diagnostics = details.diagnostics as Record<string, unknown>;
+		assert.deepEqual(diagnostics.structuredOutput, { mode: 'jsonSchema', attempts: 2 });
 	});
 
 	it('the retry limit followed by the SDK’s throw throws a structured_output error', async () => {
