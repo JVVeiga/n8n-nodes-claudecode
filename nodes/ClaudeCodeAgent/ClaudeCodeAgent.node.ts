@@ -8,13 +8,10 @@ import type {
 import { query, type OutputFormat, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AuthMode } from '../shared/auth';
 import { createDebugLogger, type DebugLogger } from '../shared/debug';
-import { checkProjectPath } from '../shared/projectPath';
 import { findInit, lastResult } from '../shared/sdkMessage';
-import { readAuth } from '../shared/readAuth';
 import { readRunIndex, usageReporting } from '../shared/reportUsage';
 import {
 	runWithSession,
-	toSessionUuid,
 	type SessionAttempt,
 	type SessionRequest,
 	type SessionRun,
@@ -34,23 +31,18 @@ import {
 	settleStructuredFailure,
 	type FailureContext,
 } from '../ClaudeCode/errors';
-import { checkPrompt } from '../ClaudeCode/params';
 import { createPromptStream, type PromptContent } from '../ClaudeCode/promptStream';
 import { runQuery } from '../ClaudeCode/runner';
 import type { ClaudeCodeParams, RunOutcome } from '../ClaudeCode/types';
-import { checkToolNames, readConnections } from './connections';
 import { claudeCodeAgentDescription } from './description';
-import { readInstructions } from './instructions';
 import { orchestrationInstruction } from './orchestration';
 import { buildAgentDiagnostics, buildAgentOutput } from './output';
-import { resolveOutputSchema } from './outputSchema';
 import { readAgentParams } from './params';
+import { prepareAgentRun } from './prepare';
 import { extractStructured } from './structured';
 import { buildSubagentReport, subagentInvocations } from './subagentReport';
-import { buildSubagents } from './subagents';
 import { combineVerificationMetrics } from './verification/metrics';
 import { verifyStructured } from './verification/run';
-import { checkVerification } from './verification/select';
 
 export type AgentExecuteDeps = {
 	/** The SDK's `query`. Injected so a test drives the message stream without spawning a CLI. */
@@ -101,76 +93,28 @@ export async function runAgentItems(
 			timeoutSeconds = params.timeoutSeconds;
 			const debug = createDebugLogger(ctx.logger, params.additional.debug === true);
 
-			const promptProblem = checkPrompt(params.prompt);
-			if (promptProblem) throw fail(promptProblem.message, promptProblem.description);
-
-			const resume = agent.session.mode === 'resume';
-			if (resume && agent.session.key === '') {
-				throw fail(
-					'Session is set to Resume, but Session ID or Key is empty',
-					'Put a stable key for the conversation in Session ID or Key — a ticket, chat or user id, e.g. {{ $json.ticketId }} — or set Session to New.',
-				);
-			}
-			const sessionUuid = resume ? toSessionUuid(agent.session.key) : null;
-
-			const authOutcome = await readAuth(ctx, itemIndex);
-			if ('problem' in authOutcome) {
-				throw fail(authOutcome.problem.message, authOutcome.problem.description);
-			}
-			const auth = authOutcome.auth;
-
-			// Everything that can refuse the item does so here, before a file is staged or a
-			// process spawned.
-			const connections = await readConnections(ctx, itemIndex);
-			const toolNameProblem = checkToolNames(connections.tools);
-			if (toolNameProblem) throw fail(toolNameProblem.message, toolNameProblem.description);
-			const subagents = buildSubagents(connections.subagents);
-			if ('problem' in subagents) {
-				throw fail(subagents.problem.message, subagents.problem.description);
-			}
-			const subagentNames = Object.keys(subagents.agents);
-
-			const schema = resolveOutputSchema(
-				agent.outputMode,
-				agent.jsonSchemaText,
-				connections.parser,
-			);
-			if (schema && 'problem' in schema) {
-				throw fail(schema.problem.message, schema.problem.description);
-			}
-			const verificationProblem = checkVerification(agent.verification, agent.outputMode);
-			if (verificationProblem) {
-				throw fail(verificationProblem.message, verificationProblem.description);
-			}
-
-			const pathProblem = checkProjectPath(params.projectPath);
-			if (pathProblem) throw fail(pathProblem.message, pathProblem.description);
-
-			const instructions =
-				agent.instructionFiles.length > 0
-					? readInstructions(params.projectPath, agent.instructionFiles)
-					: null;
-			if (instructions && 'problem' in instructions) {
-				throw fail(instructions.problem.message, instructions.problem.description);
-			}
+			const prepared = await prepareAgentRun(ctx, itemIndex, params, agent);
+			if ('problem' in prepared) throw fail(prepared.problem.message, prepared.problem.description);
+			const { sessionUuid, auth, connections, subagents, subagentNames, schema, instructions } =
+				prepared;
 
 			const abortController = new AbortController();
 			ctx.onExecutionCancellation(() => abortController.abort());
 
 			const orchestration =
 				agent.orchestration === 'required' ? orchestrationInstruction(subagentNames) : null;
-			const prepared = await prepareAttachments(
+			const attachments = await prepareAttachments(
 				ctx,
 				itemIndex,
 				params.attachments,
 				params.prompt,
 				orchestration ? [orchestration] : [],
 			);
-			if ('problem' in prepared) {
-				throw fail(prepared.problem.message, prepared.problem.description);
+			if ('problem' in attachments) {
+				throw fail(attachments.problem.message, attachments.problem.description);
 			}
-			staged = prepared.staged;
-			const { plan, promptContent } = prepared;
+			staged = attachments.staged;
+			const { plan, promptContent } = attachments;
 
 			const bridge = buildToolBridge(connections.tools, (toolName, error) =>
 				debug.error(`Bridged tool failed: ${toolName}`, {
