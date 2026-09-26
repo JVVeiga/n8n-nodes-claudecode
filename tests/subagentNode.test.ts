@@ -201,8 +201,12 @@ describe('Claude Code Subagent — description', () => {
 		assert.deepEqual(d.inputs, []);
 		assert.deepEqual(d.outputs, [{ type: 'ai_agent' }]);
 		assert.deepEqual(d.outputNames, ['Subagent']);
-		assert.equal(d.icon, 'file:claudecode.svg');
+		assert.equal(d.icon, 'file:claudecodesubagent.svg');
 		assert.equal(d.credentials, undefined);
+	});
+
+	it('the subtitle shows the Name Claude delegates by, and the model', () => {
+		assert.equal(d.subtitle, '={{$parameter["agentName"] + " · " + $parameter["model"]}}');
 	});
 
 	it('defaults Model and Effort to inherit, Max Turns to 0', () => {
@@ -231,7 +235,7 @@ describe('Claude Code Subagent — description', () => {
 		const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
 		assert.ok(pkg.n8n.nodes.includes('dist/nodes/ClaudeCodeSubagent/ClaudeCodeSubagent.node.js'));
 		const dir = join(process.cwd(), 'nodes', 'ClaudeCodeSubagent');
-		assert.ok(existsSync(join(dir, 'claudecode.svg')));
+		assert.ok(existsSync(join(dir, 'claudecodesubagent.svg')));
 		const codex = JSON.parse(readFileSync(join(dir, 'ClaudeCodeSubagent.node.json'), 'utf8'));
 		assert.equal(codex.node, '@joaoveiga/n8n-nodes-claudecode.claudeCodeSubagent');
 	});

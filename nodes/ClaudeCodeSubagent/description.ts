@@ -28,7 +28,8 @@ const EFFORT_CHOICES: INodePropertyOptions[] = [
 export const claudeCodeSubagentDescription: INodeTypeDescription = {
 	displayName: 'Claude Code Subagent',
 	name: 'claudeCodeSubagent',
-	icon: 'file:claudecode.svg',
+	icon: 'file:claudecodesubagent.svg',
+	subtitle: '={{$parameter["agentName"] + " · " + $parameter["model"]}}',
 	group: ['transform'],
 	version: 1,
 	description:

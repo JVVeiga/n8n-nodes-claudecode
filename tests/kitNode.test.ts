@@ -524,7 +524,7 @@ describe('Code Review Kit — description', () => {
 			readFileSync(join(process.cwd(), 'nodes/CodeReviewKit/CodeReviewKit.node.json'), 'utf8'),
 		);
 		assert.equal(codex.node, '@joaoveiga/n8n-nodes-claudecode.codeReviewKit');
-		assert.ok(existsSync(join(process.cwd(), 'nodes/CodeReviewKit/claudecode.svg')));
-		assert.equal(d.icon, 'file:claudecode.svg');
+		assert.ok(existsSync(join(process.cwd(), 'nodes/CodeReviewKit/codereviewkit.svg')));
+		assert.equal(d.icon, 'file:codereviewkit.svg');
 	});
 });

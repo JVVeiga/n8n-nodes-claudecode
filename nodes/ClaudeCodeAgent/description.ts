@@ -165,7 +165,8 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
 	version: 1,
-	subtitle: '={{$parameter["model"]}}',
+	subtitle:
+		'={{$parameter["model"] + ($parameter["outputMode"] === "jsonSchema" ? " · Schema" : $parameter["outputMode"] === "outputParser" ? " · Parser" : "") + ($parameter["verification"] && $parameter["verification"].enabled ? " · Verify" : "")}}',
 	description:
 		'Run Claude Code as an agent over each item, with n8n tools, Claude Code subagents and structured output',
 	defaults: {
@@ -306,6 +307,14 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 			],
 			default: 'auto',
 			description: 'How the connected subagents are used',
+		},
+		{
+			displayName:
+				'In Auto, Claude decides whether to delegate, so a connected subagent may never run. Choose Required to use every one; diagnostics.subagents shows which ran.',
+			name: 'orchestrationNotice',
+			type: 'notice',
+			default: '',
+			displayOptions: { show: { subagentOrchestration: ['auto'] } },
 		},
 		VERIFICATION_OPTIONS,
 		AGENT_OPTIONS,
