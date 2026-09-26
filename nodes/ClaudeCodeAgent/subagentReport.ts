@@ -1,5 +1,4 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { SubagentDiagnostics } from '../ClaudeCode/diagnostics';
 import {
 	countContent,
 	isTaskNotification,
@@ -48,6 +47,16 @@ export function subagentInvocations(messages: SDKMessage[]): SubagentInvocation[
 const sum = (values: Array<number | null>): number | null => {
 	const present = values.filter((v): v is number => v !== null);
 	return present.length ? present.reduce((a, b) => a + b, 0) : null;
+};
+
+export type SubagentDiagnostics = {
+	name: string;
+	invocations: number;
+	completed: number;
+	/** Sums over the subagent's invocations; null when no invocation reported the figure. */
+	totalTokens: number | null;
+	toolUses: number | null;
+	durationMs: number | null;
 };
 
 /** One entry per connected subagent, in the order given, so one that never ran is visible. */

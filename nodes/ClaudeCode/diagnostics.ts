@@ -1,7 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { countContent, countToolUses, findInit, findResult } from '../shared/sdkMessage';
 import type { AuthMode } from '../shared/auth';
-import type { SessionState } from '../shared/session';
 import type { AttachmentDiagnostics } from './attachments/types';
 import { effectiveEffort, isUltracode } from './params';
 import type { ClaudeCodeParams } from './types';
@@ -14,30 +13,6 @@ import type { ClaudeCodeParams } from './types';
  * orchestration actually fired. Built from whatever messages arrived, so the failure and timeout
  * paths can report it too — a run that died still has to say what it was doing.
  */
-
-export type SubagentDiagnostics = {
-	name: string;
-	invocations: number;
-	completed: number;
-	/** Sums over the subagent's invocations; null when no invocation reported the figure. */
-	totalTokens: number | null;
-	toolUses: number | null;
-	durationMs: number | null;
-};
-
-export type InstructionsDiagnostics = { loaded: string[]; missing: string[] };
-
-export type StructuredOutputDiagnostics = { mode: string; attempts: number };
-
-/** Reported only by a node that uses the feature; each key is omitted, not null, otherwise —
- * the same conditional spread as `attachments` and `auth`, for the same reason. */
-export type DiagnosticsExtra = {
-	subagents?: SubagentDiagnostics[];
-	bridgedTools?: string[];
-	instructions?: InstructionsDiagnostics;
-	structuredOutput?: StructuredOutputDiagnostics;
-	sessionState?: SessionState;
-};
 
 export type Diagnostics = {
 	requestedModel: string;
@@ -73,7 +48,7 @@ export type Diagnostics = {
 	 * The mode, never the secret. This object reaches the workflow's output.
 	 */
 	auth?: Exclude<AuthMode, 'host'>;
-} & DiagnosticsExtra;
+};
 
 export type DiagnosticsInput = {
 	messages: SDKMessage[];
@@ -87,11 +62,10 @@ export type DiagnosticsInput = {
 	attachments?: AttachmentDiagnostics | null;
 	/** The mode the run authenticated in. Host — or absent — keeps the key out of the output. */
 	authMode?: AuthMode;
-	extra?: DiagnosticsExtra;
 };
 
 export function buildDiagnostics(input: DiagnosticsInput): Diagnostics {
-	const { messages, params, permissionMode, appliedEffort, attachments, authMode, extra } = input;
+	const { messages, params, permissionMode, appliedEffort, attachments, authMode } = input;
 	const init = findInit(messages);
 	const result = findResult(messages);
 
@@ -122,10 +96,5 @@ export function buildDiagnostics(input: DiagnosticsInput): Diagnostics {
 		// assertion in the golden fixture tests sees the difference.
 		...(attachments ? { attachments } : {}),
 		...(authMode && authMode !== 'host' ? { auth: authMode } : {}),
-		...(extra?.subagents ? { subagents: extra.subagents } : {}),
-		...(extra?.bridgedTools ? { bridgedTools: extra.bridgedTools } : {}),
-		...(extra?.instructions ? { instructions: extra.instructions } : {}),
-		...(extra?.structuredOutput ? { structuredOutput: extra.structuredOutput } : {}),
-		...(extra?.sessionState ? { sessionState: extra.sessionState } : {}),
 	};
 }

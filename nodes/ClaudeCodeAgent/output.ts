@@ -4,13 +4,37 @@ import { buildDiagnostics, type DiagnosticsInput } from '../ClaudeCode/diagnosti
 import { resolveResultText } from '../ClaudeCode/output/resultText';
 import { buildV12Output } from '../ClaudeCode/output/v12';
 import { isResult, lastResult } from '../shared/sdkMessage';
-import { countSubagentToolUses } from './subagentReport';
+import type { SessionState } from '../shared/session';
+import { countSubagentToolUses, type SubagentDiagnostics } from './subagentReport';
 
-/** The shared diagnostics, read from the final result, with subagent delegations counted under
- * both of their tool names. */
-export function buildAgentDiagnostics(input: DiagnosticsInput): Record<string, unknown> {
+export type InstructionsDiagnostics = { loaded: string[]; missing: string[] };
+
+export type StructuredOutputDiagnostics = { mode: string; attempts: number };
+
+/** Each key is omitted, not null, when the run did not use the feature — the same conditional
+ * spread as the shared `attachments` and `auth`, for the same reason. */
+export type AgentDiagnosticsExtra = {
+	subagents?: SubagentDiagnostics[];
+	bridgedTools?: string[];
+	instructions?: InstructionsDiagnostics;
+	structuredOutput?: StructuredOutputDiagnostics;
+	sessionState?: SessionState;
+};
+
+export type AgentDiagnosticsInput = DiagnosticsInput & { extra?: AgentDiagnosticsExtra };
+
+/** The shared diagnostics, read from the final result, then the Agent's own fields, with subagent
+ * delegations counted under both of their tool names. */
+export function buildAgentDiagnostics(input: AgentDiagnosticsInput): Record<string, unknown> {
+	const { extra, ...shared } = input;
 	return {
-		...buildDiagnostics({ ...input, messages: withFinalResultOnly(input.messages) }),
+		...buildDiagnostics({ ...shared, messages: withFinalResultOnly(input.messages) }),
+		...(extra?.subagents ? { subagents: extra.subagents } : {}),
+		...(extra?.bridgedTools ? { bridgedTools: extra.bridgedTools } : {}),
+		...(extra?.instructions ? { instructions: extra.instructions } : {}),
+		...(extra?.structuredOutput ? { structuredOutput: extra.structuredOutput } : {}),
+		...(extra?.sessionState ? { sessionState: extra.sessionState } : {}),
+		// Overrides the shared count in place, so the key keeps its position.
 		subagentToolUses: countSubagentToolUses(input.messages),
 	};
 }
