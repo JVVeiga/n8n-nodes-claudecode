@@ -107,21 +107,21 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
 	version: 1,
-	subtitle: '={{$parameter["outputMode"]}}',
+	subtitle: '={{$parameter["model"]}}',
 	description:
 		'Run Claude Code as an agent over each item, with n8n tools, Claude Code subagents and structured output',
 	defaults: {
 		name: 'Claude Code Agent',
 	},
 	// The editor spaces AI ports by count, not label length: the short label goes in the middle so
-	// "Subagents" and "Output Parser" do not overlap.
+	// the long labels at the ends do not overlap.
 	inputs: [
 		NodeConnectionType.Main,
 		{ type: NodeConnectionType.AiAgent, displayName: 'Subagents', required: false },
 		{ type: NodeConnectionType.AiTool, displayName: 'Tools', required: false },
 		{
 			type: NodeConnectionType.AiOutputParser,
-			displayName: 'Output Parser',
+			displayName: 'Parser',
 			maxConnections: 1,
 			required: false,
 		},

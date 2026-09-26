@@ -49,7 +49,7 @@ describe('Claude Code Agent — identity and connections', () => {
 			'main',
 			{ type: 'ai_agent', displayName: 'Subagents', required: false },
 			{ type: 'ai_tool', displayName: 'Tools', required: false },
-			{ type: 'ai_outputParser', displayName: 'Output Parser', maxConnections: 1, required: false },
+			{ type: 'ai_outputParser', displayName: 'Parser', maxConnections: 1, required: false },
 		]);
 		assert.deepEqual(d.outputs, ['main']);
 	});
