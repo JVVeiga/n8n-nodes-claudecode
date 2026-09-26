@@ -1,8 +1,12 @@
+import type { IDataObject } from 'n8n-workflow';
 import type { OutputFormat, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { lastResult } from '../../shared/sdkMessage';
+import type { DebugLogger } from '../../shared/debug';
+import { findInit, lastResult } from '../../shared/sdkMessage';
+import { buildRunMetrics } from '../../ClaudeCode/output/metrics';
 import type { RunOutcome } from '../../ClaudeCode/types';
 import type { VerificationParams } from '../params';
 import { extractStructured } from '../structured';
+import type { Attempt, TurnRunner } from '../turn';
 import {
 	applyVerdict,
 	failedReport,
@@ -10,6 +14,7 @@ import {
 	skippedReport,
 	type VerificationReport,
 } from './apply';
+import { combineVerificationMetrics } from './metrics';
 import { VERDICT_SCHEMA, verifierTurn } from './prompt';
 import { selectItems } from './select';
 
@@ -83,4 +88,64 @@ export async function verifyStructured<
 
 	const applied = applyVerdict(structured, verification.itemsPath, selection.indices, verdict);
 	return { ...applied, attempt };
+}
+
+/**
+ * Verification for one item: the fork, the item's metrics counting both runs, and the report with
+ * the verification's own cost. `metrics` is null when no verification run started.
+ */
+export async function runVerification(input: {
+	verification: VerificationParams;
+	structured: unknown;
+	messages: SDKMessage[];
+	durationMs: number;
+	timeoutSeconds: number;
+	runTurn: TurnRunner;
+	/** Called with the verification run, when one started. */
+	onAttempt: (attempt: Attempt) => void;
+	debug: DebugLogger;
+}): Promise<{ structured: unknown; report: IDataObject; metrics: IDataObject | null }> {
+	const { messages, timeoutSeconds } = input;
+	const verified = await verifyStructured({
+		verification: input.verification,
+		structured: input.structured,
+		sessionId: lastResult(messages)?.session_id ?? findInit(messages)?.session_id ?? null,
+		timeoutSeconds,
+		runTurn: (turn) =>
+			input.runTurn(
+				{ resume: turn.resume },
+				{ timeoutSeconds },
+				{
+					content: turn.content,
+					outputFormat: turn.outputFormat,
+					label: 'Starting Claude Code Agent verification run',
+					// A fork, so the next execution with this Session Key continues after the
+					// main run's answer, not after the verifier's turn.
+					forkSession: true,
+				},
+				[],
+			),
+	});
+
+	let costUsd: number | null = 0;
+	let metrics: IDataObject | null = null;
+	if (verified.attempt) {
+		input.onAttempt(verified.attempt);
+		const combined = combineVerificationMetrics(
+			buildRunMetrics(messages, input.durationMs),
+			buildRunMetrics(verified.attempt.sdkMessages, verified.attempt.run.durationMs),
+		);
+		metrics = combined.metrics;
+		costUsd = combined.costUsd;
+	}
+	input.debug.log('Verification finished', {
+		status: verified.report.status,
+		reason: verified.report.reason,
+		checked: verified.report.checked,
+		kept: verified.report.kept,
+		dropped: verified.report.dropped,
+		unjudged: verified.report.unjudged,
+		costUsd,
+	});
+	return { structured: verified.structured, report: { ...verified.report, costUsd }, metrics };
 }

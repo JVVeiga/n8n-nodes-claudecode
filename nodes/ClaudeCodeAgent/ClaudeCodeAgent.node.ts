@@ -7,11 +7,10 @@ import type {
 } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
-import { findInit, lastResult } from '../shared/sdkMessage';
+import { lastResult } from '../shared/sdkMessage';
 import { buildToolBridge } from '../shared/toolBridge';
 import { prepareAttachments } from '../ClaudeCode/attachments/prepare';
 import type { StagedAttachments } from '../ClaudeCode/attachments/types';
-import { buildRunMetrics } from '../ClaudeCode/output/metrics';
 import {
 	itemFailer,
 	settle,
@@ -35,8 +34,7 @@ import {
 import { extractStructured } from './structured';
 import { buildSubagentReport } from './subagentReport';
 import { createTurnRunner, runMainTurn, type Attempt } from './turn';
-import { combineVerificationMetrics } from './verification/metrics';
-import { verifyStructured } from './verification/run';
+import { runVerification } from './verification/run';
 
 export type AgentExecuteDeps = {
 	/** The SDK's `query`. Injected so a test drives the message stream without spawning a CLI. */
@@ -243,47 +241,19 @@ async function runAgentItem(
 		structuredOutcome && 'ok' in structuredOutcome ? structuredOutcome.ok : undefined;
 	let verification: IDataObject | undefined;
 	if (agent.verification && structured !== undefined) {
-		const verified = await verifyStructured({
+		const verified = await runVerification({
 			verification: agent.verification,
 			structured,
-			sessionId: lastResult(messages)?.session_id ?? findInit(messages)?.session_id ?? null,
+			messages,
+			durationMs: item.durationMs,
 			timeoutSeconds: params.timeoutSeconds,
-			runTurn: (turn) =>
-				runTurn(
-					{ resume: turn.resume },
-					{ timeoutSeconds: params.timeoutSeconds },
-					{
-						content: turn.content,
-						outputFormat: turn.outputFormat,
-						label: 'Starting Claude Code Agent verification run',
-						// A fork, so the next execution with this Session Key continues after the
-						// main run's answer, not after the verifier's turn.
-						forkSession: true,
-					},
-					[],
-				),
+			runTurn,
+			onAttempt: (attempt) => logSubagentInvocations(subagents.supplied, [attempt], debug),
+			debug,
 		});
 		structured = verified.structured;
-		let costUsd: number | null = 0;
-		if (verified.attempt) {
-			logSubagentInvocations(subagents.supplied, [verified.attempt], debug);
-			const combined = combineVerificationMetrics(
-				buildRunMetrics(messages, item.durationMs),
-				buildRunMetrics(verified.attempt.sdkMessages, verified.attempt.run.durationMs),
-			);
-			item.verifiedMetrics = combined.metrics;
-			costUsd = combined.costUsd;
-		}
-		verification = { ...verified.report, costUsd };
-		debug.log('Verification finished', {
-			status: verified.report.status,
-			reason: verified.report.reason,
-			checked: verified.report.checked,
-			kept: verified.report.kept,
-			dropped: verified.report.dropped,
-			unjudged: verified.report.unjudged,
-			costUsd,
-		});
+		item.verifiedMetrics = verified.metrics;
+		verification = verified.report;
 	}
 
 	return buildAgentOutput({
