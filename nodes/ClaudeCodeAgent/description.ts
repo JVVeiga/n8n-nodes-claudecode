@@ -85,7 +85,7 @@ export const AGENT_OPTIONS: INodeProperties = {
 				'Whether to add the full message transcript to the output as `messages`. It carries every tool result verbatim — file contents, command output — and n8n stores it with the execution.',
 		},
 		maxBudgetOption(
-			'Hard spend cap for one item’s run. The run stops once it is exceeded. Set to 0 to disable.',
+			'Spend limit for one item’s run, checked between turns: the run stops once it is exceeded, but the turn in progress finishes first and can go past it. Timeout and Max Turns are the hard limits. Set to 0 to disable.',
 		),
 		maxThinkingTokensOption(),
 		PERMISSION_MODE_OPTION,
@@ -208,7 +208,7 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 			'Reasoning effort — controls how much thinking Claude applies. Ultracode adds standing dynamic-workflow orchestration on top of xHigh. Silently downgraded on models that don’t support the selected level.',
 		),
 		maxTurnsOption(
-			'Maximum number of conversation turns for one item. Subagent turns do not count against it.',
+			'Maximum number of conversation turns for one item. Subagent turns do not count against it. Set to 0 for no limit.',
 		),
 		timeoutOption(
 			'Maximum time in seconds for one item, before the run is stopped. A resumed session that has to be created shares this budget.',
