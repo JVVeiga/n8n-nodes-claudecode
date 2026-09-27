@@ -23,6 +23,19 @@ recordings under `tests/agent-v1/` hold it byte-for-byte, and the 48 golden fixt
 - **Each subagent's model.** `diagnostics.subagents[].model` is the model the subagent was
   configured with, `inherit` resolved to the Agent's.
 
+### Read Instruction Files From Ref
+
+- **Claude Code Agent** gains **Read Instruction Files From Ref**: a branch, tag or commit to read
+  the Instruction Files from with git, instead of from disk, with paths still relative to Project
+  Path. Review rules can come from the target branch, so a pull request cannot change the rules of
+  its own review, without an Execute Command node. The working tree's rules hold (a path absent at
+  the ref is `missing`; `..`, absolute paths, directories, links and files over 256 KB fail the
+  item); a refused ref, or one the clone does not have, fails the item before Claude Code starts,
+  with the fix. `diagnostics.instructions.ref` names the ref. The option is empty by default and
+  empty reads the working tree, so no typeVersion moves and no output changes when it is unset.
+- The Code Review Kit's git runner and ref check moved to `nodes/shared/` so both nodes use one
+  copy; the Kit's behaviour is unchanged.
+
 ### Descriptions
 
 - **Max Budget** no longer says it is a hard spend cap, in the Claude Code node, the Agent, the Chat

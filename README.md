@@ -722,6 +722,7 @@ not.
 | **Output Mode** | `Text` (default), `JSON Schema` or `Output Parser`. The two schema modes emit the object as `structured`; `result` keeps the text |
 | **JSON Schema** | the schema, in JSON Schema mode. Its top level must be `"type": "object"`; anything else fails the item before a process starts |
 | **Instruction Files** | one path per line, relative to Project Path, appended to the system prompt |
+| **Read Instruction Files From Ref** | shown once Instruction Files is set: a branch, tag or commit (`origin/main`) to read those files from with git, instead of from disk. Empty (the default) reads the working tree |
 | **Session** | `New` (default) or `Resume` |
 | **Session ID or Key** | with Resume: a session UUID, or any stable key (a ticket, chat or user id) hashed into a deterministic session id. The first run with a key creates the session, later runs resume it |
 | **Subagent Orchestration** | `Auto` (default, Claude decides) or `Required` |
@@ -756,6 +757,19 @@ on its own. Each file is wrapped in a tag naming it and joined, after the node's
 the one text appended to Claude Code's system prompt. A missing file is skipped and listed in
 `diagnostics.instructions.missing`, so one list works across repositories that do not all have it. A
 path that leaves the Project Path, directly or through a link, or a file over 256 KB, fails the item.
+
+**Instruction Files can come from another ref than the one under review.** With **Read Instruction
+Files From Ref** set to, say, `origin/main`, each listed path is read with git at that ref, still
+relative to Project Path, and the working tree is not consulted. That is how a review keeps its rules
+to the target branch: a pull request that edits `.review/rules.md` is reviewed by the rules it is
+trying to change, not by its own version of them, and no Execute Command node is needed (n8n 2.x
+leaves it out by default). The rules are the working tree's: a path absent at the ref is listed in
+`diagnostics.instructions.missing`, one with `..` or an absolute path, a directory, a symbolic link
+or a file over 256 KB fails the item. `diagnostics.instructions.ref` names the ref when one was used.
+**The clone must contain the ref.** A ref that is refused (`-x`, a range such as `a..b`) or that the
+clone does not have fails the item before Claude Code starts, and says to fetch it; a shallow CI
+clone often lacks the base branch, so fetch it (`git fetch origin main`) before the Agent runs. The
+option needs git on the PATH of the n8n process, as the Code Review Kit does.
 
 **Required orchestration asks, it cannot force.** It adds a line to the prompt asking Claude to
 delegate to every connected subagent at least once. `diagnostics.subagents` shows whether each one
@@ -1256,7 +1270,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1166 tests — node:test, no framework, no extra dependencies
+npm test    # 1323 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.

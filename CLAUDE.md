@@ -94,7 +94,8 @@ nodes/
     session.ts                 Session ID -> deterministic uuid, and the resume-or-create retry
     subagent.ts                the tagged object a Subagent supplies and the Agent accepts
     subagentLog.ts             the Subagent's run log: toolRunLog on ai_agent; never throws
-    git.ts                     the ONLY module that spawns git: execFile('git', …), no shell
+    git.ts                     the ONLY module that spawns git: execFile('git', …), no shell; the
+                               Kit's commands, and a file read at a ref for the Agent (RefReader)
     gitRefs.ts                 the ref check that runs before git does
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
@@ -167,7 +168,8 @@ nodes/
     outputSchema.ts            Output Mode + pasted schema or parser -> the schema sent (unwraps)
     structured.ts              SDKMessage[] -> the object, or why there is none (both failures);
                                what became of each delivery
-    instructions.ts            Instruction Files -> the append text; the only file reader here
+    instructions.ts            Instruction Files -> the append text; the only file reader here,
+                               and the one place choosing the working tree or a git ref
     output.ts                  the 1.2 envelope + structured/verification, from the LAST result;
                                the Agent-only diagnostics fields
     verification/
@@ -227,7 +229,7 @@ nodes/
 | Change the Agent's usage reports or the subagents' logs | `ClaudeCodeAgent/report.ts` |
 | Change when a structured run counts as successful | `ClaudeCodeAgent/structured.ts` |
 | Change how a parser's schema becomes the one sent | `ClaudeCodeAgent/outputSchema.ts` |
-| Change how Instruction Files are read or bounded | `ClaudeCodeAgent/instructions.ts` |
+| Change how Instruction Files are read or bounded | `ClaudeCodeAgent/instructions.ts` (at a ref: `shared/git.ts` `createRefReader`) |
 | Change `diagnostics.subagents` | `ClaudeCodeAgent/subagentReport.ts` |
 | Change what Required orchestration tells the model | `ClaudeCodeAgent/orchestration.ts` |
 | Change what Verification checks, says or applies | `verification/select.ts`, `prompt.ts`, `apply.ts`; its cost in `verification/metrics.ts`; the run itself in `verification/run.ts` |
@@ -342,6 +344,14 @@ nodes/
   the result), or `subtype: success` with no `structured_output` because the model gave up and
   answered in prose. Trusting `subtype` reports the second as a success. Both become
   `errorType: 'structured_output'`.
+- **Read Instruction Files From Ref reads with git, relative to Project Path.** `createRefReader`
+  runs `ls-tree` without `--full-tree`, so a Project Path below the repository root resolves paths
+  the way the working tree does; the Kit's `showFile` keeps `--full-tree` for its diff paths. The
+  reader is strict where `showFile` is not: a symbolic link, or a directory named with a trailing
+  `/` (which `ls-tree` answers with its children), is not a file. It reaches the Agent through
+  `deps.refReader`, so no Agent test spawns git; only `tests/agentInstructionsGit.test.ts` does, on
+  a throwaway repository, and it skips when git is absent. Empty means the working tree, which is
+  why the option needed no typeVersion.
 - **Instruction Files join the one preset `append`.** They go after the System Prompt, in the same
   string, each wrapped in a tag naming the file. Two appenders would silently fight. `CLAUDE.md`
   already loads whenever `settingSources` includes `project`, so Instruction Files are for the rest.
@@ -395,7 +405,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1290 tests, node:test, no framework
+npm test                                    # 1323 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
