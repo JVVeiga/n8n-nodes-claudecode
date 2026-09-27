@@ -2,8 +2,9 @@
 
 ### Claude Code Agent 1.1
 
-A new typeVersion, the default for new nodes. A stored workflow stays on 1 and emits what it did;
-recordings under `tests/agent-v1/` hold it byte-for-byte, and the 48 golden fixtures are unchanged.
+A new typeVersion, the default for new nodes. A stored workflow stays on 1, and 1 emits what it did
+except where the two fixes under **Fixes** below say otherwise; recordings under `tests/agent-v1/`
+hold it byte-for-byte, and the 48 golden fixtures are unchanged.
 
 - **What became of each structured delivery.** `diagnostics.structuredOutput` gains `accepted`,
   `rejected`, `rejections` (the validator's messages, the last five, truncated) and `superseded`:
@@ -35,6 +36,20 @@ recordings under `tests/agent-v1/` hold it byte-for-byte, and the 48 golden fixt
   empty reads the working tree, so no typeVersion moves and no output changes when it is unset.
 - The Code Review Kit's git runner and ref check moved to `nodes/shared/` so both nodes use one
   copy; the Kit's behaviour is unchanged.
+
+### Fixes
+
+- **A subagent that reports before the turn's result no longer gets that last turn cancelled.**
+  When a background subagent's notification is queued before the result of the turn that launched
+  it, the CLI runs one more turn to deliver it. The input used to close at that first result, so
+  the extra turn was cancelled and its tool calls came back refused, StructuredOutput included. The
+  run now ends when the CLI reports it has no turn left to run, a session-state event the node asks
+  for and keeps out of its output. This applies to the released versions that answer from the final
+  result as well: Claude Code Agent 1, Claude Code 1.4, the Chat Model 1.1 and the Task Tool 1.1,
+  and to Agent 1.1. Nothing else they emit changes.
+- **Instruction Files are read from the trimmed Project Path**, as the run's working directory
+  already was. With whitespace around the path every file was reported `missing`, and a read at a
+  ref failed as if git were not installed.
 
 ### Descriptions
 
