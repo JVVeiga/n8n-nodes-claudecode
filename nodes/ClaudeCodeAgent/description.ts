@@ -85,7 +85,7 @@ export const AGENT_OPTIONS: INodeProperties = {
 				'Whether to add the full message transcript to the output as `messages`. It carries every tool result verbatim — file contents, command output — and n8n stores it with the execution.',
 		},
 		maxBudgetOption(
-			'Hard spend cap for one item’s run. The run stops once it is exceeded. Set to 0 to disable.',
+			'Spend limit for one item’s run, checked between turns: the run stops once it is exceeded, but the turn in progress finishes first and can go past it. Timeout and Max Turns are the hard limits. Set to 0 to disable.',
 		),
 		maxThinkingTokensOption(),
 		PERMISSION_MODE_OPTION,
@@ -164,7 +164,10 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	name: 'claudeCodeAgent',
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
-	version: 1,
+	// 1.1: metrics summed over every result, structured deliveries and subagent models reported,
+	// and the user turn says nobody is there to answer.
+	version: [1, 1.1],
+	defaultVersion: 1.1,
 	subtitle:
 		'={{$parameter["model"] + ($parameter["outputMode"] === "jsonSchema" ? " · Schema" : $parameter["outputMode"] === "outputParser" ? " · Parser" : "") + ($parameter["verification"] && $parameter["verification"].enabled ? " · Verify" : "")}}',
 	description:
@@ -208,7 +211,7 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 			'Reasoning effort — controls how much thinking Claude applies. Ultracode adds standing dynamic-workflow orchestration on top of xHigh. Silently downgraded on models that don’t support the selected level.',
 		),
 		maxTurnsOption(
-			'Maximum number of conversation turns for one item. Subagent turns do not count against it.',
+			'Maximum number of conversation turns for one item. Subagent turns do not count against it. Set to 0 for no limit.',
 		),
 		timeoutOption(
 			'Maximum time in seconds for one item, before the run is stopped. A resumed session that has to be created shares this budget.',
@@ -258,6 +261,16 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 			placeholder: '.review/rules.md\ndocs/conventions.md',
 			description:
 				'Files appended to the system prompt, one path per line, relative to Project Path. A file that does not exist is skipped and listed in diagnostics.instructions.missing. CLAUDE.md already loads on its own.',
+		},
+		{
+			displayName: 'Read Instruction Files From Ref',
+			name: 'instructionFilesRef',
+			type: 'string',
+			default: '',
+			placeholder: 'e.g. origin/main',
+			displayOptions: { show: { instructionFiles: [{ _cnd: { exists: true } }] } },
+			description:
+				'A git branch, tag or commit to read the Instruction Files from, instead of the files on disk. The paths are then resolved inside that ref, still relative to Project Path, and the clone must contain the ref: fetch it first. With origin/main, the review rules come from the target branch, so a pull request cannot change the rules of its own review. Leave empty to read the working tree.',
 		},
 		{
 			displayName: 'Session',

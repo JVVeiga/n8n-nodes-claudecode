@@ -89,12 +89,12 @@ export const claudeCodeToolDescription: INodeTypeDescription = {
 				),
 				fallbackModelOption(),
 				maxBudgetOption(
-					'Hard spend cap per task run. The run stops once it is exceeded. Set to 0 to disable.',
+					'Spend limit per task run, checked between turns: the run stops once it is exceeded, but the turn in progress finishes first and can go past it. Timeout and Max Turns are the hard limits. Set to 0 to disable.',
 				),
 				maxThinkingTokensOption(),
 				processNameOption(),
 				reportUsageToOption(),
-				maxTurnsOption('Maximum internal Claude Code turns per task run'),
+				maxTurnsOption('Maximum internal Claude Code turns per task run. Set to 0 for no limit.'),
 				restrictToolsOption(
 					'Limit Claude Code to this base set of built-in tools during task runs — everything else is never loaded. Leave empty for the full set.',
 				),

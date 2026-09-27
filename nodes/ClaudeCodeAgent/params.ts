@@ -27,6 +27,8 @@ export type AgentExtras = {
 	outputMode: OutputMode;
 	jsonSchemaText: string;
 	instructionFiles: string[];
+	/** Empty: the working tree. */
+	instructionFilesRef: string;
 	session: { mode: SessionMode; key: string };
 	orchestration: Orchestration;
 	allowConnectors: boolean;
@@ -36,6 +38,29 @@ export type AgentExtras = {
 	processName: string;
 	/** Null when Verification is not enabled. */
 	verification: VerificationParams | null;
+	behaviour: AgentBehaviour;
+};
+
+/** What a typeVersion changed. Version 1 keeps every one of these off. */
+export type AgentBehaviour = {
+	/** Metrics summed over every result of the run, not read from the last. */
+	sumsMetrics: boolean;
+	/** `diagnostics.structuredOutput` counts accepted and rejected deliveries. */
+	reportsDeliveries: boolean;
+	/** `diagnostics.subagents[].model`. */
+	reportsSubagentModels: boolean;
+	/** The user turn ends by saying nobody is there to answer. */
+	tellsUnattended: boolean;
+};
+
+export const agentBehaviour = (nodeVersion: number): AgentBehaviour => {
+	const from11 = nodeVersion >= 1.1;
+	return {
+		sumsMetrics: from11,
+		reportsDeliveries: from11,
+		reportsSubagentModels: from11,
+		tellsUnattended: from11,
+	};
 };
 
 export type AgentParams = { run: ClaudeCodeParams; agent: AgentExtras };
@@ -91,6 +116,7 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 			instructionFiles: parseInstructionFiles(
 				ctx.getNodeParameter('instructionFiles', itemIndex, ''),
 			),
+			instructionFilesRef: text(ctx.getNodeParameter('instructionFilesRef', itemIndex, '')).trim(),
 			session: {
 				mode: ctx.getNodeParameter('sessionMode', itemIndex, 'new') as SessionMode,
 				key: text(ctx.getNodeParameter('sessionKey', itemIndex, '')).trim(),
@@ -105,6 +131,7 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 			usageWorkflowId: usageWorkflowId(options.reportUsageTo),
 			processName: text(options.processName).trim(),
 			verification: readVerification(ctx.getNodeParameter('verification', itemIndex, {})),
+			behaviour: agentBehaviour(run.nodeVersion),
 		},
 	};
 }

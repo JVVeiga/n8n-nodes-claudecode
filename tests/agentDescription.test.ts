@@ -36,10 +36,12 @@ const options = (): INodeProperties[] => (property('options')?.options ?? []) as
 const option = (name: string) => options().find((o) => o.name === name);
 
 describe('Claude Code Agent — identity and connections', () => {
-	it('is a version-1 main node named claudeCodeAgent, not usable as a tool', () => {
+	it('is a main node named claudeCodeAgent, versions 1 and 1.1, not usable as a tool', () => {
 		assert.equal(d.name, 'claudeCodeAgent');
 		assert.equal(d.displayName, 'Claude Code Agent');
-		assert.equal(d.version, 1);
+		// Never drop a version: a workflow pinned to it would stop loading.
+		assert.deepEqual(d.version, [1, 1.1]);
+		assert.equal(d.defaultVersion, 1.1);
 		assert.equal(d.icon, 'file:claudecode.svg');
 		assert.equal(d.defaults.name, 'Claude Code Agent');
 		assert.equal((d as { usableAsTool?: boolean }).usableAsTool, undefined);
@@ -79,6 +81,7 @@ describe('Claude Code Agent — parameters', () => {
 				'outputMode',
 				'jsonSchema',
 				'instructionFiles',
+				'instructionFilesRef',
 				'sessionMode',
 				'sessionKey',
 				'subagentOrchestration',

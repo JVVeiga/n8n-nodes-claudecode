@@ -1,4 +1,6 @@
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+import { buildSummedRunMetrics } from '../ClaudeCode/output/metrics';
 import type { AuthMode } from '../shared/auth';
 import type { DebugLogger } from '../shared/debug';
 import { readRunIndex, usageReporting } from '../shared/reportUsage';
@@ -8,7 +10,13 @@ import type { AgentExtras } from './params';
 import { subagentInvocations } from './subagentReport';
 import type { Attempt } from './turn';
 
-export type AgentReporting = { usage: UsageReporting; authMode: AuthMode; debug: DebugLogger };
+export type AgentReporting = {
+	usage: UsageReporting;
+	authMode: AuthMode;
+	debug: DebugLogger;
+	/** How a run's metrics are counted; absent, the report reads the last result. */
+	metricsOf?: (messages: SDKMessage[], durationMs: number) => IDataObject;
+};
 
 /** Null when no collector was chosen. */
 export function agentReporting(
@@ -24,6 +32,7 @@ export function agentReporting(
 		usage: { ...usage, context: { ...usage.context, runIndex: readRunIndex(ctx, itemIndex) } },
 		authMode,
 		debug,
+		...(agent.behaviour.sumsMetrics ? { metricsOf: buildSummedRunMetrics } : {}),
 	};
 }
 
@@ -49,7 +58,10 @@ export async function reportAttempts(
 			authMode: reporting.authMode,
 			debug: reporting.debug,
 			diagnostics: isFinal && finalDiagnostics ? (finalDiagnostics as IDataObject) : undefined,
-			metrics: isFinal && finalMetrics ? finalMetrics : undefined,
+			metrics:
+				isFinal && finalMetrics
+					? finalMetrics
+					: reporting.metricsOf?.(attempt.sdkMessages, attempt.run.durationMs),
 		});
 	}
 }

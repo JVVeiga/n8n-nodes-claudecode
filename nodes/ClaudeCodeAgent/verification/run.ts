@@ -101,6 +101,8 @@ export async function runVerification(input: {
 	durationMs: number;
 	timeoutSeconds: number;
 	runTurn: TurnRunner;
+	/** How each run's metrics are counted before the two are combined. */
+	metricsOf?: (messages: SDKMessage[], durationMs: number) => IDataObject;
 	/** Called with the verification run, when one started. */
 	onAttempt: (attempt: Attempt) => void;
 	debug: DebugLogger;
@@ -131,9 +133,10 @@ export async function runVerification(input: {
 	let metrics: IDataObject | null = null;
 	if (verified.attempt) {
 		input.onAttempt(verified.attempt);
+		const metricsOf = input.metricsOf ?? buildRunMetrics;
 		const combined = combineVerificationMetrics(
-			buildRunMetrics(messages, input.durationMs),
-			buildRunMetrics(verified.attempt.sdkMessages, verified.attempt.run.durationMs),
+			metricsOf(messages, input.durationMs),
+			metricsOf(verified.attempt.sdkMessages, verified.attempt.run.durationMs),
 		);
 		metrics = combined.metrics;
 		costUsd = combined.costUsd;

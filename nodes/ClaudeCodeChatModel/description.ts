@@ -129,13 +129,13 @@ export const claudeCodeChatModelDescription: INodeTypeDescription = {
 				),
 				fallbackModelOption(),
 				maxBudgetOption(
-					'Hard spend cap for a single Agent call. The run stops once it is exceeded. Set to 0 to disable.',
+					'Spend limit for a single Agent call, checked between turns: the run stops once it is exceeded, but the turn in progress finishes first and can go past it. Timeout and Max Turns are the hard limits. Set to 0 to disable.',
 				),
 				maxThinkingTokensOption(),
 				processNameOption(),
 				reportUsageToOption(),
 				maxTurnsOption(
-					'Maximum number of internal Claude Code turns per Agent call. Tool-heavy requests need more.',
+					'Maximum number of internal Claude Code turns per Agent call. Tool-heavy requests need more. Set to 0 for no limit.',
 				),
 				restrictToolsOption(
 					'Limit Claude Code to this base set of built-in tools — everything else is never loaded. Leave empty for the full set. Tools connected to the AI Agent are always added on top, so a restriction cannot unplug them.',

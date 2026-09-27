@@ -94,6 +94,9 @@ nodes/
     session.ts                 Session ID -> deterministic uuid, and the resume-or-create retry
     subagent.ts                the tagged object a Subagent supplies and the Agent accepts
     subagentLog.ts             the Subagent's run log: toolRunLog on ai_agent; never throws
+    git.ts                     the ONLY module that spawns git: execFile('git', …), no shell; the
+                               Kit's commands, and a file read at a ref for the Agent (RefReader)
+    gitRefs.ts                 the ref check that runs before git does
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -118,7 +121,8 @@ nodes/
     output/
       resultText.ts            "what does this run say" — the six-rung fallback ladder
       legacy.ts                FROZEN typeVersion 1 / 1.1 shapes
-      metrics.ts               the `metrics` object — v1.2 output and every sub-node report
+      metrics.ts               the `metrics` object — v1.2 output and every sub-node report;
+                               also the summed variant Agent 1.1 uses
       v12.ts                   the 1.2 unified envelope
       index.ts                 buildOutputItem — routes by typeVersion
     errors.ts                  the four failure paths, as data
@@ -160,10 +164,12 @@ nodes/
     connections.ts             the ONLY getInputConnectionData reader: tools, subagents, parser
     subagents.ts               supplied subagents -> the SDK's agents record, sorted; duplicates fail
     subagentReport.ts          task_started/task_notification -> diagnostics.subagents (pure)
-    orchestration.ts           the Required-mode line appended to the user turn
+    orchestration.ts           the lines appended to the user turn: Required mode, unattended
     outputSchema.ts            Output Mode + pasted schema or parser -> the schema sent (unwraps)
-    structured.ts              SDKMessage[] -> the object, or why there is none (both failures)
-    instructions.ts            Instruction Files -> the append text; the only file reader here
+    structured.ts              SDKMessage[] -> the object, or why there is none (both failures);
+                               what became of each delivery
+    instructions.ts            Instruction Files -> the append text; the only file reader here,
+                               and the one place choosing the working tree or a git ref
     output.ts                  the 1.2 envelope + structured/verification, from the LAST result;
                                the Agent-only diagnostics fields
     verification/
@@ -182,9 +188,8 @@ nodes/
     description.ts             its schema — four operations
     params.ts                  the ONLY getNodeParameter reader for this node
     operations.ts              one function per operation, over params and deps.git
-    git.ts                     the ONLY impure module: execFile('git', …), no shell (the Project
-                               Path check reaches operations.ts as deps.pathExists)
-    refs.ts                    the ref check that runs before git does
+                               (git is shared/git.ts; the Project Path check arrives as
+                               deps.pathExists)
     input.ts                   a json parameter as text or as a parsed value
     diff.ts                    numstat + -U0 patch text -> files[], addedLines (pure)
     anchors.ts                 findings -> valid / moved with the reason (pure)
@@ -224,14 +229,14 @@ nodes/
 | Change the Agent's usage reports or the subagents' logs | `ClaudeCodeAgent/report.ts` |
 | Change when a structured run counts as successful | `ClaudeCodeAgent/structured.ts` |
 | Change how a parser's schema becomes the one sent | `ClaudeCodeAgent/outputSchema.ts` |
-| Change how Instruction Files are read or bounded | `ClaudeCodeAgent/instructions.ts` |
+| Change how Instruction Files are read or bounded | `ClaudeCodeAgent/instructions.ts` (at a ref: `shared/git.ts` `createRefReader`) |
 | Change `diagnostics.subagents` | `ClaudeCodeAgent/subagentReport.ts` |
 | Change what Required orchestration tells the model | `ClaudeCodeAgent/orchestration.ts` |
 | Change what Verification checks, says or applies | `verification/select.ts`, `prompt.ts`, `apply.ts`; its cost in `verification/metrics.ts`; the run itself in `verification/run.ts` |
 | Add a Subagent field | `ClaudeCodeSubagent/description.ts` + `params.ts` (it becomes an `AgentDefinition` field) |
 | Change the Subagent's execution log | `shared/subagentLog.ts` |
 | Change a Code Review Kit operation | `CodeReviewKit/operations.ts`, over the pure module: `diff.ts`, `anchors.ts`, `fingerprint.ts` or `dedupe.ts` |
-| Change which git commands the Kit runs | `CodeReviewKit/git.ts` — refs are checked first in `refs.ts` |
+| Change which git commands the Kit runs | `shared/git.ts` — refs are checked first in `shared/gitRefs.ts` |
 
 ### Rules that are not obvious
 
@@ -339,6 +344,14 @@ nodes/
   the result), or `subtype: success` with no `structured_output` because the model gave up and
   answered in prose. Trusting `subtype` reports the second as a success. Both become
   `errorType: 'structured_output'`.
+- **Read Instruction Files From Ref reads with git, relative to Project Path.** `createRefReader`
+  runs `ls-tree` without `--full-tree`, so a Project Path below the repository root resolves paths
+  the way the working tree does; the Kit's `showFile` keeps `--full-tree` for its diff paths. The
+  reader is strict where `showFile` is not: a symbolic link, or a directory named with a trailing
+  `/` (which `ls-tree` answers with its children), is not a file. It reaches the Agent through
+  `deps.refReader`, so no Agent test spawns git; only `tests/agentInstructionsGit.test.ts` does, on
+  a throwaway repository, and it skips when git is absent. Empty means the working tree, which is
+  why the option needed no typeVersion.
 - **Instruction Files join the one preset `append`.** They go after the System Prompt, in the same
   string, each wrapped in a tag naming the file. Two appenders would silently fight. `CLAUDE.md`
   already loads whenever `settingSources` includes `project`, so Instruction Files are for the rest.
@@ -346,6 +359,13 @@ nodes/
   result messages, the first one an interim "I'll wait for them". The shared text ladder reads the
   first, which the Claude Code node's versions keep (a known limitation of those nodes, not fixed
   in passing); the Agent strips every result but the last before reading.
+- **A final-result run ends on `idle`, not on a result.** A subagent that reports before the
+  turn's result makes the CLI run one more turn for the notification, with no subagent pending by
+  then; closing the input at the first result cancels that turn's tool calls (measured, e2e
+  case92: its StructuredOutput came back "The user doesn't want to take this action right now").
+  So with `pendingTasksKeepRunOpen` the runner asks for session-state events through
+  `settings.env` — never `Options.env` — and closes on `session_state_changed: idle`. A CLI that
+  emits none falls back to closing at a result with no subagent pending.
 - **A resumed session reports a cumulative cost.** `total_cost_usd` and `modelUsage` on a resumed
   run include every earlier query of that session; `num_turns`, `duration_ms` and `usage` do not
   (measured, spike S-I). So the Verification run's metrics already contain the main run: the item
@@ -374,6 +394,12 @@ The Chat Model and the Task Tool got the same final-result change as their **1.1
 default; 1 unchanged). Every version gate reads `nodeVersion` in params.ts
 (`answersFromFinalResult`, `subNodeAnswersFromFinalResult`), never a schema default.
 
+The Claude Code Agent has versions of its own. **1.1** (current default) sums `duration_ms`,
+`num_turns` and `usage` over every result of the run, reports each structured delivery (`accepted`,
+`rejected`, `rejections`, `superseded`) and each subagent's `model`, and ends the user turn saying
+nobody is there to answer. 1 is unchanged, held byte-for-byte by `tests/agent-v1/`. The gate is
+`agentBehaviour` in its params.ts.
+
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
 an existing version emits**; add a new one.
 
@@ -386,7 +412,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1232 tests, node:test, no framework
+npm test                                    # 1366 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -409,7 +435,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 90 named behaviours against real executions:
+with the node installed and asserts 103 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

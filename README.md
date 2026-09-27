@@ -19,8 +19,9 @@ work of Adam Holt and John Lindquist — see [Credits](#credits).
 ## What it gives you
 
 **Control over what a run costs and how long it takes.** Effort from low to max, plus Ultracode
-(xHigh with dynamic workflow orchestration). A **Max Budget (USD)** hard cap, because Max Turns and
-Timeout bound how *long* a run goes, not what it *costs*. Model and fallback model, thinking depth,
+(xHigh with dynamic workflow orchestration). A **Max Budget (USD)** limit, because Max Turns and
+Timeout bound how *long* a run goes, not what it *costs*; it is checked between turns, so one turn
+can go past it. Model and fallback model, thinking depth,
 and a thinking display mode.
 
 **Timeouts that still report what happened.** A run that overruns is interrupted rather than killed,
@@ -705,8 +706,9 @@ Connected tools run inside Claude Code's session over the same bridge as the Cha
 tool node logs its own calls. An MCP Client Tool arrives as a toolkit, and n8n names its tools
 `<Node name>_<tool>` with spaces turned into underscores: a node called *MCP Client* exposing
 `lookup` becomes `mcp__n8n__MCP_Client_lookup`. **Restrict Built-in Tools** cannot unplug a
-connected tool, because the bridged names are always added on top. `diagnostics.bridgedTools` lists
-what was bridged.
+connected tool, because the bridged names are always added on top. With subagents connected it also
+gets `Agent` and `Task` on its own, the delegation tool the subagents are reached through.
+`diagnostics.bridgedTools` lists what was bridged.
 
 **Keep connected tools read-only.** The Agent usually reads code it did not write, and that code can
 carry text written to steer a model. A tool that can merge, post or delete gives such text somewhere
@@ -720,6 +722,7 @@ not.
 | **Output Mode** | `Text` (default), `JSON Schema` or `Output Parser`. The two schema modes emit the object as `structured`; `result` keeps the text |
 | **JSON Schema** | the schema, in JSON Schema mode. Its top level must be `"type": "object"`; anything else fails the item before a process starts |
 | **Instruction Files** | one path per line, relative to Project Path, appended to the system prompt |
+| **Read Instruction Files From Ref** | shown once Instruction Files is set: a branch, tag or commit (`origin/main`) to read those files from with git, instead of from disk. Empty (the default) reads the working tree |
 | **Session** | `New` (default) or `Resume` |
 | **Session ID or Key** | with Resume: a session UUID, or any stable key (a ticket, chat or user id) hashed into a deterministic session id. The first run with a key creates the session, later runs resume it |
 | **Subagent Orchestration** | `Auto` (default, Claude decides) or `Required` |
@@ -739,15 +742,52 @@ a run as successful only when the object is present. Both failures carry `errorT
 'structured_output'` with `metrics` and `diagnostics`, reach the error output under *Continue (using
 error output)*, and `diagnostics.structuredOutput.attempts` says how many times the model tried.
 
+**A second delivery is accepted when it is valid.** With subagents in the background the CLI writes
+one result per turn, and a later turn can deliver the object again; the CLI refuses a delivery only
+when it fails the schema, and the rejection goes back to the model with the validator's message. The
+object emitted is the last one accepted. So a model that tries to replace its object with one the
+schema cannot hold (a finding with no `line` where `line` is required) leaves the earlier object in
+place. From version 1.1 the Agent says so: `diagnostics.structuredOutput` carries `accepted`,
+`rejected`, `rejections` (the validator's last five messages) and `superseded: true` when a rejected
+delivery came after the emitted object with no accepted one after it. Findings that have no line
+belong in a field of the schema that does not require one.
+
 **Instruction Files are for rules that are not in `CLAUDE.md`.** The repository's `CLAUDE.md` loads
 on its own. Each file is wrapped in a tag naming it and joined, after the node's System Prompt, into
 the one text appended to Claude Code's system prompt. A missing file is skipped and listed in
 `diagnostics.instructions.missing`, so one list works across repositories that do not all have it. A
 path that leaves the Project Path, directly or through a link, or a file over 256 KB, fails the item.
 
+**Instruction Files can come from another ref than the one under review.** With **Read Instruction
+Files From Ref** set to, say, `origin/main`, each listed path is read with git at that ref, still
+relative to Project Path, and the working tree is not consulted. That is how a review keeps its rules
+to the target branch: a pull request that edits `.review/rules.md` is reviewed by the rules it is
+trying to change, not by its own version of them, and no Execute Command node is needed (n8n 2.x
+leaves it out by default). The rules are the working tree's: a path absent at the ref is listed in
+`diagnostics.instructions.missing`, one with `..` or an absolute path, a directory, a symbolic link
+or a file over 256 KB fails the item. `diagnostics.instructions.ref` names the ref when one was used.
+**The clone must contain the ref.** A ref that is refused (`-x`, a range such as `a..b`) or that the
+clone does not have fails the item before Claude Code starts, and says to fetch it; a shallow CI
+clone often lacks the base branch, so fetch it (`git fetch origin main`) before the Agent runs. The
+option needs git on the PATH of the n8n process, as the Code Review Kit does.
+
 **Required orchestration asks, it cannot force.** It adds a line to the prompt asking Claude to
 delegate to every connected subagent at least once. `diagnostics.subagents` shows whether each one
 ran, and the workflow decides what to do about one that did not.
+
+**From version 1.1 the prompt ends by saying the run is unattended**: nobody reads the conversation
+or answers questions, so the model decides and delivers rather than ending with a question. With a
+schema and subagents it also asks for one delivery, after every subagent has reported, and to fix and
+resend a rejected one.
+
+### Versions
+
+A node keeps the version it was created with; new nodes get 1.1.
+
+| | What it changed |
+|---|---|
+| 1 | the original |
+| 1.1 | `metrics.duration_ms`, `num_turns` and `usage` summed over every result of the run (the CLI reports them per turn; cost and `modelUsage` were already cumulative); `diagnostics.structuredOutput` reports each delivery; `diagnostics.subagents[].model`; the unattended line in the prompt |
 
 ### Verification
 
@@ -820,7 +860,8 @@ plus the fields below, each absent when unused. Shortened from real runs:
 |---|---|
 | `structured` | the validated object, in the schema modes. After Verification, without the dropped items |
 | `verification` | the verdict applied, and `costUsd`, the second run's own share of the cost |
-| `diagnostics.subagents` | one entry per connected subagent, in name order, from the run's task events. One that never ran shows `invocations: 0` |
+| `diagnostics.subagents` | one entry per connected subagent, in name order, from the run's task events. One that never ran shows `invocations: 0`. From 1.1, `model` is the model it was configured with, `inherit` resolved to the Agent's |
+| `diagnostics.structuredOutput` | `mode` and `attempts`; from 1.1 also `accepted`, `rejected`, `rejections` and `superseded` |
 | `diagnostics.subagentToolUses` | delegations, counted under both tool names the CLI uses (`Agent` and `Task`) |
 | `diagnostics.sessionState` | with Resume only: `resumed`, or `created` when there was no session under that id yet |
 
@@ -971,7 +1012,7 @@ account-wide, so a 3-item batch has no reason to open three sessions.
 {{ $json.nextResetAt }}             // '2026-08-19T06:10:00.394384+00:00'
 {{ $json.rateLimitsAvailable }}     // true — there are numbers to read
 {{ $json.windows[0].utilization }}  // windows are sorted fullest-first
-{{ $json.account.organization }}    // 'Gaudium'
+{{ $json.account.organization }}    // 'Acme'
 ```
 
 | Field | Meaning |
@@ -1229,7 +1270,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1166 tests — node:test, no framework, no extra dependencies
+npm test    # 1366 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.

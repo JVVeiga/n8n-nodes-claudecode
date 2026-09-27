@@ -106,6 +106,13 @@ const LAST_EXECUTION_ID =
 	"const r = db.prepare('SELECT id FROM execution_entity WHERE workflowId = ? ORDER BY id DESC LIMIT 1').get(process.argv[1]);" +
 	"console.log(r ? r.id : '');";
 
+// Each node's stored typeVersion, so a verdict can name the version a case actually ran.
+const NODE_VERSIONS =
+	"const { DatabaseSync } = require('node:sqlite');" +
+	"const db = new DatabaseSync('/home/node/.n8n/database.sqlite', { readOnly: true });" +
+	"const r = db.prepare('SELECT nodes FROM workflow_entity WHERE id = ?').get(process.argv[1]);" +
+	"console.log(JSON.stringify(Object.fromEntries((r ? JSON.parse(r.nodes) : []).map((n) => [n.name, n.typeVersion]))));";
+
 for (const { id, name } of ids) {
 	if (name.startsWith('case84a')) {
 		const reset = execFileSync('docker', ['exec', CONTAINER, 'node', '-e', RESET_CASE84_SESSION], {
@@ -274,6 +281,16 @@ for (const { id, name } of ids) {
 	} catch {
 		executionId = null;
 	}
+	let typeVersions = {};
+	try {
+		typeVersions = JSON.parse(
+			execFileSync('docker', ['exec', CONTAINER, 'node', '-e', NODE_VERSIONS, id], {
+				encoding: 'utf8',
+			}),
+		);
+	} catch {
+		typeVersions = {};
+	}
 	const nodeError = cc?.error ?? parsed?.data?.resultData?.error ?? null;
 
 	// A credential that cannot authenticate never reaches an item or a node error: the CLI takes a
@@ -316,6 +333,7 @@ for (const { id, name } of ids) {
 		errorContextKeys: nodeError?.context ? Object.keys(nodeError.context).sort() : null,
 		errorContext: nodeError?.context ?? null,
 		executionId,
+		typeVersions,
 		toolRuns,
 		modelRuns,
 		nodeRuns,

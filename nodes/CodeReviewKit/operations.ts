@@ -5,10 +5,10 @@ import { validateAnchors } from './anchors';
 import { dedupe } from './dedupe';
 import { completeAddedLines, parseAddedLines, parseNumstat, truncatePatch } from './diff';
 import { fingerprintItems } from './fingerprint';
-import type { GitApi } from './git';
+import type { GitApi } from '../shared/git';
 import { parseAddedLinesParam, parseItemsParam } from './input';
 import type { KitParams } from './params';
-import { checkRef } from './refs';
+import { checkRef } from '../shared/gitRefs';
 
 export type KitDeps = {
 	git: (projectPath: string) => GitApi;

@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { runQuery, WRAP_UP_PROMPT, type RunInput } from '../nodes/ClaudeCode/runner';
+import {
+	runQuery,
+	SESSION_STATE_EVENTS_ENV,
+	WRAP_UP_PROMPT,
+	type RunInput,
+} from '../nodes/ClaudeCode/runner';
 import { createPromptStream } from '../nodes/ClaudeCode/promptStream';
 import { resolveGraceWindow } from '../nodes/ClaudeCode/timeout';
 import { createDebugLogger } from '../nodes/shared/debug';
+import { isSessionState } from '../nodes/shared/sdkMessage';
 import type { QueryOptions } from '../nodes/ClaudeCode/types';
 import { createFakeQuery } from './helpers/fakeQuery';
 import {
 	assistantText,
 	assistantTool,
 	init,
+	sessionState,
 	successResult,
 	taskNotified,
 	taskStarted,
@@ -38,6 +45,8 @@ type RunOpts = {
 	grace?: number;
 	appliedEffort?: string;
 	pendingTasksKeepRunOpen?: boolean;
+	options?: Record<string, unknown>;
+	endsWhenInputCloses?: boolean;
 };
 
 async function run(opts: RunOpts) {
@@ -48,10 +57,18 @@ async function run(opts: RunOpts) {
 		hang: opts.hang,
 		interruptThrows: opts.interruptThrows,
 		throwAfter: opts.throwAfter,
+		endsWhenInputCloses: opts.endsWhenInputCloses,
 		// A hanging stream has to end when the hard timer aborts, exactly as the SDK's would.
 		abortSignal: abortController.signal,
 	});
 	const promptStream = createPromptStream('go');
+	// How many messages had arrived when the runner first closed the input stream.
+	let closedAt: number | null = null;
+	const close = promptStream.close;
+	promptStream.close = () => {
+		closedAt ??= messages.length;
+		close();
+	};
 	const pushed: string[] = [];
 	const push = promptStream.push;
 	promptStream.push = (text) => {
@@ -60,7 +77,7 @@ async function run(opts: RunOpts) {
 	};
 	const messages: SDKMessage[] = [];
 	const input: RunInput = {
-		queryOptions: { prompt: promptStream.stream, options: {} } as QueryOptions,
+		queryOptions: { prompt: promptStream.stream, options: opts.options ?? {} } as QueryOptions,
 		graceWindow: resolveGraceWindow(opts.timeout ?? 1, opts.grace ?? 0),
 		promptStream,
 		abortController,
@@ -73,7 +90,7 @@ async function run(opts: RunOpts) {
 			: { pendingTasksKeepRunOpen: opts.pendingTasksKeepRunOpen }),
 	};
 	const outcome = await runQuery(input);
-	return { outcome, record, abortController, promptStream, pushed };
+	return { outcome, record, abortController, promptStream, pushed, closedAt: () => closedAt };
 }
 
 describe('runQuery — a run that finishes on its own', () => {
@@ -347,5 +364,166 @@ describe('runQuery — a result while background subagents are still running', (
 		const iterator = promptStream.stream[Symbol.asyncIterator]();
 		assert.equal((await iterator.next()).done, false, 'the initial prompt');
 		assert.equal((await iterator.next()).done, true, 'then closed');
+	});
+});
+
+// A subagent that reports before the turn's result makes the CLI run one more turn to deliver the
+// notification. Closing the input at the first result cancels that turn's tool calls — measured:
+// its StructuredOutput came back "The user doesn't want to take this action right now".
+describe('runQuery — session-state events decide when the run is over', () => {
+	// The events decide the close and are not kept, so a close is counted in kept messages.
+	const kept = (messages: SDKMessage[]) => messages.filter((m) => !isSessionState(m)).length;
+	const optionsOf = (record: { calls: unknown[] }) =>
+		(record.calls[0] as { options: Record<string, unknown> }).options;
+
+	it('with pendingTasksKeepRunOpen, asks the CLI for them in settings, keeping what is there', async () => {
+		const { record } = await run({
+			pendingTasksKeepRunOpen: true,
+			options: { settings: { ultracode: true, env: { KEEP: 'x' } }, maxTurns: 3 },
+			messages: [init(), successResult()],
+		});
+		const options = optionsOf(record);
+		assert.deepEqual(options.settings, {
+			ultracode: true,
+			env: { KEEP: 'x', [SESSION_STATE_EVENTS_ENV]: '1' },
+		});
+		assert.equal(options.maxTurns, 3);
+		assert.equal(options.env, undefined, 'Options.env replaces the environment; never set here');
+	});
+
+	it('are neither kept in messages nor handed to onMessage', async () => {
+		const stream = [sessionState('running'), init(), successResult(), sessionState('idle')];
+		const { fake } = createFakeQuery({ messages: stream });
+		const promptStream = createPromptStream('go');
+		const seen: SDKMessage[] = [];
+		const outcome = await runQuery({
+			queryOptions: { prompt: promptStream.stream, options: {} } as QueryOptions,
+			graceWindow: resolveGraceWindow(1, 0),
+			promptStream,
+			abortController: new AbortController(),
+			query: fake,
+			debug: silent,
+			messages: [],
+			onMessage: (m) => seen.push(m),
+			pendingTasksKeepRunOpen: true,
+		});
+		assert.deepEqual(
+			outcome.messages.map((m) => (m as { subtype?: string }).subtype),
+			['init', 'success'],
+		);
+		assert.deepEqual(seen, outcome.messages);
+	});
+
+	it('without it, the options are not touched', async () => {
+		const { record } = await run({ messages: [init(), successResult()] });
+		assert.equal(optionsOf(record).settings, undefined);
+	});
+
+	it('a settings file path is left alone', async () => {
+		const { record } = await run({
+			pendingTasksKeepRunOpen: true,
+			options: { settings: '/etc/claude.json' },
+			messages: [init(), successResult()],
+		});
+		assert.equal(optionsOf(record).settings, '/etc/claude.json');
+	});
+
+	// The stream hangs until the input closes or the hard timer aborts, the way the CLI does, so
+	// a run that ends without timing out is one the runner closed.
+	const untilClosed = (messages: SDKMessage[]) =>
+		run({ pendingTasksKeepRunOpen: true, messages, hang: true, endsWhenInputCloses: true });
+
+	it('idle after a result with no subagent out closes the input and ends the run', async () => {
+		const messages = [sessionState('running'), init(), successResult(), sessionState('idle')];
+		const { outcome, closedAt } = await untilClosed(messages);
+		assert.equal(outcome.timedOut, false);
+		assert.equal(closedAt(), kept(messages));
+	});
+
+	it('a notification that arrived before the result keeps the input open until idle', async () => {
+		const messages = [
+			sessionState('running'),
+			init(),
+			assistantTool('Agent'),
+			taskStarted('t1'),
+			taskNotified('t1'),
+			successResult({ result: 'Waiting for it.' }),
+			init(),
+			assistantTool('StructuredOutput'),
+			successResult({ result: 'Delivered.' }),
+			sessionState('idle'),
+		];
+		const { outcome, closedAt } = await untilClosed(messages);
+		assert.equal(outcome.timedOut, false);
+		assert.equal(closedAt(), kept(messages), 'closed on idle, not on the first result');
+	});
+
+	it('idle while a subagent is still running does not end the run; the next idle does', async () => {
+		const messages = [
+			sessionState('running'),
+			init(),
+			taskStarted('t1'),
+			successResult({ result: 'Waiting for it.' }),
+			sessionState('idle'),
+			taskNotified('t1'),
+			sessionState('running'),
+			successResult({ result: 'Done.' }),
+			sessionState('idle'),
+		];
+		const { outcome, closedAt } = await untilClosed(messages);
+		assert.equal(outcome.timedOut, false);
+		assert.equal(closedAt(), kept(messages));
+	});
+
+	it('idle before any result does not close the input', async () => {
+		const { outcome } = await untilClosed([
+			sessionState('running'),
+			init(),
+			assistantTool('Read'),
+			sessionState('idle'),
+		]);
+		assert.equal(outcome.timedOut, true);
+		assert.equal(outcome.terminationReason, 'timeout_hard_abort');
+	});
+
+	it('a result followed by running is a new turn, and keeps the input open', async () => {
+		const { outcome } = await untilClosed([
+			sessionState('running'),
+			init(),
+			successResult({ result: 'Waiting for it.' }),
+			sessionState('running'),
+			init(),
+			assistantTool('StructuredOutput'),
+		]);
+		assert.equal(outcome.timedOut, true);
+		assert.equal(outcome.messages.length, 4, 'the new turn arrived');
+	});
+
+	it('an idle after the interrupt does not cut off the wrap-up summary', async () => {
+		const { outcome, closedAt } = await run({
+			pendingTasksKeepRunOpen: true,
+			hang: true,
+			messages: [sessionState('running'), init(), assistantTool('Read')],
+			afterInterrupt: [successResult(), sessionState('idle'), wrapUpResult, sessionState('idle')],
+			timeout: 2,
+			grace: 1,
+		});
+		assert.equal(outcome.wrapUpSucceeded, true);
+		assert.equal(closedAt(), 4, 'closed at the summary, the second result after the interrupt');
+	});
+
+	it('without pendingTasksKeepRunOpen, the first result still closes the input', async () => {
+		const messages = [
+			sessionState('running'),
+			init(),
+			taskStarted('t1'),
+			taskNotified('t1'),
+			successResult(),
+			init(),
+			successResult(),
+			sessionState('idle'),
+		];
+		const { closedAt } = await run({ messages, timeout: 2 });
+		assert.equal(closedAt(), 5);
 	});
 });

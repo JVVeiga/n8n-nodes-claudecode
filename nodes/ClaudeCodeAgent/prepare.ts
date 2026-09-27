@@ -1,5 +1,6 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import type { AuthSelection } from '../shared/auth';
+import type { RefReader } from '../shared/git';
 import type { Problem } from '../shared/problem';
 import { checkProjectPath } from '../shared/projectPath';
 import { readAuth } from '../shared/readAuth';
@@ -7,7 +8,7 @@ import { toSessionUuid } from '../shared/session';
 import { checkPrompt } from '../ClaudeCode/params';
 import type { ClaudeCodeParams } from '../ClaudeCode/types';
 import { checkToolNames, readConnections, type AgentConnections } from './connections';
-import { readInstructions, type Instructions } from './instructions';
+import { loadInstructions, type Instructions } from './instructions';
 import { resolveOutputSchema } from './outputSchema';
 import type { AgentExtras } from './params';
 import { buildSubagents, type Subagents } from './subagents';
@@ -30,6 +31,7 @@ export async function prepareAgentRun(
 	itemIndex: number,
 	params: ClaudeCodeParams,
 	agent: AgentExtras,
+	openRef: (projectPath: string) => RefReader,
 ): Promise<PreparedAgent | { problem: Problem }> {
 	const promptProblem = checkPrompt(params.prompt);
 	if (promptProblem) return { problem: promptProblem };
@@ -65,7 +67,12 @@ export async function prepareAgentRun(
 
 	const instructions =
 		agent.instructionFiles.length > 0
-			? readInstructions(params.projectPath, agent.instructionFiles)
+			? await loadInstructions(
+					params.projectPath.trim(),
+					agent.instructionFiles,
+					agent.instructionFilesRef,
+					openRef,
+				)
 			: null;
 	if (instructions && 'problem' in instructions) return instructions;
 

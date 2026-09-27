@@ -170,7 +170,7 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 			default: 0,
 			typeOptions: { minValue: 0, numberPrecision: 4 },
 			description:
-				'Hard spend cap for a single run. The query stops once it is exceeded and returns an error result. Set to 0 to disable. Max Turns and Timeout bound length, not cost.',
+				'Spend limit for a single run, checked between turns: once it is exceeded the run stops with an error result, but the turn in progress finishes first and can go past it. Timeout and Max Turns are the hard limits. Set to 0 to disable.',
 		},
 		{
 			displayName: 'Fallback Model',

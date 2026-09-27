@@ -186,7 +186,7 @@ describe('normalizeWindows', () => {
 const TEAM_INIT = {
 	account: {
 		email: 'someone@example.com',
-		organization: 'Gaudium',
+		organization: 'Acme',
 		subscriptionType: 'Claude Team',
 		apiProvider: 'firstParty',
 	},
@@ -205,7 +205,7 @@ describe('normalizeAccount', () => {
 		const account = normalizeAccount(TEAM_INIT);
 
 		assert.equal('email' in account, false);
-		assert.equal(account.organization, 'Gaudium');
+		assert.equal(account.organization, 'Acme');
 		assert.equal(account.apiProvider, 'firstParty');
 	});
 
@@ -407,7 +407,7 @@ describe('normalizeUsage', () => {
 		assert.equal(report.unsupported, true);
 		assert.equal(report.rateLimitsAvailable, false);
 		assert.deepEqual(report.windows, []);
-		assert.equal(report.account.organization, 'Gaudium');
+		assert.equal(report.account.organization, 'Acme');
 	});
 
 	it('omits limitsRaw unless it was asked for', () => {

@@ -8,7 +8,7 @@ import { NodeOperationError } from 'n8n-workflow';
 import type { Problem } from '../shared/problem';
 import { isDirectory } from '../shared/projectPath';
 import { codeReviewKitDescription } from './description';
-import { createGit } from './git';
+import { createGit } from '../shared/git';
 import { runOperation, type KitDeps } from './operations';
 import { readKitParams } from './params';
 

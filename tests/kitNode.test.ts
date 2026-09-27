@@ -6,7 +6,7 @@ import { NodeOperationError, type IDataObject, type INodeProperties } from 'n8n-
 import { runKitItems } from '../nodes/CodeReviewKit/CodeReviewKit.node';
 import { codeReviewKitDescription } from '../nodes/CodeReviewKit/description';
 import { fingerprint, normalizeSnippet, splitLines } from '../nodes/CodeReviewKit/fingerprint';
-import type { GitApi, GitResult } from '../nodes/CodeReviewKit/git';
+import type { GitApi, GitResult } from '../nodes/shared/git';
 import { createFakeContext, type ParamMap } from './helpers/executeFunctions';
 
 const REPO = process.cwd();

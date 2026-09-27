@@ -4,7 +4,7 @@ import {
 	isTaskStarted,
 	type TaskNotificationMessage,
 } from '../shared/sdkMessage';
-import type { SubagentInvocation } from '../shared/subagent';
+import type { SubagentInvocation, SuppliedSubagent } from '../shared/subagent';
 import { num, sum } from './values';
 
 // The CLI changes these fields between versions, so every read tolerates absence.
@@ -45,6 +45,8 @@ export function subagentInvocations(messages: SDKMessage[]): SubagentInvocation[
 
 export type SubagentDiagnostics = {
 	name: string;
+	/** The configured model; present only when the caller reports models. */
+	model?: string | null;
 	invocations: number;
 	completed: number;
 	/** Sums over the subagent's invocations; null when no invocation reported the figure. */
@@ -57,12 +59,14 @@ export type SubagentDiagnostics = {
 export function buildSubagentReport(
 	messages: SDKMessage[],
 	connectedNames: string[],
+	models?: Record<string, string | null>,
 ): SubagentDiagnostics[] {
 	const invocations = subagentInvocations(messages);
 	return connectedNames.map((name) => {
 		const own = invocations.filter((i) => i.name === name);
 		return {
 			name,
+			...(models ? { model: models[name] ?? null } : {}),
 			invocations: own.length,
 			completed: own.filter((i) => i.status === 'completed').length,
 			totalTokens: sum(own.map((i) => i.totalTokens)),
@@ -70,4 +74,20 @@ export function buildSubagentReport(
 			durationMs: sum(own.map((i) => i.durationMs)),
 		};
 	});
+}
+
+/**
+ * Each subagent's model as configured, `inherit` resolved to the Agent's. The CLI reports no
+ * per-subagent cost; when every subagent runs its own model, `modelUsage` separates it.
+ */
+export function subagentModels(
+	supplied: Array<Pick<SuppliedSubagent, 'name' | 'definition'>>,
+	agentModel: string,
+): Record<string, string | null> {
+	const models: Record<string, string | null> = {};
+	for (const s of supplied) {
+		const model = s.definition.model;
+		models[s.name] = model === 'inherit' ? agentModel : (model ?? null);
+	}
+	return models;
 }

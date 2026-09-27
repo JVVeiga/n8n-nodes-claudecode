@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { IDataObject } from 'n8n-workflow';
-import { findInit, lastResult } from '../../shared/sdkMessage';
+import { findInit, isResult, lastResult } from '../../shared/sdkMessage';
 
 /**
  * The `metrics` object — one builder, two consumers.
@@ -42,5 +42,47 @@ export function buildRunMetrics(messages: SDKMessage[], durationMs: number): IDa
 		// `usage.server_tool_use.web_search_requests` — and normalising here would silently drop
 		// whatever the SDK adds next.
 		session_id: result?.session_id ?? findInit(messages)?.session_id ?? null,
+	};
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Numbers add, objects merge key by key, arrays concatenate (each entry is one turn's own);
+ * anything else — a tier, a speed — is taken from the later result when it has one. */
+function addUsage(earlier: unknown, later: unknown): unknown {
+	if (later === undefined || later === null) return earlier ?? later;
+	if (earlier === undefined || earlier === null) return later;
+	if (typeof earlier === 'number' && typeof later === 'number') return earlier + later;
+	if (Array.isArray(earlier) && Array.isArray(later)) return [...earlier, ...later];
+	if (isPlainObject(earlier) && isPlainObject(later)) {
+		const sum: Record<string, unknown> = { ...earlier };
+		for (const [key, value] of Object.entries(later)) sum[key] = addUsage(earlier[key], value);
+		return sum;
+	}
+	return later;
+}
+
+const addReported = (values: Array<number | undefined>): number | null => {
+	const present = values.filter((v): v is number => typeof v === 'number');
+	return present.length ? present.reduce((a, b) => a + b, 0) : null;
+};
+
+/**
+ * `buildRunMetrics` over a run that wrote several results — one per turn when a background
+ * subagent's report starts a new one. In a streaming session `duration_ms`, `num_turns` and
+ * `usage` cover their own turn, so they are summed; `total_cost_usd`, `modelUsage` and the
+ * session id are cumulative and stay from the last. With one result the two are identical.
+ */
+export function buildSummedRunMetrics(messages: SDKMessage[], durationMs: number): IDataObject {
+	const results = messages.filter(isResult) as ResultLike[];
+	const last = buildRunMetrics(messages, durationMs);
+	if (results.length < 2) return last;
+	const usage = results.reduce<unknown>((sum, r) => addUsage(sum, r.usage), undefined);
+	return {
+		...last,
+		duration_ms: addReported(results.map((r) => r.duration_ms)) ?? durationMs,
+		num_turns: addReported(results.map((r) => r.num_turns)),
+		usage: (usage ?? null) as IDataObject | null,
 	};
 }

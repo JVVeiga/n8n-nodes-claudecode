@@ -3,3 +3,7 @@
 # `npm run format` break the test suite every time, and defeats the point of the fixture:
 # it is meant to be the node's output, not a prettified rendering of it.
 tests/fixtures/
+
+# The same kind of record for Claude Code Agent 1: tests/agentVersions.test.ts compares it
+# byte-for-byte.
+tests/agent-v1/

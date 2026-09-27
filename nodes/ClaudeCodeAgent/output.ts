@@ -4,11 +4,15 @@ import { buildDiagnostics, type DiagnosticsInput } from '../ClaudeCode/diagnosti
 import { buildV12Output } from '../ClaudeCode/output/v12';
 import { withFinalResultOnly } from '../shared/sdkMessage';
 import type { SessionState } from '../shared/session';
+import type { StructuredDeliveries } from './structured';
 import type { SubagentDiagnostics } from './subagentReport';
 
-export type InstructionsDiagnostics = { loaded: string[]; missing: string[] };
+export type InstructionsDiagnostics = { loaded: string[]; missing: string[]; ref?: string };
 
-export type StructuredOutputDiagnostics = { mode: string; attempts: number };
+export type StructuredOutputDiagnostics = {
+	mode: string;
+	attempts: number;
+} & Partial<StructuredDeliveries>;
 
 /** Each key is omitted, not null, when the run did not use the feature — the same conditional
  * spread as the shared `attachments` and `auth`, for the same reason. */

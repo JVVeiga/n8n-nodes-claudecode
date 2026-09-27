@@ -184,7 +184,7 @@ export const claudeCodeDescription: INodeTypeDescription = {
 			type: 'number',
 			default: 25,
 			description:
-				'Maximum number of conversation turns (back-and-forth exchanges) allowed. Complex tasks may require more turns.',
+				'Maximum number of conversation turns (back-and-forth exchanges) allowed. Complex tasks may require more turns. Set to 0 for no limit.',
 		},
 		{
 			displayName: 'Timeout',
