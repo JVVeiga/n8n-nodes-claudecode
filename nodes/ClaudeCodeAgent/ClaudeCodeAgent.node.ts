@@ -7,13 +7,14 @@ import type {
 } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
+import { buildSummedRunMetrics } from '../ClaudeCode/output/metrics';
 import { buildToolBridge } from '../shared/toolBridge';
 import { prepareAttachments } from '../ClaudeCode/attachments/prepare';
 import type { StagedAttachments } from '../ClaudeCode/attachments/types';
 import type { FailureContext } from '../ClaudeCode/errors';
 import { itemFailer, settle, settleCaught, type ItemFailer } from '../ClaudeCode/settle';
 import { claudeCodeAgentDescription } from './description';
-import { orchestrationInstruction } from './orchestration';
+import { orchestrationInstruction, unattendedInstruction } from './orchestration';
 import { buildAgentDiagnostics, buildAgentOutput } from './output';
 import { readAgentParams } from './params';
 import { prepareAgentRun } from './prepare';
@@ -23,8 +24,8 @@ import {
 	reportAttempts,
 	type AgentReporting,
 } from './report';
-import { extractStructured } from './structured';
-import { buildSubagentReport } from './subagentReport';
+import { extractStructured, structuredDeliveries } from './structured';
+import { buildSubagentReport, subagentModels } from './subagentReport';
 import { createTurnRunner, runMainTurn, settleMainRun, type Attempt } from './turn';
 import { runVerification } from './verification/run';
 
@@ -48,6 +49,8 @@ type ItemState = {
 	reporting: AgentReporting | null;
 	// Set only when a verification run happened: the item's one report then carries both runs.
 	verifiedMetrics: IDataObject | null;
+	/** Set when the node version counts metrics over every result rather than the last. */
+	metricsOf: ((messages: SDKMessage[], durationMs: number) => IDataObject) | null;
 };
 
 const failureOf = (item: ItemState, itemIndex: number): FailureContext => ({
@@ -57,6 +60,7 @@ const failureOf = (item: ItemState, itemIndex: number): FailureContext => ({
 	itemIndex,
 	timeoutSeconds: item.timeoutSeconds,
 	durationMs: item.durationMs,
+	...(item.metricsOf ? { metrics: item.metricsOf(item.messages, item.durationMs) } : {}),
 });
 
 export class ClaudeCodeAgent implements INodeType {
@@ -84,6 +88,7 @@ export async function runAgentItems(
 			attempts: [],
 			reporting: null,
 			verifiedMetrics: null,
+			metricsOf: null,
 		};
 		const fail = itemFailer(ctx, itemIndex);
 
@@ -115,6 +120,7 @@ async function runAgentItem(
 ): Promise<IDataObject> {
 	const { run: params, agent } = readAgentParams(ctx, itemIndex);
 	item.timeoutSeconds = params.timeoutSeconds;
+	if (agent.behaviour.sumsMetrics) item.metricsOf = buildSummedRunMetrics;
 	const debug = createDebugLogger(ctx.logger, params.additional.debug === true);
 
 	const prepared = await prepareAgentRun(ctx, itemIndex, params, agent);
@@ -126,12 +132,15 @@ async function runAgentItem(
 
 	const orchestration =
 		agent.orchestration === 'required' ? orchestrationInstruction(subagentNames) : null;
+	const unattended = agent.behaviour.tellsUnattended
+		? unattendedInstruction({ structured: schema !== null, subagents: subagentNames.length > 0 })
+		: null;
 	const attachments = await prepareAttachments(
 		ctx,
 		itemIndex,
 		params.attachments,
 		params.prompt,
-		orchestration ? [orchestration] : [],
+		[orchestration, unattended].filter((text): text is string => text !== null),
 	);
 	if ('problem' in attachments) {
 		throw fail(attachments.problem.message, attachments.problem.description);
@@ -177,6 +186,13 @@ async function runAgentItem(
 	logSubagentInvocations(subagents.supplied, item.attempts, debug);
 
 	const structuredOutcome = schema ? extractStructured(messages) : null;
+	const deliveries =
+		structuredOutcome && agent.behaviour.reportsDeliveries ? structuredDeliveries(messages) : null;
+	if (deliveries?.superseded) {
+		debug.log('Structured output superseded: a later delivery was rejected', {
+			rejections: deliveries.rejections,
+		});
+	}
 	const diagnostics = buildAgentDiagnostics({
 		messages,
 		params: session.attempt.params,
@@ -187,12 +203,20 @@ async function runAgentItem(
 		extra: {
 			bridgedTools: bridge?.toolNames,
 			subagents:
-				subagentNames.length > 0 ? buildSubagentReport(messages, subagentNames) : undefined,
+				subagentNames.length > 0
+					? buildSubagentReport(
+							messages,
+							subagentNames,
+							agent.behaviour.reportsSubagentModels
+								? subagentModels(subagents.supplied, params.model)
+								: undefined,
+						)
+					: undefined,
 			instructions: instructions
 				? { loaded: instructions.loaded, missing: instructions.missing }
 				: undefined,
 			structuredOutput: structuredOutcome
-				? { mode: agent.outputMode, attempts: structuredOutcome.attempts }
+				? { mode: agent.outputMode, attempts: structuredOutcome.attempts, ...deliveries }
 				: undefined,
 			sessionState: sessionUuid ? session.state : undefined,
 		},
@@ -218,6 +242,7 @@ async function runAgentItem(
 			durationMs: item.durationMs,
 			timeoutSeconds: params.timeoutSeconds,
 			runTurn,
+			metricsOf: item.metricsOf ?? undefined,
 			onAttempt: (attempt) => logSubagentInvocations(subagents.supplied, [attempt], debug),
 			debug,
 		});
@@ -232,7 +257,11 @@ async function runAgentItem(
 		durationMs: item.durationMs,
 		includeTranscript: agent.includeTranscript,
 		...(structured === undefined ? {} : { structured }),
-		...(item.verifiedMetrics ? { metrics: item.verifiedMetrics } : {}),
+		...(item.verifiedMetrics
+			? { metrics: item.verifiedMetrics }
+			: item.metricsOf
+				? { metrics: item.metricsOf(messages, item.durationMs) }
+				: {}),
 		...(verification ? { verification } : {}),
 	});
 }

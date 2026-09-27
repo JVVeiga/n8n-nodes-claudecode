@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildSubagentReport, subagentInvocations } from '../nodes/ClaudeCodeAgent/subagentReport';
+import {
+	buildSubagentReport,
+	subagentInvocations,
+	subagentModels,
+} from '../nodes/ClaudeCodeAgent/subagentReport';
 import { countSubagentToolUses } from '../nodes/shared/sdkMessage';
 import { assistantTool, init, msg, SESSION } from './helpers/sdkMessages';
 
@@ -232,5 +236,38 @@ describe('countSubagentToolUses', () => {
 
 	it('is zero for a run without subagents', () => {
 		assert.equal(countSubagentToolUses([init(), assistantTool('Read')]), 0);
+	});
+});
+
+describe('subagent models', () => {
+	const supplied = (name: string, model?: string) => ({
+		name,
+		definition: { description: 'd', prompt: 'p', ...(model === undefined ? {} : { model }) },
+	});
+
+	it('resolves inherit to the Agent’s model and keeps an explicit one', () => {
+		assert.deepEqual(
+			subagentModels([supplied('alpha', 'inherit'), supplied('beta', 'haiku')], 'opus'),
+			{ alpha: 'opus', beta: 'haiku' },
+		);
+	});
+
+	it('a subagent with no model is reported as unknown', () => {
+		assert.deepEqual(subagentModels([supplied('alpha')], 'opus'), { alpha: null });
+	});
+
+	it('given models, each entry names its model right after its name', () => {
+		const [alpha, gamma] = buildSubagentReport(recordedRun(), ['alpha', 'gamma'], {
+			alpha: 'sonnet',
+		});
+		assert.deepEqual(Object.keys(alpha).slice(0, 2), ['name', 'model']);
+		assert.equal(alpha.model, 'sonnet');
+		assert.equal(gamma.model, null);
+	});
+
+	it('without models, no entry has the key', () => {
+		for (const entry of buildSubagentReport(recordedRun(), ['alpha', 'beta'])) {
+			assert.equal('model' in entry, false);
+		}
 	});
 });

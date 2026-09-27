@@ -46,7 +46,13 @@ export function hasPendingSubagentTask(messages: SDKMessage[]): boolean {
 
 /** A content block, described structurally: the SDK's own block union is wider than any one
  * consumer needs, and every field here is optional in at least one variant. */
-export type ContentBlock = { type?: string; name?: string; text?: string; thinking?: string };
+export type ContentBlock = {
+	type?: string;
+	id?: string;
+	name?: string;
+	text?: string;
+	thinking?: string;
+};
 
 export const contentOf = (m: AssistantMessage): ContentBlock[] => {
 	const content = m.message?.content;
@@ -115,3 +121,56 @@ export const countToolUses = (messages: SDKMessage[], name: string): number =>
 /** The CLI invokes subagents through a tool named `Agent` while listing it as `Task` in init. */
 export const countSubagentToolUses = (messages: SDKMessage[]): number =>
 	countContent(messages, (c) => c.type === 'tool_use' && (c.name === 'Agent' || c.name === 'Task'));
+
+/** A block of a user turn, described structurally for the same reason as `ContentBlock`. */
+type UserBlock = { type?: string; tool_use_id?: string; is_error?: boolean; content?: unknown };
+
+const userContentOf = (m: UserMessage): UserBlock[] => {
+	const content = m.message?.content;
+	return Array.isArray(content) ? (content as UserBlock[]) : [];
+};
+
+/** A tool result's content is a string or a list of blocks; only the text blocks carry words. */
+const toolResultText = (content: unknown): string => {
+	if (typeof content === 'string') return content;
+	if (!Array.isArray(content)) return '';
+	return content
+		.map((block: { type?: string; text?: unknown }) =>
+			block?.type === 'text' && typeof block.text === 'string' ? block.text : '',
+		)
+		.filter((text) => text !== '')
+		.join('\n');
+};
+
+export type ToolCall = {
+	/** Index of the assistant message that made the call. */
+	position: number;
+	/** Null while no result with its `tool_use_id` has come back. */
+	outcome: { isError: boolean; text: string } | null;
+};
+
+/** Every call of the named tool, in order, paired by `tool_use_id` with the result it got. */
+export function toolCalls(messages: SDKMessage[], name: string): ToolCall[] {
+	const results = new Map<string, { isError: boolean; text: string }>();
+	for (const m of messages) {
+		if (!isUser(m)) continue;
+		for (const block of userContentOf(m)) {
+			if (block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue;
+			results.set(block.tool_use_id, {
+				isError: block.is_error === true,
+				text: toolResultText(block.content),
+			});
+		}
+	}
+
+	const calls: ToolCall[] = [];
+	messages.forEach((m, position) => {
+		if (!isAssistant(m)) return;
+		for (const block of contentOf(m)) {
+			if (block.type !== 'tool_use' || block.name !== name) continue;
+			const outcome = typeof block.id === 'string' ? (results.get(block.id) ?? null) : null;
+			calls.push({ position, outcome });
+		}
+	});
+	return calls;
+}

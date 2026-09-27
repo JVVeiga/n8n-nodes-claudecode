@@ -11,3 +11,16 @@ export function orchestrationInstruction(names: string[]): string | null {
 		'Base your final answer on their results.'
 	);
 }
+
+const UNATTENDED =
+	'This run is unattended: nobody reads this conversation or answers questions. Make the ' +
+	'decisions yourself and deliver the result; never end with a question or a list of options.';
+
+const DELIVER_ONCE =
+	'Deliver the structured output once, after every subagent you started has reported back. A ' +
+	'rejected delivery comes back with the validator’s reason: fix what it names and send it again.';
+
+/** The last text of the user turn. Per request, so the user turn rather than the system prompt. */
+export function unattendedInstruction(run: { structured: boolean; subagents: boolean }): string {
+	return run.structured && run.subagents ? `${UNATTENDED} ${DELIVER_ONCE}` : UNATTENDED;
+}

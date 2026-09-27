@@ -118,7 +118,8 @@ nodes/
     output/
       resultText.ts            "what does this run say" — the six-rung fallback ladder
       legacy.ts                FROZEN typeVersion 1 / 1.1 shapes
-      metrics.ts               the `metrics` object — v1.2 output and every sub-node report
+      metrics.ts               the `metrics` object — v1.2 output and every sub-node report;
+                               also the summed variant Agent 1.1 uses
       v12.ts                   the 1.2 unified envelope
       index.ts                 buildOutputItem — routes by typeVersion
     errors.ts                  the four failure paths, as data
@@ -160,9 +161,10 @@ nodes/
     connections.ts             the ONLY getInputConnectionData reader: tools, subagents, parser
     subagents.ts               supplied subagents -> the SDK's agents record, sorted; duplicates fail
     subagentReport.ts          task_started/task_notification -> diagnostics.subagents (pure)
-    orchestration.ts           the Required-mode line appended to the user turn
+    orchestration.ts           the lines appended to the user turn: Required mode, unattended
     outputSchema.ts            Output Mode + pasted schema or parser -> the schema sent (unwraps)
-    structured.ts              SDKMessage[] -> the object, or why there is none (both failures)
+    structured.ts              SDKMessage[] -> the object, or why there is none (both failures);
+                               what became of each delivery
     instructions.ts            Instruction Files -> the append text; the only file reader here
     output.ts                  the 1.2 envelope + structured/verification, from the LAST result;
                                the Agent-only diagnostics fields
@@ -373,6 +375,12 @@ it was created with, so raising `defaultVersion` only affects newly added nodes.
 The Chat Model and the Task Tool got the same final-result change as their **1.1** (current
 default; 1 unchanged). Every version gate reads `nodeVersion` in params.ts
 (`answersFromFinalResult`, `subNodeAnswersFromFinalResult`), never a schema default.
+
+The Claude Code Agent has versions of its own. **1.1** (current default) sums `duration_ms`,
+`num_turns` and `usage` over every result of the run, reports each structured delivery (`accepted`,
+`rejected`, `rejections`, `superseded`) and each subagent's `model`, and ends the user turn saying
+nobody is there to answer. 1 is unchanged, held byte-for-byte by `tests/agent-v1/`. The gate is
+`agentBehaviour` in its params.ts.
 
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
 an existing version emits**; add a new one.

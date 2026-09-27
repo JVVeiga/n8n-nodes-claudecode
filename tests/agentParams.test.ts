@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+	agentBehaviour,
 	parseInstructionFiles,
 	readAgentParams,
 	resolveAgentAttachAll,
@@ -112,7 +113,27 @@ describe('readAgentParams — the Agent’s own settings', () => {
 			usageWorkflowId: '',
 			processName: '',
 			verification: null,
+			behaviour: {
+				sumsMetrics: false,
+				reportsDeliveries: false,
+				reportsSubagentModels: false,
+				tellsUnattended: false,
+			},
 		});
+	});
+
+	it('version 1.1 turns on every behaviour it introduced; version 1 keeps none of them', () => {
+		const at = (typeVersion: number) =>
+			readAgentParams(createFakeContext({ typeVersion, params: agentParams() }).ctx, 0).agent
+				.behaviour;
+		assert.deepEqual(at(1.1), {
+			sumsMetrics: true,
+			reportsDeliveries: true,
+			reportsSubagentModels: true,
+			tellsUnattended: true,
+		});
+		assert.deepEqual(agentBehaviour(1), at(1));
+		assert.equal(Object.values(at(1)).some(Boolean), false);
 	});
 
 	it('reads each setting', () => {

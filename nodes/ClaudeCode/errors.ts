@@ -34,6 +34,8 @@ export type FailureContext = {
 	itemIndex: number;
 	timeoutSeconds: number;
 	durationMs: number;
+	/** Metrics the caller already built, when it counts a run differently from the last result. */
+	metrics?: IDataObject;
 };
 
 type ResultLike = {
@@ -146,7 +148,7 @@ export function buildStructuredFailureItem(ctx: FailureContext, errorMessage: st
 		error: errorMessage,
 		errorType: 'structured_output',
 		itemIndex: ctx.itemIndex,
-		metrics: buildRunMetrics(ctx.messages, ctx.durationMs),
+		metrics: ctx.metrics ?? buildRunMetrics(ctx.messages, ctx.durationMs),
 		diagnostics: ctx.diagnostics,
 	}) as IDataObject;
 }

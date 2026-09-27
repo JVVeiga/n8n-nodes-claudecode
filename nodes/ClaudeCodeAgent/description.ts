@@ -164,7 +164,10 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	name: 'claudeCodeAgent',
 	icon: 'file:claudecode.svg',
 	group: ['transform'],
-	version: 1,
+	// 1.1: metrics summed over every result, structured deliveries and subagent models reported,
+	// and the user turn says nobody is there to answer.
+	version: [1, 1.1],
+	defaultVersion: 1.1,
 	subtitle:
 		'={{$parameter["model"] + ($parameter["outputMode"] === "jsonSchema" ? " · Schema" : $parameter["outputMode"] === "outputParser" ? " · Parser" : "") + ($parameter["verification"] && $parameter["verification"].enabled ? " · Verify" : "")}}',
 	description:

@@ -1,0 +1,200 @@
+{
+  "items": [
+    {
+      "json": {
+        "result": "The consolidated review cannot fit the schema. Should I drop the finding?",
+        "success": true,
+        "errorText": "",
+        "metrics": {
+          "duration_ms": 2500,
+          "num_turns": 2,
+          "total_cost_usd": 0.05,
+          "usage": {
+            "input_tokens": 4,
+            "output_tokens": 60,
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 3,
+              "ephemeral_5m_input_tokens": 1
+            },
+            "server_tool_use": {
+              "web_search_requests": 1
+            },
+            "service_tier": "standard"
+          },
+          "modelUsage": {
+            "claude-sonnet-5": {
+              "inputTokens": 4,
+              "outputTokens": 486,
+              "cacheReadInputTokens": 65361,
+              "cacheCreationInputTokens": 23578,
+              "webSearchRequests": 0,
+              "costUSD": 0.04,
+              "contextWindow": 1000000,
+              "maxOutputTokens": 64000
+            },
+            "claude-haiku-5": {
+              "inputTokens": 4,
+              "outputTokens": 486,
+              "cacheReadInputTokens": 65361,
+              "cacheCreationInputTokens": 23578,
+              "webSearchRequests": 0,
+              "costUSD": 0.01,
+              "contextWindow": 1000000,
+              "maxOutputTokens": 64000
+            }
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        "diagnostics": {
+          "requestedModel": "sonnet",
+          "resolvedModel": "claude-sonnet-5",
+          "modelsUsed": [
+            "claude-sonnet-5",
+            "claude-haiku-5"
+          ],
+          "fallbackModelRequested": null,
+          "requestedEffort": "high",
+          "effectiveEffort": "high",
+          "appliedEffort": null,
+          "permissionMode": "bypassPermissions",
+          "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+          "ultracodeRequested": false,
+          "workflowToolAvailable": false,
+          "workflowToolUses": 0,
+          "subagentToolUses": 1,
+          "thinkingRequested": "default",
+          "thinkingBlocks": 0,
+          "subagents": [
+            {
+              "name": "alpha",
+              "invocations": 1,
+              "completed": 1,
+              "totalTokens": 100,
+              "toolUses": 1,
+              "durationMs": 500
+            },
+            {
+              "name": "beta",
+              "invocations": 0,
+              "completed": 0,
+              "totalTokens": null,
+              "toolUses": null,
+              "durationMs": null
+            }
+          ],
+          "structuredOutput": {
+            "mode": "jsonSchema",
+            "attempts": 3
+          }
+        },
+        "structured": {
+          "findings": [
+            {
+              "line": 3,
+              "body": "quick"
+            }
+          ]
+        }
+      },
+      "pairedItem": {
+        "item": 0
+      }
+    }
+  ],
+  "turns": [
+    [
+      "Review the change."
+    ]
+  ],
+  "reports": [
+    {
+      "process_name": "Claude Code Agent",
+      "run_key": "exec-1:Claude Code Agent:0:0:1",
+      "caller_workflow_id": "wf-1",
+      "caller_execution_id": "exec-1",
+      "node_name": "Claude Code Agent",
+      "metrics": {
+        "duration_ms": 2500,
+        "num_turns": 2,
+        "total_cost_usd": 0.05,
+        "usage": {
+          "input_tokens": 4,
+          "output_tokens": 60,
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3,
+            "ephemeral_5m_input_tokens": 1
+          },
+          "server_tool_use": {
+            "web_search_requests": 1
+          },
+          "service_tier": "standard"
+        },
+        "modelUsage": {
+          "claude-sonnet-5": {
+            "inputTokens": 4,
+            "outputTokens": 486,
+            "cacheReadInputTokens": 65361,
+            "cacheCreationInputTokens": 23578,
+            "webSearchRequests": 0,
+            "costUSD": 0.04,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000
+          },
+          "claude-haiku-5": {
+            "inputTokens": 4,
+            "outputTokens": 486,
+            "cacheReadInputTokens": 65361,
+            "cacheCreationInputTokens": 23578,
+            "webSearchRequests": 0,
+            "costUSD": 0.01,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000
+          }
+        },
+        "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+      },
+      "diagnostics": {
+        "requestedModel": "sonnet",
+        "resolvedModel": "claude-sonnet-5",
+        "modelsUsed": [
+          "claude-sonnet-5",
+          "claude-haiku-5"
+        ],
+        "fallbackModelRequested": null,
+        "requestedEffort": "high",
+        "effectiveEffort": "high",
+        "appliedEffort": null,
+        "permissionMode": "bypassPermissions",
+        "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+        "ultracodeRequested": false,
+        "workflowToolAvailable": false,
+        "workflowToolUses": 0,
+        "subagentToolUses": 1,
+        "thinkingRequested": "default",
+        "thinkingBlocks": 0,
+        "subagents": [
+          {
+            "name": "alpha",
+            "invocations": 1,
+            "completed": 1,
+            "totalTokens": 100,
+            "toolUses": 1,
+            "durationMs": 500
+          },
+          {
+            "name": "beta",
+            "invocations": 0,
+            "completed": 0,
+            "totalTokens": null,
+            "toolUses": null,
+            "durationMs": null
+          }
+        ],
+        "structuredOutput": {
+          "mode": "jsonSchema",
+          "attempts": 3
+        }
+      }
+    }
+  ]
+}

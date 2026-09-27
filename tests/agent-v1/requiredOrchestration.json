@@ -1,0 +1,155 @@
+{
+  "items": [
+    {
+      "json": {
+        "result": "pong",
+        "success": true,
+        "errorText": "",
+        "metrics": {
+          "duration_ms": 4821,
+          "num_turns": 2,
+          "total_cost_usd": 0.0412,
+          "usage": {
+            "input_tokens": 12,
+            "output_tokens": 47
+          },
+          "modelUsage": {
+            "claude-sonnet-5": {
+              "inputTokens": 4,
+              "outputTokens": 47,
+              "cacheReadInputTokens": 65361,
+              "cacheCreationInputTokens": 23578,
+              "webSearchRequests": 0,
+              "costUSD": 0.0412,
+              "contextWindow": 1000000,
+              "maxOutputTokens": 64000
+            }
+          },
+          "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+        },
+        "diagnostics": {
+          "requestedModel": "sonnet",
+          "resolvedModel": "claude-sonnet-5",
+          "modelsUsed": [
+            "claude-sonnet-5"
+          ],
+          "fallbackModelRequested": null,
+          "requestedEffort": "high",
+          "effectiveEffort": "high",
+          "appliedEffort": null,
+          "permissionMode": "bypassPermissions",
+          "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+          "ultracodeRequested": false,
+          "workflowToolAvailable": true,
+          "workflowToolUses": 0,
+          "subagentToolUses": 0,
+          "thinkingRequested": "default",
+          "thinkingBlocks": 0,
+          "subagents": [
+            {
+              "name": "alpha",
+              "invocations": 0,
+              "completed": 0,
+              "totalTokens": null,
+              "toolUses": null,
+              "durationMs": null
+            },
+            {
+              "name": "beta",
+              "invocations": 0,
+              "completed": 0,
+              "totalTokens": null,
+              "toolUses": null,
+              "durationMs": null
+            }
+          ]
+        }
+      },
+      "pairedItem": {
+        "item": 0
+      }
+    }
+  ],
+  "turns": [
+    [
+      [
+        {
+          "type": "text",
+          "text": "Review the change."
+        },
+        {
+          "type": "text",
+          "text": "Before writing your final answer, delegate to EVERY one of these subagents, each at least once:\n- alpha\n- beta\nBase your final answer on their results."
+        }
+      ]
+    ]
+  ],
+  "reports": [
+    {
+      "process_name": "Claude Code Agent",
+      "run_key": "exec-1:Claude Code Agent:0:0:1",
+      "caller_workflow_id": "wf-1",
+      "caller_execution_id": "exec-1",
+      "node_name": "Claude Code Agent",
+      "metrics": {
+        "duration_ms": 4821,
+        "num_turns": 2,
+        "total_cost_usd": 0.0412,
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 47
+        },
+        "modelUsage": {
+          "claude-sonnet-5": {
+            "inputTokens": 4,
+            "outputTokens": 47,
+            "cacheReadInputTokens": 65361,
+            "cacheCreationInputTokens": 23578,
+            "webSearchRequests": 0,
+            "costUSD": 0.0412,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000
+          }
+        },
+        "session_id": "1e76098f-2bf5-424d-9694-d1feab1cfc12"
+      },
+      "diagnostics": {
+        "requestedModel": "sonnet",
+        "resolvedModel": "claude-sonnet-5",
+        "modelsUsed": [
+          "claude-sonnet-5"
+        ],
+        "fallbackModelRequested": null,
+        "requestedEffort": "high",
+        "effectiveEffort": "high",
+        "appliedEffort": null,
+        "permissionMode": "bypassPermissions",
+        "sessionId": "1e76098f-2bf5-424d-9694-d1feab1cfc12",
+        "ultracodeRequested": false,
+        "workflowToolAvailable": true,
+        "workflowToolUses": 0,
+        "subagentToolUses": 0,
+        "thinkingRequested": "default",
+        "thinkingBlocks": 0,
+        "subagents": [
+          {
+            "name": "alpha",
+            "invocations": 0,
+            "completed": 0,
+            "totalTokens": null,
+            "toolUses": null,
+            "durationMs": null
+          },
+          {
+            "name": "beta",
+            "invocations": 0,
+            "completed": 0,
+            "totalTokens": null,
+            "toolUses": null,
+            "durationMs": null
+          }
+        ]
+      }
+    }
+  ]
+}
