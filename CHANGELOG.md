@@ -1,3 +1,35 @@
+## Unreleased
+
+### Claude Code Agent 1.1
+
+A new typeVersion, the default for new nodes. A stored workflow stays on 1 and emits what it did;
+recordings under `tests/agent-v1/` hold it byte-for-byte, and the 48 golden fixtures are unchanged.
+
+- **What became of each structured delivery.** `diagnostics.structuredOutput` gains `accepted`,
+  `rejected`, `rejections` (the validator's messages, the last five, truncated) and `superseded`:
+  `true` when a delivery was rejected after the object that was emitted, and none was accepted
+  after it. The emitted object is still the last one accepted; before, nothing on the item said
+  that the model had tried to replace it and failed the schema. A debug line says so too.
+- **The prompt says the run is unattended.** The user turn ends with a line saying nobody reads the
+  conversation or answers questions, so the model decides and delivers rather than ending with a
+  question. With a schema and subagents it also asks for one delivery after every subagent has
+  reported, and to fix and resend a rejected one.
+- **Metrics count the whole run.** With subagents in the background the CLI writes one result per
+  turn, and `duration_ms`, `num_turns` and `usage` are per turn in a streaming session. They are now
+  summed over every result (nested `usage` fields included; arrays such as `usage.iterations` are
+  joined); `total_cost_usd`, `modelUsage` and `session_id` stay from the last result, which is
+  already cumulative. Verification adds its turns and duration on top as before, and the usage
+  report and the structured-output failure item carry the same figures.
+- **Each subagent's model.** `diagnostics.subagents[].model` is the model the subagent was
+  configured with, `inherit` resolved to the Agent's.
+
+### Descriptions
+
+- **Max Budget** no longer says it is a hard spend cap, in the Claude Code node, the Agent, the Chat
+  Model and the Task Tool: it is checked between turns, so the turn in progress can go past it, and
+  Timeout and Max Turns are the hard limits.
+- **Max Turns** says that 0 means no limit, which it already did: the SDK leaves the flag out for 0.
+
 ## [2.3.1](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.3.0...v2.3.1) (2026-09-26)
 
 What the canvas shows for the new nodes. Nothing a node emits changes, so no typeVersion moves.
