@@ -1270,7 +1270,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1323 tests — node:test, no framework, no extra dependencies
+npm test    # 1366 tests — node:test, no framework, no extra dependencies
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.

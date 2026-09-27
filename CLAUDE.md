@@ -412,7 +412,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1330 tests, node:test, no framework
+npm test                                    # 1366 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -435,7 +435,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 102 named behaviours against real executions:
+with the node installed and asserts 103 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
