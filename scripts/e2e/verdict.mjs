@@ -555,14 +555,21 @@ const checks = [
   // must stay open for it, or that turn's StructuredOutput is cancelled. With several results the
   // object must come from the last, and the metrics are their sums.
   ['92 metrics are summed over every result, and the object is the last one’s', () => {
-    const j = get('case92')?.itemJson;
+    const c = get('case92');
+    const j = c?.itemJson;
     const results = (j?.messages ?? []).filter((m) => m.type === 'result');
     const total = (f) => results.reduce((a, r) => a + (f(r) ?? 0), 0);
     console.log(`      92 results: ${JSON.stringify(results.map((r) => [r.num_turns, r.duration_ms, !!r.structured_output]))}`);
-    return results.length >= 1 && !!results[results.length - 1].structured_output &&
+    return c?.status === 'success' && det(c).timedOut !== true &&
+      results.length >= 2 && !!results[results.length - 1].structured_output &&
       j.metrics?.num_turns === total((r) => r.num_turns) &&
       j.metrics.duration_ms === total((r) => r.duration_ms) &&
       j.metrics.usage?.output_tokens === total((r) => r.usage?.output_tokens);
+  }],
+  // The runner asks for session-state events only to decide when to close the input.
+  ['92 the transcript starts at init and carries no session-state event', () => {
+    const msgs = get('case92')?.itemJson?.messages ?? [];
+    return msgs[0]?.subtype === 'init' && !msgs.some((m) => m.subtype === 'session_state_changed');
   }],
   ['93 a refused delivery is recorded with the validator’s message', () => {
     const c = get('case93');
