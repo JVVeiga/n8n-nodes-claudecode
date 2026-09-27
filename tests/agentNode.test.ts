@@ -604,6 +604,34 @@ describe('ClaudeCodeAgent — Read Instruction Files From Ref', () => {
 		});
 	});
 
+	it('a Project Path with surrounding whitespace is trimmed, at a ref and in the working tree', async () => {
+		await withDir(async (dir) => {
+			const git = fakeGit({ 'rules.md': { ok: 'Base rules.' } });
+			const atRef = await exec({
+				params: {
+					projectPath: ` ${dir}\n`,
+					instructionFiles: 'rules.md',
+					instructionFilesRef: 'origin/main',
+				},
+				refReader: git.refReader,
+			});
+			assert.deepEqual(git.opened, [dir]);
+			assert.deepEqual(diagnosticsOf(atRef.json).instructions, {
+				loaded: ['rules.md'],
+				missing: [],
+				ref: 'origin/main',
+			});
+
+			const workingTree = await exec({
+				params: { projectPath: ` ${dir}\n`, instructionFiles: 'rules.md' },
+			});
+			assert.deepEqual(diagnosticsOf(workingTree.json).instructions, {
+				loaded: ['rules.md'],
+				missing: [],
+			});
+		});
+	});
+
 	it('fails the item before any run when the ref is refused or unknown', async () => {
 		await withDir(async (dir) => {
 			const refused = fakeGit({});

@@ -68,7 +68,7 @@ export async function prepareAgentRun(
 	const instructions =
 		agent.instructionFiles.length > 0
 			? await loadInstructions(
-					params.projectPath,
+					params.projectPath.trim(),
 					agent.instructionFiles,
 					agent.instructionFilesRef,
 					openRef,
