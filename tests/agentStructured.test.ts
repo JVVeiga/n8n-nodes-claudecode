@@ -197,6 +197,29 @@ describe('structuredDeliveries', () => {
 		assert.equal(report.superseded, true);
 	});
 
+	it('an accepted and a refused call in the same assistant message supersede nothing', () => {
+		for (const order of [
+			['a', 'b'],
+			['b', 'a'],
+		]) {
+			const report = structuredDeliveries([
+				msg({
+					type: 'assistant',
+					message: {
+						content: order.map((id) => ({ type: 'tool_use', id, name: 'StructuredOutput' })),
+					},
+					session_id: SESSION,
+				}),
+				ok('a'),
+				refused('b', 'no'),
+				success({ structured_output: { n: 1 } }),
+			]);
+			assert.equal(report.accepted, 1, order.join());
+			assert.equal(report.rejected, 1, order.join());
+			assert.equal(report.superseded, false, order.join());
+		}
+	});
+
 	it('an acceptance after the last rejection means nothing was superseded', () => {
 		const report = structuredDeliveries([
 			deliver('a'),
