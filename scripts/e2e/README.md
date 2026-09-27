@@ -74,7 +74,7 @@ E2E_CONTAINER=n8n-cc-e2e node scripts/e2e/run-cases.mjs case04 case07
 | `run-cases.mjs` | host | `n8n execute` per case, parses the node's output, writes `results.json` |
 | `verdict.mjs` | host | named assertions over `results.json`; prints PASS/FAIL and a tally |
 | `fixture-project/` | mounted as `/workspace` | six 126-line TS files under `src/` (described one at a time, they overrun a *tight* timeout), plus `verify/slug.ts` for case87 and `data/stock.csv` for case89-91 |
-| `kit-repo.sh` | container | builds case88's git repo at `/home/node/kit-repo` (fixed SHAs; its header is the expected diff) |
+| `kit-repo.sh` | container | builds case88's git repo at `/home/node/kit-repo` (fixed SHAs; its header is the expected diff) and case94's at `/home/node/rules-repo` |
 | `ids.js` | container | workflow id ↔ name listing, read from the sqlite DB |
 | `list-wf.js` | container | per-workflow summary: typeVersion, timeout, grace, format, onError |
 | `last-exec.js` / `last-execs.js` | container | inspect the most recent execution(s) |
@@ -209,6 +209,25 @@ waiting text, and — from the debug log, which `run-cases.mjs` counts into `bac
 subagent reported back and more than one result was written, so a pass that never backgrounded
 fails instead of passing trivially. In `case91` the outer Chat Model cannot delegate and logs
 nothing, so the counts are the tool's own. About US$0.20 for the three.
+
+## The Claude Code Agent 1.1 cases
+
+`case92`–`case94` pin the Agent at 1.1; the Agent cases above stay on 1, so one pass covers both.
+About US$0.10 for the four.
+
+- `case92` asks for one Subagent in the background and a JSON schema. The item must carry the
+  subagent's codeword as `structured`, one accepted delivery, `subagents[0].model` resolved from
+  `inherit`, and metrics equal to the sums over the transcript's results (Include Transcript is on).
+  When the subagent reports before the first result, the CLI runs one more turn for the
+  notification; the input has to stay open until the CLI reports `idle`, or that turn's
+  StructuredOutput is cancelled ("The user doesn't want to take this action right now") and the
+  item fails. That is what this case caught.
+- `case93` tells the model to deliver `line: "n/a"` first, so a rejection is certain rather than
+  hoped for. `rejected`, `accepted` and `rejections[0]` are checked against the transcript's own
+  StructuredOutput results.
+- `case94a`/`case94b` read `.review/rules.md` from `/home/node/rules-repo`, a second repo
+  `kit-repo.sh` builds (case88's is untouched): one codeword at the tag `rules-r1`, another at
+  HEAD. File tools are disallowed, so the answer can only come from the Instruction File.
 
 ## Retry a timing-sensitive failure before investigating it
 

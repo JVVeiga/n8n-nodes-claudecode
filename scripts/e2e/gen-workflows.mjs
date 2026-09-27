@@ -1336,7 +1336,7 @@ const MCP_PATH = 'e2e-case80';
 const WF_TARGET_ID = 'case80wftarget00';
 const MCP_SERVER_ID = 'case80mcpserver0';
 
-function agentRootWorkflow({ name, notes, params = {}, options = {}, subNodes = [], onError }) {
+function agentRootWorkflow({ name, notes, params = {}, options = {}, subNodes = [], onError, version = 1 }) {
 	const nodes = [
 		{
 			parameters: {},
@@ -1361,7 +1361,7 @@ function agentRootWorkflow({ name, notes, params = {}, options = {}, subNodes = 
 			id: nextId(),
 			name: 'Claude Code Agent',
 			type: AGENT_TYPE,
-			typeVersion: 1,
+			typeVersion: version,
 			position: [260, 0],
 			...(onError ? { onError } : {}),
 		},
@@ -1812,6 +1812,124 @@ cases.push(
 				disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
 			},
 		},
+	}),
+);
+
+// Claude Code Agent 1.1 (92-94). The version-1 Agent cases above stay pinned to 1, so a full pass
+// proves both versions in one instance.
+const RULES_REPO = '/home/node/rules-repo';
+const RULES_REF = 'rules-r1';
+const HOUSE_CODEWORD_PROMPT = 'What is the house codeword? Do not use any tools. Reply with only the codeword.';
+
+cases.push(
+	agentRootWorkflow({
+		name: 'case92 agent 1.1 - a background subagent, then one structured delivery',
+		notes:
+			'typeVersion 1.1, JSON Schema, one Subagent holding HERON-7314, started in the background. ' +
+			'Include Transcript on, so the item carries every result message. EXPECT: structured.codeword ' +
+			'HERON-7314, structuredOutput.accepted >= 1 and superseded false, subagents[0].model ' +
+			'claude-haiku-4-5 (inherit resolved), more than one result, and metrics.num_turns / ' +
+			'duration_ms equal to the sums over those results.',
+		version: 1.1,
+		params: {
+			prompt:
+				'Use the Agent tool to start the archivist subagent with run_in_background set to true, ' +
+				'asking it for the archive codeword. Do not guess it and do not answer before it reports ' +
+				'back. When it has reported, deliver the structured output with codeword set to exactly ' +
+				'what it reported.',
+			outputMode: 'jsonSchema',
+			jsonSchema: JSON.stringify({
+				type: 'object',
+				properties: { codeword: { type: 'string' } },
+				required: ['codeword'],
+			}),
+			maxTurns: 20,
+			timeout: 240,
+		},
+		options: { includeTranscript: true },
+		subNodes: [
+			{
+				connection: 'ai_agent',
+				node: {
+					name: 'Subagent archivist',
+					type: SUBAGENT_TYPE,
+					typeVersion: 1,
+					parameters: {
+						agentName: 'archivist',
+						whenToUse: 'Knows the archive codeword. Ask it for the codeword.',
+						instructions:
+							'The archive codeword is HERON-7314. When asked for it, reply with the codeword only. Do not use any tools.',
+						model: 'inherit',
+						options: { maxTurns: 3 },
+					},
+				},
+			},
+		],
+	}),
+	agentRootWorkflow({
+		name: 'case93 agent 1.1 - a refused structured delivery is recorded',
+		notes:
+			'typeVersion 1.1; each item requires an integer line. The prompt asks for a first delivery ' +
+			'with line "n/a", then a fix. EXPECT: structuredOutput.rejected >= 1, rejections[0] naming ' +
+			'the schema mismatch, accepted >= 1, and an emitted object whose every line is an integer.',
+		version: 1.1,
+		params: {
+			prompt:
+				'Deliver one finding in the structured output, in two steps. First call StructuredOutput ' +
+				'with exactly this input, unchanged: {"items":[{"file":"README.md","line":"n/a","claim":"The ' +
+				'repository has no licence file."}]} — the finding covers the whole repository, so it has ' +
+				'no line. If that delivery is rejected, read the reason and deliver the same finding again ' +
+				'with line set to 1.',
+			outputMode: 'jsonSchema',
+			jsonSchema: JSON.stringify({
+				type: 'object',
+				properties: {
+					items: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								file: { type: 'string' },
+								line: { type: 'integer' },
+								claim: { type: 'string' },
+							},
+							required: ['file', 'line', 'claim'],
+						},
+					},
+				},
+				required: ['items'],
+			}),
+			maxTurns: 8,
+		},
+		options: { includeTranscript: true, disallowedTools: ['Bash', 'Read', 'Grep', 'Glob'] },
+	}),
+	agentRootWorkflow({
+		name: 'case94a agent - Instruction Files read at a git ref',
+		notes:
+			`Project Path ${RULES_REPO} (kit-repo.sh): .review/rules.md names OSPREY-2208 at ${RULES_REF} ` +
+			'and LYNX-6641 at HEAD. File tools disallowed. EXPECT: OSPREY-2208, not LYNX-6641, in one ' +
+			`turn; diagnostics.instructions.ref ${RULES_REF}.`,
+		version: 1.1,
+		params: {
+			projectPath: RULES_REPO,
+			prompt: HOUSE_CODEWORD_PROMPT,
+			instructionFiles: '.review/rules.md',
+			instructionFilesRef: RULES_REF,
+		},
+		options: { disallowedTools: ['Bash', 'Read', 'Grep', 'Glob'] },
+	}),
+	agentRootWorkflow({
+		name: 'case94b agent - the same Instruction Files from the working tree',
+		notes:
+			`Same repo and file as case94a, no ref. EXPECT: LYNX-6641, not OSPREY-2208; no ` +
+			'diagnostics.instructions.ref.',
+		version: 1.1,
+		params: {
+			projectPath: RULES_REPO,
+			prompt: HOUSE_CODEWORD_PROMPT,
+			instructionFiles: '.review/rules.md',
+		},
+		options: { disallowedTools: ['Bash', 'Read', 'Grep', 'Glob'] },
 	}),
 );
 

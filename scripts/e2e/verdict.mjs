@@ -531,12 +531,84 @@ const checks = [
     console.log(`      91 background: ${JSON.stringify(b)}`);
     return b.notifications >= 1 && b.results >= 2;
   }],
+  // Agent 1.1 (92-94). Include Transcript is on in 92 and 93, so the item's own messages are the
+  // record the diagnostics are checked against.
+  ['92 Agent 1.1 delivers the subagent’s codeword once, accepted and not superseded', () => {
+    const c = get('case92');
+    const j = c?.itemJson;
+    const s = j?.diagnostics?.structuredOutput;
+    return c?.status === 'success' && c.typeVersions?.['Claude Code Agent'] === 1.1 &&
+      j.structured?.codeword === 'HERON-7314' && s?.accepted >= 1 && s.superseded === false &&
+      s.rejected === 0;
+  }],
+  ['92 the subagent ran in the background and reported back', () => {
+    const c = get('case92');
+    const started = (c?.itemJson?.messages ?? []).filter((m) => m.subtype === 'task_started');
+    return started.some((m) => m.subagent_type === 'archivist' && m.is_backgrounded === true) &&
+      c.backgroundRun?.notifications >= 1;
+  }],
+  ['92 diagnostics.subagents names the inherited model', () => {
+    const [a] = get('case92')?.itemJson?.diagnostics?.subagents ?? [];
+    return a?.name === 'archivist' && a.model === 'claude-haiku-4-5' && a.completed >= 1;
+  }],
+  // A notification queued before the first result makes the CLI run one more turn; the input
+  // must stay open for it, or that turn's StructuredOutput is cancelled. With several results the
+  // object must come from the last, and the metrics are their sums.
+  ['92 metrics are summed over every result, and the object is the last one’s', () => {
+    const j = get('case92')?.itemJson;
+    const results = (j?.messages ?? []).filter((m) => m.type === 'result');
+    const total = (f) => results.reduce((a, r) => a + (f(r) ?? 0), 0);
+    console.log(`      92 results: ${JSON.stringify(results.map((r) => [r.num_turns, r.duration_ms, !!r.structured_output]))}`);
+    return results.length >= 1 && !!results[results.length - 1].structured_output &&
+      j.metrics?.num_turns === total((r) => r.num_turns) &&
+      j.metrics.duration_ms === total((r) => r.duration_ms) &&
+      j.metrics.usage?.output_tokens === total((r) => r.usage?.output_tokens);
+  }],
+  ['93 a refused delivery is recorded with the validator’s message', () => {
+    const c = get('case93');
+    const s = c?.itemJson?.diagnostics?.structuredOutput;
+    console.log(`      93 structuredOutput: ${JSON.stringify(s)}`);
+    return c?.status === 'success' && c.typeVersions?.['Claude Code Agent'] === 1.1 &&
+      s?.rejected >= 1 && /does not match required schema/i.test(String(s.rejections?.[0])) &&
+      s.accepted >= 1 && s.superseded === false;
+  }],
+  ['93 the counts match the transcript’s StructuredOutput results', () => {
+    const j = get('case93')?.itemJson;
+    const msgs = j?.messages ?? [];
+    const ids = new Set(msgs.flatMap((m) => (m.type === 'assistant' ? m.message?.content ?? [] : []))
+      .filter((b) => b.type === 'tool_use' && b.name === 'StructuredOutput').map((b) => b.id));
+    const outcomes = msgs.flatMap((m) => (m.type === 'user' && Array.isArray(m.message?.content) ? m.message.content : []))
+      .filter((b) => b.type === 'tool_result' && ids.has(b.tool_use_id));
+    const s = j?.diagnostics?.structuredOutput;
+    return outcomes.length >= 2 && outcomes.filter((b) => b.is_error === true).length === s?.rejected &&
+      outcomes.filter((b) => b.is_error !== true).length === s.accepted;
+  }],
+  ['93 the emitted object is valid against the schema', () => {
+    const items = get('case93')?.itemJson?.structured?.items;
+    return Array.isArray(items) && items.length >= 1 && items.every((i) =>
+      Number.isInteger(i.line) && typeof i.file === 'string' && typeof i.claim === 'string');
+  }],
+  ['94a Instruction Files read at the ref: its codeword, not the working tree’s', () => {
+    const j = get('case94a')?.itemJson;
+    const i = j?.diagnostics?.instructions;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /OSPREY-2208/.test(out) && !/LYNX-6641/.test(out) &&
+      i?.ref === 'rules-r1' && JSON.stringify(i.loaded) === '[".review/rules.md"]' &&
+      j.metrics?.num_turns === 1;
+  }],
+  ['94b without the ref, the working tree’s codeword and no ref reported', () => {
+    const j = get('case94b')?.itemJson;
+    const i = j?.diagnostics?.instructions;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /LYNX-6641/.test(out) && !/OSPREY-2208/.test(out) &&
+      JSON.stringify(i?.loaded) === '[".review/rules.md"]' && !('ref' in (i ?? {}));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
 // FAIL puts three permanent red lines in every verdict, which is how a real failure gets ignored.
 // The leading number in the check name is the case it needs. Only those long-standing gaps skip:
-// a missing Agent or Kit case (80-88) means the pass did not cover them, and fails.
+// a missing Agent, Kit or background case (80-94) means the pass did not cover them, and fails.
 const caseOf = (name) => `case${name.match(/^(\d+[a-z]?)/)?.[1] ?? ''}`;
 const mayBeAbsent = (name) => ['case14', 'case15', 'case16'].includes(caseOf(name));
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds case88's throwaway git repo INSIDE the container, as the node user:
+# Builds case88's and case94's throwaway git repos INSIDE the container, as the node user:
 #   docker exec -i n8n-cc-e2e sh -s < scripts/e2e/kit-repo.sh
 #
 # Not under /workspace: that is a bind mount of fixture-project/, and turning it into a repo would
@@ -84,3 +84,19 @@ commit '2026-01-04T00:00:00Z' 'edit'
 
 git checkout -q main
 echo "==> kit repo: $REPO  kit-base=$(git rev-parse kit-base)  HEAD=$(git rev-parse HEAD)"
+
+# case94's repo, separate so the one above keeps its SHAs: .review/rules.md names OSPREY-2208 at
+# the tag rules-r1 and LYNX-6641 at HEAD (and in the working tree).
+RULES="${2:-/home/node/rules-repo}"
+rm -rf "$RULES"
+mkdir -p "$RULES/.review"
+cd "$RULES"
+git init -q -b main --object-format=sha1 .
+printf '%s\n' '# House rules' '' 'When anyone asks for the house codeword, the answer is OSPREY-2208.' >.review/rules.md
+git add -A
+commit '2026-02-01T00:00:00Z' 'rules r1'
+git tag rules-r1
+printf '%s\n' '# House rules' '' 'When anyone asks for the house codeword, the answer is LYNX-6641.' >.review/rules.md
+git add -A
+commit '2026-02-02T00:00:00Z' 'rules r2'
+echo "==> rules repo: $RULES  rules-r1=$(git rev-parse rules-r1)  HEAD=$(git rev-parse HEAD)"
