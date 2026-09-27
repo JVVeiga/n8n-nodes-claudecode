@@ -46,6 +46,7 @@ type RunOpts = {
 	appliedEffort?: string;
 	pendingTasksKeepRunOpen?: boolean;
 	options?: Record<string, unknown>;
+	endsWhenInputCloses?: boolean;
 };
 
 async function run(opts: RunOpts) {
@@ -56,6 +57,7 @@ async function run(opts: RunOpts) {
 		hang: opts.hang,
 		interruptThrows: opts.interruptThrows,
 		throwAfter: opts.throwAfter,
+		endsWhenInputCloses: opts.endsWhenInputCloses,
 		// A hanging stream has to end when the hard timer aborts, exactly as the SDK's would.
 		abortSignal: abortController.signal,
 	});
@@ -426,6 +428,18 @@ describe('runQuery — session-state events decide when the run is over', () => 
 		assert.equal(optionsOf(record).settings, '/etc/claude.json');
 	});
 
+	// The stream hangs until the input closes or the hard timer aborts, the way the CLI does, so
+	// a run that ends without timing out is one the runner closed.
+	const untilClosed = (messages: SDKMessage[]) =>
+		run({ pendingTasksKeepRunOpen: true, messages, hang: true, endsWhenInputCloses: true });
+
+	it('idle after a result with no subagent out closes the input and ends the run', async () => {
+		const messages = [sessionState('running'), init(), successResult(), sessionState('idle')];
+		const { outcome, closedAt } = await untilClosed(messages);
+		assert.equal(outcome.timedOut, false);
+		assert.equal(closedAt(), kept(messages));
+	});
+
 	it('a notification that arrived before the result keeps the input open until idle', async () => {
 		const messages = [
 			sessionState('running'),
@@ -439,13 +453,9 @@ describe('runQuery — session-state events decide when the run is over', () => 
 			successResult({ result: 'Delivered.' }),
 			sessionState('idle'),
 		];
-		const { outcome, closedAt } = await run({
-			pendingTasksKeepRunOpen: true,
-			messages,
-			timeout: 2,
-		});
-		assert.equal(closedAt(), kept(messages), 'closed on idle, not on the first result');
+		const { outcome, closedAt } = await untilClosed(messages);
 		assert.equal(outcome.timedOut, false);
+		assert.equal(closedAt(), kept(messages), 'closed on idle, not on the first result');
 	});
 
 	it('idle while a subagent is still running does not end the run; the next idle does', async () => {
@@ -460,8 +470,33 @@ describe('runQuery — session-state events decide when the run is over', () => 
 			successResult({ result: 'Done.' }),
 			sessionState('idle'),
 		];
-		const { closedAt } = await run({ pendingTasksKeepRunOpen: true, messages, timeout: 2 });
+		const { outcome, closedAt } = await untilClosed(messages);
+		assert.equal(outcome.timedOut, false);
 		assert.equal(closedAt(), kept(messages));
+	});
+
+	it('idle before any result does not close the input', async () => {
+		const { outcome } = await untilClosed([
+			sessionState('running'),
+			init(),
+			assistantTool('Read'),
+			sessionState('idle'),
+		]);
+		assert.equal(outcome.timedOut, true);
+		assert.equal(outcome.terminationReason, 'timeout_hard_abort');
+	});
+
+	it('a result followed by running is a new turn, and keeps the input open', async () => {
+		const { outcome } = await untilClosed([
+			sessionState('running'),
+			init(),
+			successResult({ result: 'Waiting for it.' }),
+			sessionState('running'),
+			init(),
+			assistantTool('StructuredOutput'),
+		]);
+		assert.equal(outcome.timedOut, true);
+		assert.equal(outcome.messages.length, 4, 'the new turn arrived');
 	});
 
 	it('an idle after the interrupt does not cut off the wrap-up summary', async () => {

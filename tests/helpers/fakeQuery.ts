@@ -31,6 +31,11 @@ export type FakeQueryOptions = {
 	 * `hang` is set, because otherwise the stream ends before the soft timer fires.
 	 */
 	afterInterrupt?: SDKMessage[];
+	/**
+	 * With `hang`, end once the prompt stream finishes, the way the CLI exits when its input
+	 * closes. This is what lets a test tell a run the node closed from one that timed out.
+	 */
+	endsWhenInputCloses?: boolean;
 };
 
 export type FakeQueryRecord = {
@@ -41,7 +46,10 @@ export type FakeQueryRecord = {
 	iterated: boolean;
 };
 
-type QueryArgs = { options?: { abortController?: AbortController } };
+type QueryArgs = {
+	prompt?: AsyncIterable<unknown>;
+	options?: { abortController?: AbortController };
+};
 
 export type FakeQueryHandle = {
 	fake: typeof sdkQuery;
@@ -57,6 +65,14 @@ export function createFakeQuery(options: FakeQueryOptions = {}): FakeQueryHandle
 
 		let interrupted = false;
 		const pending: SDKMessage[] = [];
+		let inputClosed = false;
+		const prompt = (args as QueryArgs)?.prompt;
+		if (options.endsWhenInputCloses && prompt) {
+			void (async () => {
+				for await (const _turn of prompt);
+				inputClosed = true;
+			})();
+		}
 
 		async function* stream(): AsyncGenerator<SDKMessage> {
 			if (options.delayMs) {
@@ -73,7 +89,7 @@ export function createFakeQuery(options: FakeQueryOptions = {}): FakeQueryHandle
 			// Stay open so the wrap-up and hard-abort timers can fire, then stop when the abort
 			// lands — which is what the real SDK does, and what makes the loop terminable.
 			const signal = options.abortSignal ?? (args as QueryArgs)?.options?.abortController?.signal;
-			while (!signal?.aborted) {
+			while (!signal?.aborted && !inputClosed) {
 				if (interrupted && pending.length > 0) {
 					while (pending.length > 0) yield pending.shift() as SDKMessage;
 				}
