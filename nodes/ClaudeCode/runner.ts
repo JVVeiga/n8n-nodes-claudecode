@@ -1,6 +1,6 @@
 import type { SDKMessage, query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { DebugLogger } from '../shared/debug';
-import { hasPendingSubagentTask, isResult } from '../shared/sdkMessage';
+import { hasPendingSubagentTask, isResult, isSessionState } from '../shared/sdkMessage';
 import { logMessage } from './messageLog';
 import type { PromptStream } from './promptStream';
 import type { GraceWindow, TerminationReason } from './timeout';
@@ -74,8 +74,34 @@ export type RunInput = {
 	pendingTasksKeepRunOpen?: boolean;
 };
 
+/**
+ * Makes the CLI emit `session_state_changed`, whose `idle` comes once no turn is left to run — a
+ * subagent notification queued before a result starts one more. Asked through `settings.env`,
+ * because `Options.env` would replace the subprocess environment.
+ */
+export const SESSION_STATE_EVENTS_ENV = 'CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS';
+
+function withSessionStateEvents(queryOptions: QueryOptions): QueryOptions {
+	const { settings } = queryOptions.options ?? {};
+	if (typeof settings === 'string') return queryOptions;
+	return {
+		...queryOptions,
+		options: {
+			...queryOptions.options,
+			settings: {
+				...settings,
+				env: { ...settings?.env, [SESSION_STATE_EVENTS_ENV]: '1' },
+			},
+		},
+	};
+}
+
 export async function runQuery(input: RunInput): Promise<RunOutcome> {
-	const { queryOptions, graceWindow, promptStream, abortController, debug, messages } = input;
+	const { graceWindow, promptStream, abortController, debug, messages } = input;
+	const queryOptions =
+		input.pendingTasksKeepRunOpen === true
+			? withSessionStateEvents(input.queryOptions)
+			: input.queryOptions;
 	const now = input.now ?? Date.now;
 	const startedAt = now();
 
@@ -96,8 +122,11 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 		promptStream.close();
 	};
 
+	// Without the events (an older CLI), a result with no subagent pending is taken as the end.
+	let sessionStateReported = false;
 	const isInterim = () =>
-		input.pendingTasksKeepRunOpen === true && hasPendingSubagentTask(messages);
+		input.pendingTasksKeepRunOpen === true &&
+		(sessionStateReported || hasPendingSubagentTask(messages));
 
 	const wrapUpTimer =
 		graceWindow.wrapUpAtMs === null
@@ -137,6 +166,18 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 		for await (const message of runningQuery) {
 			messages.push(message);
 			input.onMessage?.(message);
+
+			if (input.pendingTasksKeepRunOpen === true && isSessionState(message)) {
+				sessionStateReported = true;
+				if (
+					message.state === 'idle' &&
+					!wrapUpRequested &&
+					messages.some(isResult) &&
+					!hasPendingSubagentTask(messages)
+				) {
+					closeStream();
+				}
+			}
 
 			// In streaming input mode the session stays open while the input stream is open, so the
 			// result message is the signal to close it. Without this the query would never end.

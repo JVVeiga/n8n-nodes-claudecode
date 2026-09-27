@@ -81,6 +81,10 @@ export const taskNotified = (taskId: string, status = 'completed', summary = 'do
 		session_id: SESSION,
 	});
 
+/** Emitted only when the CLI is asked for session-state events; `idle` is the turn-over signal. */
+export const sessionState = (state: 'idle' | 'running' | 'requires_action') =>
+	msg({ type: 'system', subtype: 'session_state_changed', state, session_id: SESSION });
+
 export const model = (over: Partial<Record<string, number>> = {}) => ({
 	inputTokens: 4,
 	outputTokens: 486,

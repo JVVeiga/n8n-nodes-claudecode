@@ -33,6 +33,13 @@ export const isTaskStarted = (m: SDKMessage): m is TaskStartedMessage =>
 export const isTaskNotification = (m: SDKMessage): m is TaskNotificationMessage =>
 	m.type === 'system' && m.subtype === 'task_notification';
 
+export type SessionStateMessage = Extract<
+	SDKMessage,
+	{ type: 'system'; subtype: 'session_state_changed' }
+>;
+export const isSessionState = (m: SDKMessage): m is SessionStateMessage =>
+	m.type === 'system' && m.subtype === 'session_state_changed';
+
 /** True while a subagent that started has not reported back. Tasks without a `subagent_type`
  * (background shells) are left out: one that never ends must not hold a run open. */
 export function hasPendingSubagentTask(messages: SDKMessage[]): boolean {

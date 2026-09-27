@@ -359,6 +359,13 @@ nodes/
   result messages, the first one an interim "I'll wait for them". The shared text ladder reads the
   first, which the Claude Code node's versions keep (a known limitation of those nodes, not fixed
   in passing); the Agent strips every result but the last before reading.
+- **A final-result run ends on `idle`, not on a result.** A subagent that reports before the
+  turn's result makes the CLI run one more turn for the notification, with no subagent pending by
+  then; closing the input at the first result cancels that turn's tool calls (measured, e2e
+  case92: its StructuredOutput came back "The user doesn't want to take this action right now").
+  So with `pendingTasksKeepRunOpen` the runner asks for session-state events through
+  `settings.env` — never `Options.env` — and closes on `session_state_changed: idle`. A CLI that
+  emits none falls back to closing at a result with no subagent pending.
 - **A resumed session reports a cumulative cost.** `total_cost_usd` and `modelUsage` on a resumed
   run include every earlier query of that session; `num_turns`, `duration_ms` and `usage` do not
   (measured, spike S-I). So the Verification run's metrics already contain the main run: the item
@@ -405,7 +412,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1323 tests, node:test, no framework
+npm test                                    # 1330 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
