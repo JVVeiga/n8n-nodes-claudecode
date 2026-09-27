@@ -27,6 +27,8 @@ export type AgentExtras = {
 	outputMode: OutputMode;
 	jsonSchemaText: string;
 	instructionFiles: string[];
+	/** Empty: the working tree. */
+	instructionFilesRef: string;
 	session: { mode: SessionMode; key: string };
 	orchestration: Orchestration;
 	allowConnectors: boolean;
@@ -114,6 +116,7 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 			instructionFiles: parseInstructionFiles(
 				ctx.getNodeParameter('instructionFiles', itemIndex, ''),
 			),
+			instructionFilesRef: text(ctx.getNodeParameter('instructionFilesRef', itemIndex, '')).trim(),
 			session: {
 				mode: ctx.getNodeParameter('sessionMode', itemIndex, 'new') as SessionMode,
 				key: text(ctx.getNodeParameter('sessionKey', itemIndex, '')).trim(),

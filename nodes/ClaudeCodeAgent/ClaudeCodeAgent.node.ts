@@ -7,6 +7,7 @@ import type {
 } from 'n8n-workflow';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createDebugLogger } from '../shared/debug';
+import { createRefReader, type RefReader } from '../shared/git';
 import { buildSummedRunMetrics } from '../ClaudeCode/output/metrics';
 import { buildToolBridge } from '../shared/toolBridge';
 import { prepareAttachments } from '../ClaudeCode/attachments/prepare';
@@ -32,6 +33,8 @@ import { runVerification } from './verification/run';
 export type AgentExecuteDeps = {
 	/** The SDK's `query`. Injected so a test drives the message stream without spawning a CLI. */
 	query: typeof query;
+	/** Opens git for Read Instruction Files From Ref; defaults to the real one. */
+	refReader?: (projectPath: string) => RefReader;
 };
 
 /** errors.ts shapes failures by node version; from 1.1 they are the shape n8n's error output
@@ -67,7 +70,7 @@ export class ClaudeCodeAgent implements INodeType {
 	description: INodeTypeDescription = claudeCodeAgentDescription;
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-		return runAgentItems(this, { query });
+		return runAgentItems(this, { query, refReader: createRefReader });
 	}
 }
 
@@ -123,7 +126,13 @@ async function runAgentItem(
 	if (agent.behaviour.sumsMetrics) item.metricsOf = buildSummedRunMetrics;
 	const debug = createDebugLogger(ctx.logger, params.additional.debug === true);
 
-	const prepared = await prepareAgentRun(ctx, itemIndex, params, agent);
+	const prepared = await prepareAgentRun(
+		ctx,
+		itemIndex,
+		params,
+		agent,
+		deps.refReader ?? createRefReader,
+	);
 	if ('problem' in prepared) throw fail(prepared.problem.message, prepared.problem.description);
 	const { sessionUuid, subagents, subagentNames, schema, instructions } = prepared;
 
@@ -213,7 +222,11 @@ async function runAgentItem(
 						)
 					: undefined,
 			instructions: instructions
-				? { loaded: instructions.loaded, missing: instructions.missing }
+				? {
+						loaded: instructions.loaded,
+						missing: instructions.missing,
+						...(instructions.ref ? { ref: instructions.ref } : {}),
+					}
 				: undefined,
 			structuredOutput: structuredOutcome
 				? { mode: agent.outputMode, attempts: structuredOutcome.attempts, ...deliveries }

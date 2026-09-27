@@ -106,6 +106,7 @@ describe('readAgentParams — the Agent’s own settings', () => {
 			outputMode: 'text',
 			jsonSchemaText: '',
 			instructionFiles: [],
+			instructionFilesRef: '',
 			session: { mode: 'new', key: '' },
 			orchestration: 'auto',
 			allowConnectors: false,

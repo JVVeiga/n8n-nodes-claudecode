@@ -263,6 +263,16 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 				'Files appended to the system prompt, one path per line, relative to Project Path. A file that does not exist is skipped and listed in diagnostics.instructions.missing. CLAUDE.md already loads on its own.',
 		},
 		{
+			displayName: 'Read Instruction Files From Ref',
+			name: 'instructionFilesRef',
+			type: 'string',
+			default: '',
+			placeholder: 'e.g. origin/main',
+			displayOptions: { show: { instructionFiles: [{ _cnd: { exists: true } }] } },
+			description:
+				'A git branch, tag or commit to read the Instruction Files from, instead of the files on disk. The paths are then resolved inside that ref, still relative to Project Path, and the clone must contain the ref: fetch it first. With origin/main, the review rules come from the target branch, so a pull request cannot change the rules of its own review. Leave empty to read the working tree.',
+		},
+		{
 			displayName: 'Session',
 			name: 'sessionMode',
 			type: 'options',

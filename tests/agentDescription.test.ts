@@ -81,6 +81,7 @@ describe('Claude Code Agent — parameters', () => {
 				'outputMode',
 				'jsonSchema',
 				'instructionFiles',
+				'instructionFilesRef',
 				'sessionMode',
 				'sessionKey',
 				'subagentOrchestration',

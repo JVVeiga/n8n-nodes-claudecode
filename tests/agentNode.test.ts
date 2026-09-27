@@ -7,6 +7,7 @@ import type { query as sdkQuery, SDKMessage } from '@anthropic-ai/claude-agent-s
 import { NodeOperationError, type IDataObject } from 'n8n-workflow';
 import { z } from 'zod/v4';
 import { ClaudeCodeAgent, runAgentItems } from '../nodes/ClaudeCodeAgent/ClaudeCodeAgent.node';
+import type { FileAtRef, RefReader } from '../nodes/shared/git';
 import { PROJECT_PATH_DESCRIPTION } from '../nodes/shared/projectPath';
 import { toSessionUuid } from '../nodes/shared/session';
 import { SUBAGENT_TAG, type SubagentInvocation } from '../nodes/shared/subagent';
@@ -47,6 +48,8 @@ type ExecOpts = {
 	reporting?: boolean;
 	/** The node's run index within the execution, as n8n's data proxy reports it. */
 	runIndex?: number;
+	refReader?: (projectPath: string) => RefReader;
+	typeVersion?: number;
 };
 
 const agentParams = (over: ParamMap = {}): ParamMap => ({
@@ -73,7 +76,7 @@ function sequencedQuery(perCall: FakeQueryOptions[]) {
 
 async function exec(opts: ExecOpts = {}) {
 	const fake = createFakeContext({
-		typeVersion: 1,
+		typeVersion: opts.typeVersion ?? 1,
 		nodeName: 'Claude Code Agent',
 		continueOnFail: opts.continueOnFail ?? false,
 		params: agentParams(opts.params),
@@ -88,7 +91,7 @@ async function exec(opts: ExecOpts = {}) {
 	const { fake: query, calls } = sequencedQuery(
 		opts.streamsPerCall ?? [opts.stream ?? { messages: streams.success() }],
 	);
-	const result = await runAgentItems(fake.ctx, { query });
+	const result = await runAgentItems(fake.ctx, { query, refReader: opts.refReader });
 	const optionsOf = (i: number) => (calls[i] as { options: Options }).options;
 	return { items: result[0], json: result[0][0]?.json as IDataObject, fake, calls, optionsOf };
 }
@@ -114,7 +117,7 @@ async function execExpectingThrow(opts: ExecOpts) {
 	);
 	calls = seq.calls;
 	try {
-		await runAgentItems(fake.ctx, { query: seq.fake });
+		await runAgentItems(fake.ctx, { query: seq.fake, refReader: opts.refReader });
 	} catch (error) {
 		return { error: error as NodeOperationError, calls, workflowCalls };
 	}
@@ -538,6 +541,133 @@ describe('ClaudeCodeAgent — instruction files', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('ClaudeCodeAgent — Read Instruction Files From Ref', () => {
+	const fakeGit = (files: Record<string, FileAtRef>) => {
+		const opened: string[] = [];
+		const reads: Array<[string, string]> = [];
+		const refReader = (projectPath: string): RefReader => {
+			opened.push(projectPath);
+			return {
+				fileAt: async (ref, path) => {
+					reads.push([ref, path]);
+					return (
+						files[path] ?? {
+							problem: { message: `${path} does not exist at ${ref}` },
+							unreadable: 'absent',
+						}
+					);
+				},
+			};
+		};
+		return { refReader, opened, reads };
+	};
+
+	const withDir = async (body: (dir: string) => Promise<void>) => {
+		const dir = mkdtempSync(join(tmpdir(), 'agent-instructions-ref-'));
+		try {
+			writeFileSync(join(dir, 'rules.md'), 'Working tree rules.');
+			await body(dir);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+
+	it('appends the text read at the ref, not the working tree, and names the ref', async () => {
+		await withDir(async (dir) => {
+			const git = fakeGit({ 'rules.md': { ok: 'Base rules.' } });
+			const { json, optionsOf } = await exec({
+				params: {
+					projectPath: dir,
+					instructionFiles: 'rules.md\nmissing.md',
+					instructionFilesRef: ' origin/main ',
+					options: { systemPrompt: 'Be terse.' },
+				},
+				refReader: git.refReader,
+			});
+			assert.equal(
+				optionsOf(0).systemPrompt?.append,
+				'Be terse.\n\n<instructions file="rules.md">\nBase rules.\n</instructions>',
+			);
+			assert.deepEqual(diagnosticsOf(json).instructions, {
+				loaded: ['rules.md'],
+				missing: ['missing.md'],
+				ref: 'origin/main',
+			});
+			assert.deepEqual(git.opened, [dir]);
+			assert.deepEqual(git.reads, [
+				['origin/main', 'rules.md'],
+				['origin/main', 'missing.md'],
+			]);
+		});
+	});
+
+	it('fails the item before any run when the ref is refused or unknown', async () => {
+		await withDir(async (dir) => {
+			const refused = fakeGit({});
+			const bad = await execExpectingThrow({
+				params: { projectPath: dir, instructionFiles: 'rules.md', instructionFilesRef: '-x' },
+				refReader: refused.refReader,
+			});
+			assert.equal(bad.calls.length, 0);
+			assert.match(bad.error.message, /Read Instruction Files From Ref is not an accepted git ref/);
+			assert.deepEqual(refused.reads, []);
+
+			const unknown = fakeGit({
+				'rules.md': {
+					problem: {
+						message: 'git ls-tree failed: fatal: Not a valid object name nosuch',
+						description: 'The ref does not exist in this clone. Fetch it first.',
+					},
+				},
+			});
+			const missing = await execExpectingThrow({
+				params: { projectPath: dir, instructionFiles: 'rules.md', instructionFilesRef: 'nosuch' },
+				refReader: unknown.refReader,
+			});
+			assert.equal(missing.calls.length, 0);
+			assert.match(missing.error.message, /could not be read at nosuch/);
+			assert.match(String(missing.error.description), /Fetch it first/);
+		});
+	});
+
+	for (const typeVersion of [1, 1.1]) {
+		it(`v${typeVersion}: absent or empty reads the working tree, emits no ref and never opens git`, async () => {
+			await withDir(async (dir) => {
+				const git = fakeGit({});
+				const params = { projectPath: dir, instructionFiles: 'rules.md' };
+				const absent = await exec({ typeVersion, params, refReader: git.refReader });
+				const empty = await exec({
+					typeVersion,
+					params: { ...params, instructionFilesRef: '' },
+					refReader: git.refReader,
+				});
+				assert.deepEqual(diagnosticsOf(absent.json).instructions, {
+					loaded: ['rules.md'],
+					missing: [],
+				});
+				assert.equal(
+					absent.optionsOf(0).systemPrompt?.append,
+					'<instructions file="rules.md">\nWorking tree rules.\n</instructions>',
+				);
+				assert.equal(JSON.stringify(empty.items), JSON.stringify(absent.items));
+				assert.deepEqual(git.opened, []);
+			});
+		});
+	}
+
+	it('is ignored when no Instruction Files are listed', async () => {
+		const git = fakeGit({});
+		const plain = await exec();
+		const withRef = await exec({
+			params: { instructionFilesRef: 'origin/main' },
+			refReader: git.refReader,
+		});
+		assert.equal(JSON.stringify(withRef.items), JSON.stringify(plain.items));
+		assert.equal(diagnosticsOf(withRef.json).instructions, undefined);
+		assert.deepEqual(git.opened, []);
 	});
 });
 

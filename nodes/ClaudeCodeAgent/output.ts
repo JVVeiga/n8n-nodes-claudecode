@@ -7,7 +7,7 @@ import type { SessionState } from '../shared/session';
 import type { StructuredDeliveries } from './structured';
 import type { SubagentDiagnostics } from './subagentReport';
 
-export type InstructionsDiagnostics = { loaded: string[]; missing: string[] };
+export type InstructionsDiagnostics = { loaded: string[]; missing: string[]; ref?: string };
 
 export type StructuredOutputDiagnostics = {
 	mode: string;

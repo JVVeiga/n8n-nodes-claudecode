@@ -363,6 +363,20 @@ describe('Claude Code Agent 1 — frozen on recorded streams', () => {
 	}
 });
 
+describe('Read Instruction Files From Ref — empty is the same as absent, in 1 and 1.1', () => {
+	for (const [name, c] of Object.entries(CASES)) {
+		for (const typeVersion of [1, 1.1]) {
+			it(`v${typeVersion} ${name}`, async () => {
+				const absent = snapshot(await run(c, typeVersion));
+				const empty = snapshot(
+					await run({ ...c, params: { ...c.params, instructionFilesRef: '' } }, typeVersion),
+				);
+				assert.equal(empty, absent);
+			});
+		}
+	}
+});
+
 const metricsOf = (r: Run) => jsonOf(r).metrics as Record<string, unknown>;
 const structuredDiagnostics = (r: Run) => diagnosticsOf(r).structuredOutput as IDataObject;
 

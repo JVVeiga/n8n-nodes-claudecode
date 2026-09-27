@@ -5,6 +5,16 @@ import { checkRef } from './gitRefs';
 /** `missing` marks a path absent at the ref — a per-item fact, not a broken repository. */
 export type GitResult = { ok: string } | { problem: Problem; missing?: true };
 
+/** Why a path gave no content at a ref; only `absent` is the path simply not being there. */
+export type Unreadable = 'badPath' | 'absent' | 'notFile' | 'tooLarge';
+
+export type FileAtRef = { ok: string } | { problem: Problem; unreadable?: Unreadable };
+
+export type RefReader = {
+	/** `path` is relative to the Project Path, not to the repository root. */
+	fileAt(ref: string, path: string): Promise<FileAtRef>;
+};
+
 export type GitApi = {
 	mergeBase(base: string, head: string): Promise<GitResult>;
 	numstat(from: string, to: string): Promise<GitResult>;
@@ -107,23 +117,75 @@ function toProblem(args: string[], error: unknown): Problem {
 	};
 }
 
-/** The only module that spawns anything: git, with an argument array and never a shell. */
-export function createGit(projectPath: string, execFileImpl: ExecFileFn = execFileAsync): GitApi {
+type Run = (
+	args: string[],
+	onFailure?: (e: ExecFailure) => Problem | null,
+) => Promise<{ ok: string } | { problem: Problem }>;
+
+function createRun(projectPath: string, execFileImpl: ExecFileFn): Run {
 	const options: ExecOptions = {
 		cwd: projectPath,
 		timeout: GIT_TIMEOUT_MS,
 		maxBuffer: GIT_MAX_BUFFER,
 		env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' },
 	};
-
-	const run = async (args: string[], onFailure?: (e: ExecFailure) => Problem | null) => {
+	return async (args, onFailure) => {
 		try {
 			const { stdout } = await execFileImpl('git', [...GLOBAL_ARGS, ...args], options);
-			return { ok: stdout } as GitResult;
+			return { ok: stdout };
 		} catch (error) {
-			return { problem: onFailure?.(error as ExecFailure) ?? toProblem(args, error) } as GitResult;
+			return { problem: onFailure?.(error as ExecFailure) ?? toProblem(args, error) };
 		}
 	};
+}
+
+type ReadMode = {
+	/** Paths from the repository root (the Kit's diff paths) rather than from the cwd. */
+	fullTree: boolean;
+	/** Only the regular file named: no symlink, and no directory listed through a trailing "/". */
+	strict: boolean;
+};
+
+async function readAt(run: Run, ref: string, path: string, mode: ReadMode): Promise<FileAtRef> {
+	const bad = checkRef(ref, 'Ref');
+	if (bad) return { problem: bad };
+	if (path === '' || path.includes('\0')) {
+		return {
+			problem: { message: `not a usable path: ${JSON.stringify(path)}` },
+			unreadable: 'badPath',
+		};
+	}
+	// ls-tree takes the path after `--`, so no path can be read as an option or a revision.
+	const listed = await run([
+		'ls-tree',
+		'-z',
+		...(mode.fullTree ? ['--full-tree'] : []),
+		ref,
+		'--',
+		path,
+	]);
+	if ('problem' in listed) return listed;
+	const entry = listed.ok.split('\0')[0] ?? '';
+	const match = /^(\d+) (\w+) ([0-9a-f]{40,64})\t([^]*)$/.exec(entry);
+	if (!match) {
+		return { problem: { message: `${path} does not exist at ${ref}` }, unreadable: 'absent' };
+	}
+	const [, fileMode, type, oid, listedPath] = match;
+	if (type !== 'blob' || (mode.strict && (fileMode === '120000' || listedPath !== path))) {
+		return { problem: { message: `${path} is not a file at ${ref}` }, unreadable: 'notFile' };
+	}
+	// One oversized file is that item's problem, not the whole run's.
+	let tooLarge = false;
+	const blob = await run(['cat-file', 'blob', oid], (e) => {
+		tooLarge = isOverflow(e);
+		return tooLarge ? { message: `${path} is larger than ${MAX_BUFFER_MB} MB at ${ref}` } : null;
+	});
+	return tooLarge && 'problem' in blob ? { problem: blob.problem, unreadable: 'tooLarge' } : blob;
+}
+
+/** The only module that spawns anything: git, with an argument array and never a shell. */
+export function createGit(projectPath: string, execFileImpl: ExecFileFn = execFileAsync): GitApi {
+	const run = createRun(projectPath, execFileImpl);
 
 	const refs = (...pairs: Array<[string, string]>): GitResult | null => {
 		for (const [ref, label] of pairs) {
@@ -172,34 +234,17 @@ export function createGit(projectPath: string, execFileImpl: ExecFileFn = execFi
 		},
 
 		async showFile(ref, path) {
-			const bad = refs([ref, 'Ref']);
-			if (bad) return bad;
-			if (path === '' || path.includes('\0')) {
-				return {
-					problem: { message: `not a usable path: ${JSON.stringify(path)}` },
-					missing: true,
-				};
-			}
-			// ls-tree takes the path after `--`, so no path can be read as an option or a revision.
-			const listed = await run(['ls-tree', '-z', '--full-tree', ref, '--', path]);
-			if ('problem' in listed) return listed;
-			const entry = listed.ok.split('\0')[0] ?? '';
-			const match = /^\d+ (\w+) ([0-9a-f]{40,64})\t/.exec(entry);
-			if (!match) {
-				return { problem: { message: `${path} does not exist at ${ref}` }, missing: true };
-			}
-			if (match[1] !== 'blob') {
-				return { problem: { message: `${path} is not a file at ${ref}` }, missing: true };
-			}
-			// One oversized file is that item's problem, not the whole run's.
-			let tooLarge = false;
-			const blob = await run(['cat-file', 'blob', match[2]], (e) => {
-				tooLarge = isOverflow(e);
-				return tooLarge
-					? { message: `${path} is larger than ${MAX_BUFFER_MB} MB at ${ref}` }
-					: null;
-			});
-			return tooLarge ? { ...blob, missing: true } : blob;
+			const read = await readAt(run, ref, path, { fullTree: true, strict: false });
+			return 'unreadable' in read ? { problem: read.problem, missing: true } : read;
 		},
 	};
+}
+
+/** One file at a ref, resolved from the Project Path like a path on disk would be. */
+export function createRefReader(
+	projectPath: string,
+	execFileImpl: ExecFileFn = execFileAsync,
+): RefReader {
+	const run = createRun(projectPath, execFileImpl);
+	return { fileAt: (ref, path) => readAt(run, ref, path, { fullTree: false, strict: true }) };
 }
