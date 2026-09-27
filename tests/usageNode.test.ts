@@ -133,7 +133,7 @@ describe('Usage node — no duplicated logic left', () => {
 const TEAM_INIT = {
 	account: {
 		email: 'someone@example.com',
-		organization: 'Gaudium',
+		organization: 'Acme',
 		subscriptionType: 'Claude Team',
 		apiProvider: 'firstParty',
 	},
