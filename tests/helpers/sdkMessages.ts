@@ -1,4 +1,5 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { hasPendingSubagentTask, isResult } from '../../nodes/shared/sdkMessage';
 
 /**
  * SDKMessage fixture factories, shared by every test.
@@ -300,3 +301,20 @@ export const backgroundSubagentRun = (): SDKMessage[] => [
 
 /** The same run cut where it stands while the subagent is still out. */
 export const backgroundSubagentPending = (): SDKMessage[] => backgroundSubagentRun().slice(0, 4);
+
+/**
+ * A stream as the CLI writes it with session-state events on: `running` first, `idle` after a
+ * result that leaves a subagent out (then `running` again) and at the end.
+ */
+export function withSessionStates(messages: SDKMessage[]): SDKMessage[] {
+	const out: SDKMessage[] = [sessionState('running')];
+	messages.forEach((message, i) => {
+		out.push(message);
+		const more = i < messages.length - 1;
+		if (more && isResult(message) && hasPendingSubagentTask(messages.slice(0, i + 1))) {
+			out.push(sessionState('idle'), sessionState('running'));
+		}
+	});
+	out.push(sessionState('idle'));
+	return out;
+}

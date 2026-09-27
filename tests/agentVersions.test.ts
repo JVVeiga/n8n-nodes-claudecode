@@ -21,6 +21,7 @@ import {
 	successResult,
 	taskNotified,
 	taskStarted,
+	withSessionStates,
 } from './helpers/sdkMessages';
 
 /**
@@ -313,7 +314,11 @@ async function run(c: Case, typeVersion: number): Promise<Run> {
 			maxTurns: 5,
 			timeout: 300,
 			...c.params,
-			options: { reportUsageTo: 'wf-collector', debug: true },
+			options: {
+				reportUsageTo: 'wf-collector',
+				debug: true,
+				...(c.params?.options as IDataObject | undefined),
+			},
 		},
 		connections: { ai_tool: undefined, ai_agent: c.subagents, ai_outputParser: undefined },
 		workflow: {},
@@ -359,6 +364,38 @@ describe('Claude Code Agent 1 — frozen on recorded streams', () => {
 			}
 			assert.ok(existsSync(path), `missing ${path} — record it with RECORD_AGENT_V1=1`);
 			assert.equal(serialised, readFileSync(path, 'utf8').trimEnd(), `v1 ${name} changed`);
+		});
+	}
+});
+
+const withEvents = (c: Case): Case => ({
+	...c,
+	streams: c.streams.map((s) => ({ ...s, messages: withSessionStates(s.messages ?? []) })),
+});
+
+describe('Claude Code Agent — session-state events change nothing emitted', () => {
+	for (const [name, c] of Object.entries(CASES)) {
+		it(`v1 ${name} matches its recording`, async () => {
+			const serialised = snapshot(await run(withEvents(c), 1));
+			assert.doesNotMatch(serialised, /session_state_changed/);
+			assert.equal(serialised, readFileSync(join(DIR, `${name}.json`), 'utf8').trimEnd());
+		});
+
+		it(`v1.1 ${name} matches the stream without them`, async () => {
+			const serialised = snapshot(await run(withEvents(c), 1.1));
+			assert.doesNotMatch(serialised, /session_state_changed/);
+			assert.equal(serialised, snapshot(await run(c, 1.1)));
+		});
+	}
+
+	for (const typeVersion of [1, 1.1]) {
+		it(`v${typeVersion}: the transcript leaves them out and still starts at init`, async () => {
+			const c = { ...CASES.backgroundSubagent, params: { options: { includeTranscript: true } } };
+			const r = await run(withEvents(c), typeVersion);
+			const messages = jsonOf(r).messages as IDataObject[];
+			assert.equal(messages[0].subtype, 'init');
+			assert.doesNotMatch(JSON.stringify(r), /session_state_changed/);
+			assert.equal(snapshot(r), snapshot(await run(c, typeVersion)));
 		});
 	}
 });

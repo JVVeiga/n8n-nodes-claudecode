@@ -164,20 +164,20 @@ export async function runQuery(input: RunInput): Promise<RunOutcome> {
 
 	try {
 		for await (const message of runningQuery) {
-			messages.push(message);
-			input.onMessage?.(message);
-
+			// Asked for by this runner only to decide when to close, so never part of the output.
 			if (input.pendingTasksKeepRunOpen === true && isSessionState(message)) {
 				sessionStateReported = true;
-				if (
-					message.state === 'idle' &&
-					!wrapUpRequested &&
-					messages.some(isResult) &&
-					!hasPendingSubagentTask(messages)
-				) {
-					closeStream();
+				if (message.state === 'idle') {
+					const closing =
+						!wrapUpRequested && messages.some(isResult) && !hasPendingSubagentTask(messages);
+					debug.log('Session idle', { closing });
+					if (closing) closeStream();
 				}
+				continue;
 			}
+
+			messages.push(message);
+			input.onMessage?.(message);
 
 			// In streaming input mode the session stays open while the input stream is open, so the
 			// result message is the signal to close it. Without this the query would never end.

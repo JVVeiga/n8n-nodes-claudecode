@@ -10,6 +10,7 @@ import {
 import { createPromptStream } from '../nodes/ClaudeCode/promptStream';
 import { resolveGraceWindow } from '../nodes/ClaudeCode/timeout';
 import { createDebugLogger } from '../nodes/shared/debug';
+import { isSessionState } from '../nodes/shared/sdkMessage';
 import type { QueryOptions } from '../nodes/ClaudeCode/types';
 import { createFakeQuery } from './helpers/fakeQuery';
 import {
@@ -368,6 +369,8 @@ describe('runQuery — a result while background subagents are still running', (
 // notification. Closing the input at the first result cancels that turn's tool calls — measured:
 // its StructuredOutput came back "The user doesn't want to take this action right now".
 describe('runQuery — session-state events decide when the run is over', () => {
+	// The events decide the close and are not kept, so a close is counted in kept messages.
+	const kept = (messages: SDKMessage[]) => messages.filter((m) => !isSessionState(m)).length;
 	const optionsOf = (record: { calls: unknown[] }) =>
 		(record.calls[0] as { options: Record<string, unknown> }).options;
 
@@ -384,6 +387,29 @@ describe('runQuery — session-state events decide when the run is over', () => 
 		});
 		assert.equal(options.maxTurns, 3);
 		assert.equal(options.env, undefined, 'Options.env replaces the environment; never set here');
+	});
+
+	it('are neither kept in messages nor handed to onMessage', async () => {
+		const stream = [sessionState('running'), init(), successResult(), sessionState('idle')];
+		const { fake } = createFakeQuery({ messages: stream });
+		const promptStream = createPromptStream('go');
+		const seen: SDKMessage[] = [];
+		const outcome = await runQuery({
+			queryOptions: { prompt: promptStream.stream, options: {} } as QueryOptions,
+			graceWindow: resolveGraceWindow(1, 0),
+			promptStream,
+			abortController: new AbortController(),
+			query: fake,
+			debug: silent,
+			messages: [],
+			onMessage: (m) => seen.push(m),
+			pendingTasksKeepRunOpen: true,
+		});
+		assert.deepEqual(
+			outcome.messages.map((m) => (m as { subtype?: string }).subtype),
+			['init', 'success'],
+		);
+		assert.deepEqual(seen, outcome.messages);
 	});
 
 	it('without it, the options are not touched', async () => {
@@ -418,7 +444,7 @@ describe('runQuery — session-state events decide when the run is over', () => 
 			messages,
 			timeout: 2,
 		});
-		assert.equal(closedAt(), messages.length, 'closed on idle, not on the first result');
+		assert.equal(closedAt(), kept(messages), 'closed on idle, not on the first result');
 		assert.equal(outcome.timedOut, false);
 	});
 
@@ -435,7 +461,7 @@ describe('runQuery — session-state events decide when the run is over', () => 
 			sessionState('idle'),
 		];
 		const { closedAt } = await run({ pendingTasksKeepRunOpen: true, messages, timeout: 2 });
-		assert.equal(closedAt(), messages.length);
+		assert.equal(closedAt(), kept(messages));
 	});
 
 	it('an idle after the interrupt does not cut off the wrap-up summary', async () => {
@@ -448,7 +474,7 @@ describe('runQuery — session-state events decide when the run is over', () => 
 			grace: 1,
 		});
 		assert.equal(outcome.wrapUpSucceeded, true);
-		assert.equal(closedAt(), 6, 'closed at the summary, the second result after the interrupt');
+		assert.equal(closedAt(), 4, 'closed at the summary, the second result after the interrupt');
 	});
 
 	it('without pendingTasksKeepRunOpen, the first result still closes the input', async () => {
