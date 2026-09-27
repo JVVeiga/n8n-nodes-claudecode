@@ -1,4 +1,4 @@
-## Unreleased
+## [2.4.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.3.1...v2.4.0) (2026-09-27)
 
 ### Claude Code Agent 1.1
 
