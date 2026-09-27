@@ -9,8 +9,8 @@ import {
 	type ExecFailure,
 	type ExecFileFn,
 	type ExecOptions,
-} from '../nodes/CodeReviewKit/git';
-import { checkRef, isSafeRef } from '../nodes/CodeReviewKit/refs';
+} from '../nodes/shared/git';
+import { checkRef, isSafeRef } from '../nodes/shared/gitRefs';
 
 type Call = { file: string; args: string[]; options: ExecOptions };
 
@@ -250,19 +250,19 @@ describe('Code Review Kit — git.ts runs git with an argument array', () => {
 	});
 });
 
-describe('Code Review Kit — only git.ts spawns, and never through a shell', () => {
-	const dir = join(process.cwd(), 'nodes', 'CodeReviewKit');
-	const sources = (readdirSync(dir) as string[])
+describe('Code Review Kit — only shared/git.ts spawns, and never through a shell', () => {
+	const root = join(process.cwd(), 'nodes');
+	const sources = (readdirSync(root, { recursive: true }) as string[])
 		.filter((f) => f.endsWith('.ts'))
-		.map((f) => ({ file: f, text: readFileSync(join(dir, f), 'utf8') }));
+		.map((f) => ({ file: f.split('\\').join('/'), text: readFileSync(join(root, f), 'utf8') }));
 
 	it('no other module imports child_process', () => {
 		const spawners = sources.filter((s) => /child_process/.test(s.text)).map((s) => s.file);
-		assert.deepEqual(spawners, ['git.ts']);
+		assert.deepEqual(spawners, ['shared/git.ts']);
 	});
 
 	it('git.ts uses execFile, never exec, execSync, spawn or a shell option', () => {
-		const git = sources.find((s) => s.file === 'git.ts')?.text ?? '';
+		const git = sources.find((s) => s.file === 'shared/git.ts')?.text ?? '';
 		assert.match(git, /import \{ execFile \} from 'node:child_process'/);
 		assert.doesNotMatch(git, /(?<![.\w])exec(Sync)?\(|\bspawn(Sync)?\b|execFileSync|shell\s*:/);
 	});

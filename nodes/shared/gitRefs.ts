@@ -1,4 +1,4 @@
-import type { Problem } from '../shared/problem';
+import type { Problem } from './problem';
 
 const SAFE_REF = /^[\w./@^~-]+$/;
 

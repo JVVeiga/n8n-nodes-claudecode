@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import type { Problem } from '../shared/problem';
-import { checkRef } from './refs';
+import type { Problem } from './problem';
+import { checkRef } from './gitRefs';
 
 /** `missing` marks a path absent at the ref — a per-item fact, not a broken repository. */
 export type GitResult = { ok: string } | { problem: Problem; missing?: true };

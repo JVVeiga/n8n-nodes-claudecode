@@ -94,6 +94,8 @@ nodes/
     session.ts                 Session ID -> deterministic uuid, and the resume-or-create retry
     subagent.ts                the tagged object a Subagent supplies and the Agent accepts
     subagentLog.ts             the Subagent's run log: toolRunLog on ai_agent; never throws
+    git.ts                     the ONLY module that spawns git: execFile('git', …), no shell
+    gitRefs.ts                 the ref check that runs before git does
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -184,9 +186,8 @@ nodes/
     description.ts             its schema — four operations
     params.ts                  the ONLY getNodeParameter reader for this node
     operations.ts              one function per operation, over params and deps.git
-    git.ts                     the ONLY impure module: execFile('git', …), no shell (the Project
-                               Path check reaches operations.ts as deps.pathExists)
-    refs.ts                    the ref check that runs before git does
+                               (git is shared/git.ts; the Project Path check arrives as
+                               deps.pathExists)
     input.ts                   a json parameter as text or as a parsed value
     diff.ts                    numstat + -U0 patch text -> files[], addedLines (pure)
     anchors.ts                 findings -> valid / moved with the reason (pure)
@@ -233,7 +234,7 @@ nodes/
 | Add a Subagent field | `ClaudeCodeSubagent/description.ts` + `params.ts` (it becomes an `AgentDefinition` field) |
 | Change the Subagent's execution log | `shared/subagentLog.ts` |
 | Change a Code Review Kit operation | `CodeReviewKit/operations.ts`, over the pure module: `diff.ts`, `anchors.ts`, `fingerprint.ts` or `dedupe.ts` |
-| Change which git commands the Kit runs | `CodeReviewKit/git.ts` — refs are checked first in `refs.ts` |
+| Change which git commands the Kit runs | `shared/git.ts` — refs are checked first in `shared/gitRefs.ts` |
 
 ### Rules that are not obvious
 
