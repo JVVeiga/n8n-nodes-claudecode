@@ -17,9 +17,12 @@ CI and no semantic-release. Publishing happens from a developer machine.
 - `BREAKING CHANGE:` in commit body (triggers major version bump)
 
 ### Manual Release Process
-1. Make changes following conventional commit format
+1. Make changes following conventional commit format, and describe each user-visible one under
+   `## [Unreleased]` at the top of `CHANGELOG.md` in the same PR
 2. Validate locally: `npm run lint && npm run build && npm publish --dry-run`
-3. Bump the version and tag: `npm version patch|minor|major`
+3. Rename `## [Unreleased](…/compare/vA.B.C...HEAD)` to
+   `## [X.Y.Z](…/compare/vA.B.C...vX.Y.Z) (YYYY-MM-DD)` and commit it as
+   `docs: changelog for X.Y.Z`; then bump the version and tag: `npm version patch|minor|major`
 4. Publish: `npm publish --otp=<code>` (the account requires 2FA)
 5. Push the commit and the tag: `git push && git push --tags`
 
