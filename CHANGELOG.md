@@ -1,4 +1,4 @@
-## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.4.0...HEAD)
+## [2.5.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.4.0...v2.5.0) (2026-09-28)
 
 Additive. No typeVersion moved, the 48 golden fixtures are byte-identical and unregenerated, and
 every stored workflow keeps the model it selected.
