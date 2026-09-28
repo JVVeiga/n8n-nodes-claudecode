@@ -1,3 +1,33 @@
+## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.4.0...HEAD)
+
+Additive. No typeVersion moved, the 48 golden fixtures are byte-identical and unregenerated, and
+every stored workflow keeps the model it selected.
+
+### Claude Sonnet 5.5
+
+**Claude Sonnet 5.5** (`claude-sonnet-5-5`) is now in the model list, ahead of Sonnet 5. It has a
+1M context window natively, and the CLI prices it at $2/$10 per Mtok, the same as Sonnet 5. It is
+one new entry, so it appears in every **Model** and **Fallback Model** selector.
+
+**Sonnet 5 stays.** Removing it would empty the dropdown for a workflow that had selected it, so
+only its description changed.
+
+**The Sonnet (Latest Alias) option now means Sonnet 5.5**, and it is the default. From CLI 2.1.284
+`sonnet` resolves to Sonnet 5.5 on first-party auth. On Bedrock, Vertex, Foundry and Mantle it
+still resolves to Sonnet 4.5, and on Anthropic AWS and gateways to 4.6. Pick the pinned ID if you
+need 5.5 everywhere.
+
+**Thinking set to Off does not apply to Sonnet 5.5.** The CLI marks it as a model that rejects
+disabled thinking and keeps thinking on, so the run succeeds rather than failing with a 400. Opus
+5.5 already behaves this way.
+
+### The SDK floor moved to 0.3.284
+
+`@anthropic-ai/claude-agent-sdk` `^0.3.280` → `^0.3.284`, the first release whose bundled CLI
+(2.1.284) recognizes `claude-sonnet-5-5`. 0.3.283 does not contain the ID. An unrecognized ID still
+runs, but the CLI assumes a 200k window and auto-compacts a 1M model early. If you set **Claude
+Code Executable Path**, that binary must be 2.1.284 or newer.
+
 ## [2.4.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.3.1...v2.4.0) (2026-09-27)
 
 ### Claude Code Agent 1.1
