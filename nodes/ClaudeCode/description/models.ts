@@ -15,10 +15,11 @@ import type { INodePropertyOptions } from 'n8n-workflow';
  * CLI forwards an ID it does not know straight to the API. That is why adding a model works
  * before the bundled CLI catches up, and also why the SDK floor in package.json matters: a CLI
  * that does not recognize the ID assumes a 200k context window and auto-compacts early. CLI
- * 2.1.257 (SDK 0.3.257) is the first to recognize `claude-fable-5-1`, and CLI 2.1.280 (SDK
- * 0.3.280) the first to recognize `claude-opus-5-5`. No `[1m]` suffix on the Fable IDs or on Opus
- * 5.5 — both ship 1M natively (`native_1m` in the CLI's model table). Opus 5.5 does accept the
- * suffix, but in 2.1.280 all it changes is the display name to "(1M context)".
+ * 2.1.257 (SDK 0.3.257) is the first to recognize `claude-fable-5-1`, CLI 2.1.280 (SDK 0.3.280)
+ * the first to recognize `claude-opus-5-5`, and CLI 2.1.284 (SDK 0.3.284) the first to recognize
+ * `claude-sonnet-5-5`. No `[1m]` suffix on the Fable IDs, Opus 5.5 or Sonnet 5.5 — all ship 1M
+ * natively (`native_1m` in the CLI's model table). Opus 5.5 does accept the suffix, but in 2.1.280
+ * all it changes is the display name to "(1M context)".
  */
 
 export type ModelChoice = {
@@ -74,9 +75,15 @@ export const MODELS: ModelChoice[] = [
 		short: 'Opus 4.7',
 	},
 	{
+		name: 'Sonnet 5.5',
+		value: 'claude-sonnet-5-5',
+		description: 'Latest Sonnet model, faster than Sonnet 5 at the same per-token price',
+		short: 'Sonnet 5.5',
+	},
+	{
 		name: 'Sonnet 5',
 		value: 'claude-sonnet-5',
-		description: 'Near-Opus quality on coding/agentic work at Sonnet cost',
+		description: 'Previous-generation Sonnet, superseded by 5.5',
 		short: 'Sonnet 5',
 	},
 	{
