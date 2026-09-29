@@ -1,4 +1,4 @@
-## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.5.0...HEAD)
+## [2.6.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.5.0...v2.6.0) (2026-09-29)
 
 Additive. No typeVersion moved, the 48 golden fixtures and the Agent 1 recordings are byte-identical.
 
