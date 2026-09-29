@@ -165,7 +165,8 @@ nodes/
     description.ts             its schema — input order chosen so the canvas labels do not overlap
     params.ts                  the ONLY getNodeParameter reader for this node
     connections.ts             the ONLY getInputConnectionData reader: tools, subagents, parser
-    subagents.ts               supplied subagents -> the SDK's agents record, sorted; duplicates fail
+    subagents.ts               supplied subagents -> the SDK's agents record, sorted; duplicates
+                               fail; a disabled one is validated but left out of the record
     subagentReport.ts          task_started/task_notification -> diagnostics.subagents (pure)
     orchestration.ts           the lines appended to the user turn: Required mode, unattended
     outputSchema.ts            Output Mode + pasted schema or parser -> the schema sent (unwraps)
@@ -314,7 +315,14 @@ nodes/
   two items produced two reports from one supplied instance, both carrying `itemIndex` 0, the
   sequence counter separating them). The signature takes an `itemIndex` and n8n may one day use
   it, which is why `run_key` carries it too — but a counter created in `supplyData` numbers every
-  call of the execution, which is what the key relies on today.
+  call of the execution, which is what the key relies on today. **That is the AI Agent's doing,
+  not n8n's:** it asks for its model once. Our Agent calls `getInputConnectionData` per item, and
+  a Subagent's parameters then resolve for that item (measured, e2e case96: `$json` gave each of
+  two items a different Enabled).
+- **A sub-node's error stays on the sub-node.** n8n hands the root only "Error in sub-node
+  <name>"; the message and description a Subagent threw are on the Subagent's own run (measured,
+  e2e case97). The Agent wraps that as `Claude Code execution failed: …`, so the reason is one
+  click away, on the highlighted sub-node.
 - **Reporting must never cost the caller their answer.** `createUsageReporter` calls with
   `doNotWaitToFinish` and swallows every failure into the debug log. A collector that is down
   loses a metric; a run that dies because logging failed loses what the user paid for.
@@ -338,6 +346,11 @@ nodes/
   Agent or into a mismatched input (measured in the real editor). An `ai_tool` Subagent with a
   marker would have let exactly that wiring through. n8n delivers the
   supplied objects in no particular order, so the Agent sorts them by name.
+- **A disabled Subagent is hidden, not refused.** Enabled off leaves it out of `agents` (the model
+  never sees it) and out of the Required list, but it stays in `supplied`, so the report keeps its
+  entry with `enabled: false`. The field is absent on an enabled entry: that is what keeps Agent 1
+  and 1.1 byte-identical without a typeVersion. A value other than true/false fails, because
+  reading a typo'd expression as "off" would silently skip a subagent the workflow requires.
 - **An `ai_tool` input on a root node returns toolkits unflattened.** `getInputConnectionData` builds
   a node-as-tool into a tool, but hands an MCP Client over as a `StructuredToolkit` with `.tools`.
   The AI Agent flattens that itself; a root node of ours has to, which is what `flattenTools` is for.
@@ -415,7 +428,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1366 tests, node:test, no framework
+npm test                                    # 1388 tests, node:test, no framework
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -438,7 +451,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 103 named behaviours against real executions:
+with the node installed and asserts 110 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
