@@ -229,6 +229,25 @@ About US$0.10 for the four.
   `kit-repo.sh` builds (case88's is untouched): one codeword at the tag `rules-r1`, another at
   HEAD. File tools are disallowed, so the answer can only come from the Instruction File.
 
+## The Subagent Enabled cases
+
+`case95`–`case97` put a Code node named `Plan` between the trigger and the Agent, standing in for a
+workflow's own "which specialists run" step. Each subagent's codeword exists only in its
+instructions, so a codeword in the answer proves that subagent ran, and its absence that the model
+could not reach it. About US$0.06 for the three; case97 calls no model.
+
+- `case95` has four Subagents under Required: alpha with no Enabled parameter (a workflow saved
+  before the option), beta and gamma reading `$('Plan')`, delta reading `$json`. Plan turns gamma
+  and delta off. Include Transcript is on, so the init message shows which agents the session had.
+- `case96` emits two items and turns each subagent on for one of them. It is the first measurement
+  of a sub-node parameter resolved for an item other than 0: the spike behind the Agent measured
+  `supplyData` with one item only. `run-cases.mjs` records every item as `itemJsons` when there is
+  more than one.
+- `case97` points Enabled at a field Plan does not have. The execution must fail naming the
+  subagent, before any model call. n8n keeps the reason on the sub-node and hands the Agent only
+  "Error in sub-node Subagent alpha", so `run-cases.mjs` records each node's own error in
+  `nodeRuns[name].error` and the check reads it there.
+
 ## Retry a timing-sensitive failure before investigating it
 
 The timeout cases (`case01`, `case02`, `case03`, and `case08` which resumes case01's session)

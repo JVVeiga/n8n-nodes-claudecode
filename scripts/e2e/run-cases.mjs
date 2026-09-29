@@ -259,10 +259,14 @@ for (const { id, name } of ids) {
 		const first = list?.[0]?.data ?? {};
 		const types = Object.keys(first);
 		const sample = types.length ? first[types[0]]?.[0]?.[0]?.json : undefined;
+		// n8n keeps a sub-node's own error on the sub-node and hands the root only "Error in sub-node
+		// <name>" (case97), so the reason is recorded where it lives.
+		const error = list?.[0]?.error;
 		nodeRuns[nodeName] = {
 			runs: Array.isArray(list) ? list.length : 0,
 			types,
 			sample: sample === undefined ? null : JSON.stringify(sample).slice(0, 400),
+			...(error ? { error: String(error.message ?? '').slice(0, 400) } : {}),
 		};
 	}
 	// The Code Review Kit's nodes, whole: case88 asserts exact values across all of them, which the
@@ -323,6 +327,8 @@ for (const { id, name } of ids) {
 		readFromDb,
 		itemCount: items.length,
 		itemJson: items[0]?.json ?? null,
+		// Every item, only when there is more than one: case96 checks each item on its own.
+		...(items.length > 1 ? { itemJsons: items.map((i) => i.json) } : {}),
 		hasTopLevelErrorField: items[0] ? Object.prototype.hasOwnProperty.call(items[0], 'error') : null,
 		setItemJson: setItems[0]?.json ?? null,
 		authFailures,

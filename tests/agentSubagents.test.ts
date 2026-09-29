@@ -48,6 +48,31 @@ describe('buildSubagents', () => {
 		assert.equal(result.supplied[0].log, log);
 	});
 
+	it('leaves a disabled subagent out of agents but keeps it in supplied', () => {
+		const off = { ...subagent('beta'), enabled: false };
+		const on = { ...subagent('alpha'), enabled: true };
+		const result = buildSubagents([off, subagent('gamma'), on]);
+		assert.ok(!('problem' in result));
+		assert.deepEqual(Object.keys(result.agents), ['alpha', 'gamma']);
+		assert.deepEqual(
+			result.supplied.map((s) => s.name),
+			['alpha', 'beta', 'gamma'],
+		);
+	});
+
+	it('all disabled means an empty record', () => {
+		const result = buildSubagents([{ ...subagent('alpha'), enabled: false }]);
+		assert.ok(!('problem' in result));
+		assert.deepEqual(result.agents, {});
+		assert.equal(result.supplied.length, 1);
+	});
+
+	it('a disabled subagent still counts as a duplicate name', () => {
+		const result = buildSubagents([subagent('alpha'), { ...subagent('alpha'), enabled: false }]);
+		assert.ok('problem' in result);
+		assert.match(result.problem.message, /'alpha'/);
+	});
+
 	it('names every duplicated name', () => {
 		const result = buildSubagents([
 			subagent('beta'),

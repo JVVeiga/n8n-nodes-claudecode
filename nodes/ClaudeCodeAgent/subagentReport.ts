@@ -47,6 +47,8 @@ export type SubagentDiagnostics = {
 	name: string;
 	/** The configured model; present only when the caller reports models. */
 	model?: string | null;
+	/** Present only on a subagent switched off for the run, so an enabled entry is unchanged. */
+	enabled?: false;
 	invocations: number;
 	completed: number;
 	/** Sums over the subagent's invocations; null when no invocation reported the figure. */
@@ -60,6 +62,7 @@ export function buildSubagentReport(
 	messages: SDKMessage[],
 	connectedNames: string[],
 	models?: Record<string, string | null>,
+	disabledNames: string[] = [],
 ): SubagentDiagnostics[] {
 	const invocations = subagentInvocations(messages);
 	return connectedNames.map((name) => {
@@ -67,6 +70,7 @@ export function buildSubagentReport(
 		return {
 			name,
 			...(models ? { model: models[name] ?? null } : {}),
+			...(disabledNames.includes(name) ? { enabled: false as const } : {}),
 			invocations: own.length,
 			completed: own.filter((i) => i.status === 'completed').length,
 			totalTokens: sum(own.map((i) => i.totalTokens)),

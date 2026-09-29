@@ -772,8 +772,13 @@ clone often lacks the base branch, so fetch it (`git fetch origin main`) before 
 option needs git on the PATH of the n8n process, as the Code Review Kit does.
 
 **Required orchestration asks, it cannot force.** It adds a line to the prompt asking Claude to
-delegate to every connected subagent at least once. `diagnostics.subagents` shows whether each one
-ran, and the workflow decides what to do about one that did not.
+delegate to every enabled subagent at least once. `diagnostics.subagents` shows whether each one
+ran, and the workflow decides what to do about one that did not. It keeps an entry for a disabled
+subagent too, marked `enabled: false`, so "switched off" and "not called" read differently.
+
+**To run only some subagents in an execution, switch the others off rather than naming them in
+the prompt.** Required lists every enabled subagent, whatever the prompt says, and a subagent that
+is off is not in the session at all.
 
 **From version 1.1 the prompt ends by saying the run is unattended**: nobody reads the conversation
 or answers questions, so the model decides and delivers rather than ending with a question. With a
@@ -922,6 +927,7 @@ Subagents input and refuses to wire it into n8n's own AI Agent.
 | **When to Use** | what the orchestrator reads to decide when to delegate |
 | **Instructions** | the subagent's system prompt |
 | **Model** | `Inherit From Agent` (default) or any model in the list |
+| **Enabled** | on by default. Off leaves the subagent out of the session, so the Agent cannot delegate to it and Required orchestration does not list it. Takes an expression, to decide per execution. A value other than true or false fails the item |
 | Options → **Effort** | `Inherit From Agent` or a level |
 | Options → **Max Turns** | per delegation. 0 inherits |
 | Options → **Allowed Tools** | the built-in tools this subagent may use. Leave it and the next one empty to inherit every tool the Agent has |

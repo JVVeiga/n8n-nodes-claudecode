@@ -7,7 +7,7 @@ export type SubagentReadContext = {
 	getNodeParameter: IExecuteFunctions['getNodeParameter'];
 };
 
-export type SubagentParams = { name: string; definition: AgentDefinition };
+export type SubagentParams = { name: string; enabled: boolean; definition: AgentDefinition };
 
 type SubagentOptions = {
 	effort?: string;
@@ -30,6 +30,17 @@ const splitNames = (raw: string | undefined): string[] =>
 
 const unique = (names: string[]): string[] => [...new Set(names)];
 
+// An expression can resolve to anything. Guessing would either pay for a subagent nobody wanted or
+// silently skip a mandatory one, so only true and false are accepted.
+const toEnabled = (raw: unknown): boolean | null => {
+	if (typeof raw === 'boolean') return raw;
+	const text = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+	return text === 'true' ? true : text === 'false' ? false : null;
+};
+
+const shown = (raw: unknown): string =>
+	typeof raw === 'string' ? `'${raw}'` : String(JSON.stringify(raw) ?? raw);
+
 /** The only place this node reads parameters. */
 export function readSubagentParams(
 	ctx: SubagentReadContext,
@@ -42,6 +53,18 @@ export function readSubagentParams(
 				message: `The subagent name '${name}' is not valid.`,
 				description:
 					'Use lowercase letters, digits and hyphens, starting with a letter or digit — e.g. code-reviewer.',
+			},
+		};
+	}
+
+	const rawEnabled: unknown = ctx.getNodeParameter('enabled', itemIndex, true);
+	const enabled = toEnabled(rawEnabled);
+	if (enabled === null) {
+		return {
+			problem: {
+				message: `The subagent '${name}' has Enabled set to ${shown(rawEnabled)}, which is neither true nor false.`,
+				description:
+					'Enabled must resolve to true or false. An expression that points at a missing field resolves to undefined — check the field name.',
 			},
 		};
 	}
@@ -67,6 +90,7 @@ export function readSubagentParams(
 
 	return {
 		name,
+		enabled,
 		definition: {
 			description,
 			prompt,

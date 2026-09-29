@@ -107,6 +107,49 @@ describe('Claude Code Subagent — the definition', () => {
 		});
 	}
 
+	it('is enabled when the parameter is absent, as in every workflow saved before it', () => {
+		assert.equal(supply().subagent.enabled, true);
+	});
+
+	for (const [value, expected] of [
+		[true, true],
+		[false, false],
+		[' FALSE ', false],
+		['true', true],
+	] as const) {
+		it(`reads Enabled ${JSON.stringify(value)} as ${expected}`, () => {
+			assert.equal(supply({ enabled: value }).subagent.enabled, expected);
+		});
+	}
+
+	it('a disabled subagent keeps its whole definition', () => {
+		const { subagent } = supply({ enabled: false, model: 'haiku' });
+		assert.equal(isSuppliedSubagent(subagent), true);
+		assert.equal(subagent.definition.model, 'haiku');
+	});
+
+	for (const bad of [undefined, null, 'yes', '', 0, 1]) {
+		it(`rejects Enabled ${JSON.stringify(bad) ?? 'undefined'}, naming the subagent and the value`, () => {
+			const fake = createFakeSupplyContext({ params: subagentParams({ enabled: bad }) });
+			assert.throws(
+				() => supplySubagent(fake.supplyCtx, 0),
+				(error: unknown) =>
+					error instanceof NodeOperationError &&
+					error.message.includes("'code-reviewer'") &&
+					error.message.includes(typeof bad === 'string' ? `'${bad}'` : String(bad)),
+			);
+		});
+	}
+
+	it('resolves Enabled for the item it is asked about', () => {
+		const fake = createFakeSupplyContext({
+			params: subagentParams({ enabled: (i: number) => i === 1 }),
+		});
+		const at = (i: number) => supplySubagent(fake.supplyCtx, i).response as SuppliedSubagent;
+		assert.equal(at(0).enabled, false);
+		assert.equal(at(1).enabled, true);
+	});
+
 	it('rejects an empty When to Use or Instructions', () => {
 		for (const over of [{ whenToUse: '  ' }, { instructions: '' }]) {
 			const fake = createFakeSupplyContext({ params: subagentParams(over) });
@@ -222,6 +265,12 @@ describe('Claude Code Subagent — description', () => {
 			options.map((o) => o.name),
 			['extraTools', 'tools', 'disallowedTools', 'effort', 'maxTurns', 'omitClaudeMd'],
 		);
+	});
+
+	it('Enabled is a top-level boolean that defaults to on', () => {
+		const enabled = d.properties.find((p) => p.name === 'enabled');
+		assert.equal(enabled?.type, 'boolean');
+		assert.equal(enabled?.default, true);
 	});
 
 	it('offers exactly the SDK’s named effort levels plus inherit', () => {

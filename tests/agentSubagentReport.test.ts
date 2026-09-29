@@ -215,6 +215,32 @@ describe('buildSubagentReport', () => {
 	it('is empty when nothing is connected', () => {
 		assert.deepEqual(buildSubagentReport(recordedRun(), []), []);
 	});
+
+	it('marks only the disabled entries, after the model, with enabled: false', () => {
+		const [alpha, gamma] = buildSubagentReport(
+			recordedRun(),
+			['alpha', 'gamma'],
+			{ alpha: 'sonnet', gamma: 'haiku' },
+			['gamma'],
+		);
+		assert.equal('enabled' in alpha, false);
+		assert.deepEqual(gamma, {
+			name: 'gamma',
+			model: 'haiku',
+			enabled: false,
+			invocations: 0,
+			completed: 0,
+			totalTokens: null,
+			toolUses: null,
+			durationMs: null,
+		});
+	});
+
+	it('still counts a disabled subagent’s invocations, whatever defined it', () => {
+		const [alpha] = buildSubagentReport(recordedRun(), ['alpha'], undefined, ['alpha']);
+		assert.equal(alpha.enabled, false);
+		assert.equal(alpha.invocations, 1);
+	});
 });
 
 describe('countSubagentToolUses', () => {

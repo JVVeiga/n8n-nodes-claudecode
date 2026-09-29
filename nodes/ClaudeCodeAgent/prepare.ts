@@ -20,6 +20,7 @@ export type PreparedAgent = {
 	auth: AuthSelection;
 	connections: AgentConnections;
 	subagents: Subagents;
+	/** The enabled subagents: what the session has, and what Required lists. */
 	subagentNames: string[];
 	schema: { schema: Record<string, unknown> } | null;
 	instructions: Instructions | null;

@@ -27,6 +27,7 @@ import {
 } from './report';
 import { extractStructured, structuredDeliveries } from './structured';
 import { buildSubagentReport, subagentModels } from './subagentReport';
+import { isEnabled } from './subagents';
 import { createTurnRunner, runMainTurn, settleMainRun, type Attempt } from './turn';
 import { runVerification } from './verification/run';
 
@@ -211,14 +212,16 @@ async function runAgentItem(
 		authMode: prepared.auth.mode,
 		extra: {
 			bridgedTools: bridge?.toolNames,
+			// Every connected subagent, disabled ones included, so "off" and "not called" differ.
 			subagents:
-				subagentNames.length > 0
+				subagents.supplied.length > 0
 					? buildSubagentReport(
 							messages,
-							subagentNames,
+							subagents.supplied.map((s) => s.name),
 							agent.behaviour.reportsSubagentModels
 								? subagentModels(subagents.supplied, params.model)
 								: undefined,
+							subagents.supplied.filter((s) => !isEnabled(s)).map((s) => s.name),
 						)
 					: undefined,
 			instructions: instructions
