@@ -389,6 +389,64 @@ describe('ClaudeCodeAgent — subagents', () => {
 		assert.match(last, /- reviewer\n- tester/);
 	});
 
+	it('Required lists only the enabled subagents, and only they reach the SDK', async () => {
+		const { json, calls, optionsOf } = await exec({
+			params: { subagentOrchestration: 'required' },
+			connections: {
+				ai_agent: [
+					subagent('tester'),
+					{ ...subagent('perf'), enabled: false },
+					subagent('reviewer'),
+				],
+			},
+		});
+		assert.deepEqual(Object.keys(optionsOf(0).agents ?? {}), ['reviewer', 'tester']);
+		const [turn] = await drainPrompt(calls[0]);
+		const blocks = turn as Array<{ type: string; text: string }>;
+		const last = blocks[blocks.length - 1].text;
+		assert.match(last, /- reviewer\n- tester\n/);
+		assert.doesNotMatch(last, /perf/);
+		const report = diagnosticsOf(json).subagents as Array<Record<string, unknown>>;
+		assert.deepEqual(
+			report.map((r) => [r.name, r.enabled]),
+			[
+				['perf', false],
+				['reviewer', undefined],
+				['tester', undefined],
+			],
+		);
+		assert.equal('enabled' in report[1], false);
+	});
+
+	it('every subagent disabled: no subagents in the session, no instruction, still reported', async () => {
+		const { json, calls, optionsOf } = await exec({
+			params: { subagentOrchestration: 'required' },
+			connections: { ai_agent: [{ ...subagent('perf'), enabled: false }] },
+		});
+		assert.equal(json.success, true);
+		assert.equal(optionsOf(0).agents, undefined);
+		assert.deepEqual(await drainPrompt(calls[0]), ['Review the change.']);
+		const report = diagnosticsOf(json).subagents as Array<Record<string, unknown>>;
+		assert.deepEqual(
+			report.map((r) => [r.name, r.enabled, r.invocations]),
+			[['perf', false, 0]],
+		);
+	});
+
+	it('1.1 with a schema and every subagent disabled gets the plain unattended line', async () => {
+		const { calls } = await exec({
+			typeVersion: 1.1,
+			params: { outputMode: 'jsonSchema', jsonSchema: JSON.stringify(SCHEMA) },
+			connections: { ai_agent: [{ ...subagent('perf'), enabled: false }] },
+			stream: { messages: structuredRun({ summary: 'fine' }) },
+		});
+		const [turn] = await drainPrompt(calls[0]);
+		const blocks = turn as Array<{ type: string; text: string }>;
+		const last = blocks[blocks.length - 1].text;
+		assert.match(last, /unattended/);
+		assert.doesNotMatch(last, /subagent/);
+	});
+
 	it('Auto orchestration leaves the prompt a plain string', async () => {
 		const { calls } = await exec({ connections: { ai_agent: [subagent('reviewer')] } });
 		assert.deepEqual(await drainPrompt(calls[0]), ['Review the change.']);

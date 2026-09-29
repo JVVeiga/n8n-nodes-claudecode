@@ -32,6 +32,7 @@ export function supplySubagent(ctx: ISupplyDataFunctions, itemIndex: number): Su
 		[SUBAGENT_TAG]: 1,
 		name: outcome.name,
 		definition: outcome.definition,
+		enabled: outcome.enabled,
 		log: subagentRunLog(ctx),
 	};
 	return { response: subagent };

@@ -2,7 +2,10 @@ import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 import type { Problem } from '../shared/problem';
 import { isSuppliedSubagent, type SuppliedSubagent } from '../shared/subagent';
 
+/** `agents` holds the enabled subagents only; `supplied` every connected one. */
 export type Subagents = { agents: Record<string, AgentDefinition>; supplied: SuppliedSubagent[] };
+
+export const isEnabled = (s: SuppliedSubagent): boolean => s.enabled !== false;
 
 const describeValue = (value: unknown): string => {
 	if (value === null) return 'null';
@@ -15,7 +18,8 @@ const describeValue = (value: unknown): string => {
 /**
  * Turns what n8n delivers on the Subagents input into the SDK's `agents` record. Sorted by name
  * because n8n does not deliver connections in the order they were drawn, and the record's order
- * is what the model sees.
+ * is what the model sees. A disabled subagent is validated like the rest but left out of the
+ * record, so the model never learns it exists.
  */
 export function buildSubagents(raw: unknown): Subagents | { problem: Problem } {
 	const delivered = raw === undefined || raw === null ? [] : Array.isArray(raw) ? raw : [raw];
@@ -55,6 +59,6 @@ export function buildSubagents(raw: unknown): Subagents | { problem: Problem } {
 
 	supplied.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 	const agents: Record<string, AgentDefinition> = {};
-	for (const s of supplied) agents[s.name] = s.definition;
+	for (const s of supplied.filter(isEnabled)) agents[s.name] = s.definition;
 	return { agents, supplied };
 }

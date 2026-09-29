@@ -1,3 +1,25 @@
+## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.5.0...HEAD)
+
+Additive. No typeVersion moved, the 48 golden fixtures and the Agent 1 recordings are byte-identical.
+
+### Enabled on the Claude Code Subagent
+
+The Subagent node has a new **Enabled** switch, on by default, that takes an expression. When it is
+off, the subagent stays connected but is left out of the session: the Agent is not told it exists,
+so it cannot delegate to it, and **Required** orchestration no longer lists it.
+
+This lets a workflow decide per execution which specialists run. Before, Required asked Claude to
+delegate to every connected subagent, even when the prompt named only some of them, and Auto could
+not guarantee that a mandatory one ran.
+
+`diagnostics.subagents` keeps one entry per connected subagent. A disabled one carries
+`enabled: false`; an enabled entry is unchanged and has no such field. With every subagent off, the
+Agent runs with no subagents and Required adds nothing to the prompt.
+
+**Enabled accepts only true or false** (the strings `"true"` and `"false"` included). Anything else,
+such as the `undefined` an expression gives for a misspelled field, fails the item and names the
+subagent. Reading it as off would silently skip a subagent the workflow meant to require.
+
 ## [2.5.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.4.0...v2.5.0) (2026-09-28)
 
 Additive. No typeVersion moved, the 48 golden fixtures are byte-identical and unregenerated, and

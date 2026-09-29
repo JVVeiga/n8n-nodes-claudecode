@@ -10,6 +10,8 @@ export type SuppliedSubagent = {
 	[SUBAGENT_TAG]: 1;
 	name: string;
 	definition: AgentDefinition;
+	/** Absent means enabled. A disabled subagent is connected but left out of the session. */
+	enabled?: boolean;
 	log?: (invocation: SubagentInvocation) => void;
 };
 

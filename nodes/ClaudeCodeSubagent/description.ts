@@ -88,6 +88,14 @@ export const claudeCodeSubagentDescription: INodeTypeDescription = {
 			description: 'Claude model for this subagent',
 		},
 		{
+			displayName: 'Enabled',
+			name: 'enabled',
+			type: 'boolean',
+			default: true,
+			description:
+				'Whether the Agent can delegate to this subagent in this run. When off, the subagent is left out of the session and Required orchestration does not list it. Use an expression to decide per execution.',
+		},
+		{
 			displayName: 'Options',
 			name: 'options',
 			type: 'collection',
