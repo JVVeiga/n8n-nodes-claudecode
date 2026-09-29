@@ -1933,6 +1933,102 @@ cases.push(
 	}),
 );
 
+// Enabled on the Subagent (95-97). A Code node named Plan stands in for a workflow's own "which
+// specialists run" step, and each subagent's codeword exists only in its instructions: a codeword in
+// the answer proves that subagent ran, its absence that the model could not reach it.
+function withPlan(wf, items) {
+	wf.nodes.splice(1, 0, {
+		parameters: {
+			mode: 'runOnceForAllItems',
+			language: 'javaScript',
+			jsCode: `return ${JSON.stringify(items.map((json) => ({ json })))};`,
+		},
+		id: nextId(),
+		name: 'Plan',
+		type: 'n8n-nodes-base.code',
+		typeVersion: 2,
+		position: [130, 0],
+	});
+	wf.connections['When clicking Execute'] = { main: [[{ node: 'Plan', type: 'main', index: 0 }]] };
+	wf.connections.Plan = { main: [[{ node: 'Claude Code Agent', type: 'main', index: 0 }]] };
+	return wf;
+}
+
+const enabledBy = (sub, enabled) => ({
+	...sub,
+	node: { ...sub.node, parameters: { ...sub.node.parameters, enabled } },
+});
+
+const ENABLED_CODEWORDS = {
+	alpha: 'MAGPIE-3108',
+	beta: 'CONDOR-5526',
+	gamma: 'BADGER-7740',
+	delta: 'WALRUS-9162',
+};
+const planSubagent = (name) => subagentNode(`Subagent ${name}`, name, ENABLED_CODEWORDS[name]);
+
+cases.push(
+	withPlan(
+		agentRootWorkflow({
+			name: 'case95 agent 1.1 - Enabled by expression, orchestration Required',
+			notes:
+				'Four Subagents, Required. alpha has no Enabled parameter (default on), beta and gamma ' +
+				'read Plan by name, delta reads $json. Plan turns gamma and delta off. Include Transcript ' +
+				`on. EXPECT: ${ENABLED_CODEWORDS.alpha} and ${ENABLED_CODEWORDS.beta} in the answer, ` +
+				'neither of the others; init.agents without gamma and delta; diagnostics.subagents with ' +
+				'four entries, enabled: false only on gamma and delta, invocations 0 there.',
+			version: 1.1,
+			params: {
+				prompt:
+					'Ask every subagent you have for its codeword, then reply with one line per subagent: ' +
+					'<name>=<codeword>. Use only the codewords your subagents report.',
+				subagentOrchestration: 'required',
+			},
+			options: { includeTranscript: true },
+			subNodes: [
+				planSubagent('alpha'),
+				enabledBy(planSubagent('beta'), "={{ $('Plan').first().json.plan.beta }}"),
+				enabledBy(planSubagent('gamma'), "={{ $('Plan').first().json.plan.gamma }}"),
+				enabledBy(planSubagent('delta'), '={{ $json.plan.delta }}'),
+			],
+		}),
+		[{ plan: { beta: true, gamma: false, delta: false } }],
+	),
+	withPlan(
+		agentRootWorkflow({
+			name: 'case96 agent 1.1 - Enabled resolved per item',
+			notes:
+				'Plan emits two items; each Subagent is on only for the item that names it. Required. ' +
+				`EXPECT: item 0 answers ${ENABLED_CODEWORDS.alpha} only, item 1 ${ENABLED_CODEWORDS.beta} ` +
+				'only, and each item reports the other subagent as enabled: false. This is the first ' +
+				'measurement of a sub-node parameter resolved for an item other than 0.',
+			version: 1.1,
+			params: {
+				prompt:
+					'Ask your subagent for its codeword, then reply with exactly: CODEWORD=<codeword>. ' +
+					'Use only the codeword your subagent reports.',
+				subagentOrchestration: 'required',
+			},
+			subNodes: [
+				enabledBy(planSubagent('alpha'), "={{ $json.want === 'alpha' }}"),
+				enabledBy(planSubagent('beta'), "={{ $json.want === 'beta' }}"),
+			],
+		}),
+		[{ want: 'alpha' }, { want: 'beta' }],
+	),
+	withPlan(
+		agentRootWorkflow({
+			name: 'case97 agent - an Enabled that is neither true nor false fails the item',
+			notes:
+				'alpha reads a field Plan does not have, so Enabled resolves to undefined. EXPECT: the ' +
+				'execution fails naming alpha and the value, before any model call.',
+			params: { prompt: 'Reply with exactly: OK' },
+			subNodes: [enabledBy(planSubagent('alpha'), '={{ $json.plan.typo }}')],
+		}),
+		[{ plan: {} }],
+	),
+);
+
 // case80's targets. Neither is named `case…`, so run-cases never executes them directly, and both
 // must be PUBLISHED: a Call Workflow Tool resolves the published version, and an MCP Server
 // Trigger is only served once published — and then only after n8n restarts (n8n-up.sh does both).

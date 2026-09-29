@@ -610,12 +610,64 @@ const checks = [
     return j?.success === true && /LYNX-6641/.test(out) && !/OSPREY-2208/.test(out) &&
       JSON.stringify(i?.loaded) === '[".review/rules.md"]' && !('ref' in (i ?? {}));
   }],
+  // Enabled on the Subagent (95-97). A codeword lives only in its subagent's instructions.
+  ['95 only the enabled subagents answer', () => {
+    const j = get('case95')?.itemJson;
+    const out = String(j?.result ?? '');
+    return j?.success === true && /MAGPIE-3108/.test(out) && /CONDOR-5526/.test(out) &&
+      !/BADGER-7740/.test(out) && !/WALRUS-9162/.test(out);
+  }],
+  ['95 a disabled subagent is not in the session at all', () => {
+    const init = (get('case95')?.itemJson?.messages ?? [])
+      .find((m) => m.type === 'system' && m.subtype === 'init');
+    const names = (init?.agents ?? []).map((a) => (typeof a === 'string' ? a : a?.name));
+    console.log(`      95 init.agents: ${JSON.stringify(names)}`);
+    return names.includes('alpha') && names.includes('beta') &&
+      !names.includes('gamma') && !names.includes('delta');
+  }],
+  ['95 diagnostics mark the disabled entries, and only those', () => {
+    const list = get('case95')?.itemJson?.diagnostics?.subagents ?? [];
+    const by = Object.fromEntries(list.map((s) => [s.name, s]));
+    return list.length === 4 &&
+      ['alpha', 'beta'].every((n) => by[n] && !('enabled' in by[n]) && by[n].invocations >= 1) &&
+      ['gamma', 'delta'].every((n) => by[n]?.enabled === false && by[n].invocations === 0);
+  }],
+  ['95 only the enabled Subagent nodes log a delegation', () => {
+    const runs = get('case95')?.nodeRuns ?? {};
+    return ['Subagent alpha', 'Subagent beta'].every((n) => runs[n]?.types?.includes('ai_agent')) &&
+      ['Subagent gamma', 'Subagent delta'].every((n) => !runs[n]?.types?.includes('ai_agent'));
+  }],
+  ['96 Enabled is resolved per item: each item reaches only its own subagent', () => {
+    const c = get('case96');
+    const [a, b] = c?.itemJsons ?? [];
+    const out = (j) => String(j?.result ?? '');
+    console.log(`      96 answers: ${JSON.stringify([out(a), out(b)])}`);
+    return c?.itemCount === 2 && a?.success === true && b?.success === true &&
+      /MAGPIE-3108/.test(out(a)) && !/CONDOR-5526/.test(out(a)) &&
+      /CONDOR-5526/.test(out(b)) && !/MAGPIE-3108/.test(out(b));
+  }],
+  ['96 each item reports the other subagent as disabled', () => {
+    const [a, b] = get('case96')?.itemJsons ?? [];
+    const flags = (j) =>
+      JSON.stringify((j?.diagnostics?.subagents ?? []).map((s) => [s.name, s.enabled ?? true]));
+    return flags(a) === '[["alpha",true],["beta",false]]' &&
+      flags(b) === '[["alpha",false],["beta",true]]';
+  }],
+  // n8n keeps the reason on the sub-node and gives the Agent only "Error in sub-node <name>".
+  ['97 an Enabled that is neither true nor false fails before any model call', () => {
+    const c = get('case97');
+    const own = c?.nodeRuns?.['Subagent alpha']?.error;
+    console.log(`      97 agent: ${c?.errorMessage} | sub-node: ${own}`);
+    return c?.status === 'error' && c.itemJson === null && c.backgroundRun?.results === 0 &&
+      /Subagent alpha/.test(String(c.errorMessage)) &&
+      /subagent 'alpha' has Enabled set to undefined/.test(String(own));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
 // FAIL puts three permanent red lines in every verdict, which is how a real failure gets ignored.
 // The leading number in the check name is the case it needs. Only those long-standing gaps skip:
-// a missing Agent, Kit or background case (80-94) means the pass did not cover them, and fails.
+// a missing Agent, Kit or background case (80-97) means the pass did not cover them, and fails.
 const caseOf = (name) => `case${name.match(/^(\d+[a-z]?)/)?.[1] ?? ''}`;
 const mayBeAbsent = (name) => ['case14', 'case15', 'case16'].includes(caseOf(name));
 
