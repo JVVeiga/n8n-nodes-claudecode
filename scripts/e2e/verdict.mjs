@@ -662,6 +662,33 @@ const checks = [
       /Subagent alpha/.test(String(c.errorMessage)) &&
       /subagent 'alpha' has Enabled set to undefined/.test(String(own));
   }],
+
+  // Video (cases 100-102). Each 5-second block of the clip shows a 4-digit number no time label
+  // carries (gen-workflows.mjs VIDEO_BLOCK_NUMBER), so a right answer means a frame from the right
+  // block reached the model.
+  ['100 video frames reach the Claude Code node, answered from the pixels', () => {
+    const c = get('case100');
+    const j = c?.itemJson;
+    const frames = c?.nodeRuns?.['Video Frames']?.sample ?? '';
+    console.log(`      100: ${String(j?.result).slice(0, 80)} | ${frames.slice(0, 160)}`);
+    return j?.success === true && /\b6910\b/.test(String(j.result)) &&
+      /"mode":"frames"/.test(frames) && j.diagnostics?.attachments?.count === 15 &&
+      j.diagnostics.attachments.inline.every((a) => a.as === 'image');
+  }],
+  ['101 video mosaics: the model finds the moment by its burned-in label', () => {
+    const c = get('case101');
+    const j = c?.itemJson;
+    const frames = c?.nodeRuns?.['Video Frames']?.sample ?? '';
+    console.log(`      101: ${String(j?.result).slice(0, 80)} | ${frames.slice(0, 160)}`);
+    return j?.success === true && /\b1505\b/.test(String(j.result)) &&
+      /"mode":"mosaic"/.test(frames) && j.diagnostics?.attachments?.count === 2;
+  }],
+  ['102 video frames pass through the AI Agent to the Claude Code Chat Model', () => {
+    const c = get('case102');
+    console.log(`      102: ${String(c?.itemJson?.output).slice(0, 80)}`);
+    return c?.status === 'success' && /\b3667\b/.test(String(c.itemJson?.output ?? '')) &&
+      !/NO_IMAGES/.test(String(c.itemJson?.output ?? ''));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

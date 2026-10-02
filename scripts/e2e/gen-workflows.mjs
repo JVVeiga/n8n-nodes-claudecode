@@ -2,9 +2,13 @@
 // `n8n import:workflow --separate --input=<dir>`. Each is a manual trigger -> Claude Code node,
 // plus a Set node reading the payload fields the case is about, so the assertion is visible in the
 // UI without digging through JSON.
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const OUT = new URL('./workflows/', import.meta.url).pathname;
 rmSync(OUT, { recursive: true, force: true });
@@ -2115,6 +2119,112 @@ cases.push({
 	pinData: {},
 	meta: { testCaseNotes: 'Canvas for the editor check. Named without "case" so run-cases skips it.' },
 });
+
+// Video (cases 100-102). The clip is generated here, on the host, with the package's own bundled
+// ffmpeg, and travels inside the workflow as base64 like case40's PNG. Every 5-second block shows a
+// 4-digit number unrelated to the time (VIDEO_BLOCK_NUMBER), so the model cannot answer from a time
+// label: only the pixels of a frame from the right block carry it.
+const VIDEO_SECONDS = 60;
+export const VIDEO_BLOCK_NUMBER = (block) => ((block * 7919 + 1234) % 9000) + 1000;
+
+function numbersVideo() {
+	const require = createRequire(import.meta.url);
+	const ffmpeg = require('@ffmpeg-installer/ffmpeg').path;
+	const font = [
+		'/System/Library/Fonts/Supplemental/Arial.ttf',
+		'/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
+		'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+	].find((f) => existsSync(f));
+	if (!font) throw new Error('gen-workflows: no font to draw the video case numbers with');
+	const dir = mkdtempSync(join(tmpdir(), 'e2e-video-'));
+	const out = join(dir, 'numbers.mp4');
+	execFileSync(ffmpeg, [
+		'-hide_banner', '-loglevel', 'error', '-y',
+		'-f', 'lavfi', '-i', `color=c=0x203040:s=640x360:r=10:d=${VIDEO_SECONDS}`,
+		'-vf', `drawtext=fontfile='${font}':text='%{eif\\:mod(floor(t/5)*7919+1234\\,9000)+1000\\:d}':fontsize=110:fontcolor=white:x=(w-tw)/2:y=(h-th)/2`,
+		'-c:v', 'libx264', '-preset', 'veryfast', '-g', '20', '-pix_fmt', 'yuv420p', out,
+	]);
+	const bytes = readFileSync(out);
+	rmSync(dir, { recursive: true, force: true });
+	return bytes;
+}
+
+const NUMBERS_MP4 = numbersVideo().toString('base64');
+const VIDEO_TYPE = '@joaoveiga/n8n-nodes-claudecode.claudeCodeVideoFrames';
+
+/** Puts "Make video" -> "Video Frames" between the trigger and `target`. NOT 'Claude Code…': run-cases reads the target. */
+function withVideoFrames(wf, target, frames) {
+	wf.nodes.splice(
+		1,
+		0,
+		{
+			parameters: {
+				mode: 'runOnceForAllItems',
+				language: 'javaScript',
+				jsCode: `return [{ json: {}, binary: { data: { data: ${JSON.stringify(NUMBERS_MP4)}, mimeType: 'video/mp4', fileName: 'numbers.mp4' } } }];`,
+			},
+			id: nextId(),
+			name: 'Make video',
+			type: 'n8n-nodes-base.code',
+			typeVersion: 2,
+			position: [120, -200],
+		},
+		{
+			parameters: { binaryProperty: 'data', mode: frames.mode, maxImages: frames.maxImages, options: frames.options ?? {} },
+			id: nextId(),
+			name: 'Video Frames',
+			type: VIDEO_TYPE,
+			typeVersion: 1,
+			position: [300, -200],
+		},
+	);
+	wf.connections['When clicking Execute'] = { main: [[{ node: 'Make video', type: 'main', index: 0 }]] };
+	wf.connections['Make video'] = { main: [[{ node: 'Video Frames', type: 'main', index: 0 }]] };
+	wf.connections['Video Frames'] = { main: [[{ node: target, type: 'main', index: 0 }]] };
+	return wf;
+}
+
+const askAt = (clock) =>
+	`The attached images are moments from a video, each labelled with its time. A large 4-digit number is shown on screen, and it changes every few seconds. What number is on screen at ${clock}? Answer with the 4-digit number only. If you see no images, answer NO_IMAGES.`;
+
+{
+	const toClaudeCode = workflow({
+		name: 'case100 video - frames to the Claude Code node',
+		notes:
+			`A ${VIDEO_SECONDS}s clip -> Video Frames (Frames, 15) -> Claude Code with Attach All on. EXPECT ` +
+			`${VIDEO_BLOCK_NUMBER(4)} (the number shown 00:00:20-00:00:25), which no label carries.`,
+		claude: { prompt: askAt('00:00:22'), timeout: 180, projectPath: PROJECT, additionalOptions: {} },
+		readFields: ['result'],
+		version: 1.4,
+	});
+	toClaudeCode.nodes.find((node) => node.name === 'Claude Code').parameters.attachAllBinaries = 'on';
+	cases.push(withVideoFrames(toClaudeCode, 'Claude Code', { mode: 'frames', maxImages: 15 }));
+
+	const mosaic = workflow({
+		name: 'case101 video - mosaics to the Claude Code node',
+		notes:
+			'Two 3x3 mosaics (18 moments) -> Claude Code. EXPECT ' +
+			`${VIDEO_BLOCK_NUMBER(9)} (00:00:45-00:00:50): the model has to find the tile by its burned-in label.`,
+		claude: { prompt: askAt('00:00:47'), timeout: 180, projectPath: PROJECT, additionalOptions: {} },
+		readFields: ['result'],
+		version: 1.4,
+	});
+	mosaic.nodes.find((node) => node.name === 'Claude Code').parameters.attachAllBinaries = 'on';
+	cases.push(withVideoFrames(mosaic, 'Claude Code', { mode: 'mosaic', maxImages: 2 }));
+
+	// The AI Agent drops video before its model is called; only images it passes through arrive.
+	const toAgent = agentWorkflow({
+		name: 'case102 video - frames through the AI Agent and the Claude Code Chat Model',
+		notes:
+			'Video Frames -> AI Agent (Automatically Passthrough Binary Images) + Claude Code Chat Model. ' +
+			`The prompt carries $json.promptHint. EXPECT ${VIDEO_BLOCK_NUMBER(7)} (00:00:35-00:00:40).`,
+		prompts: [`={{ $json.promptHint }}\n\n${askAt('00:00:37')}`],
+	});
+	toAgent.nodes.find((node) => node.name === 'Claude Code Agent').parameters.options = {
+		passthroughBinaryImages: true,
+	};
+	cases.push(withVideoFrames(toAgent, 'Claude Code Agent', { mode: 'auto', maxImages: 15 }));
+}
 
 let n = 0;
 for (const wf of cases) {
