@@ -132,7 +132,7 @@ async function pickBinary(
 	return {
 		problem: {
 			message: 'No usable ffmpeg was found',
-			description: `Looked at: ${tried.join('; ')}. Reinstall the package so its bundled ffmpeg for this platform is present, install ffmpeg on the PATH, or set FFmpeg Path.`,
+			description: `Looked at: ${tried.join('; ')}. On Linux x64 or arm64, reinstall the package so its bundled ffmpeg is present; elsewhere install ffmpeg on the PATH (brew install ffmpeg, winget install ffmpeg) or set FFmpeg Path.`,
 		},
 	};
 }

@@ -4,24 +4,33 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { findFont } from '../nodes/shared/video/binary';
+import { ffmpegCandidates, findFont } from '../nodes/shared/video/binary';
 import { extractFrames, type ExtractSpec } from '../nodes/shared/video/extract';
 import { parseProbe } from '../nodes/shared/video/probe';
 import type { SamplingSpec } from '../nodes/shared/video/types';
 
 /**
- * The real bundled ffmpeg over generated clips: every strategy, mosaics, subtitles, refusals.
- * Skips when this platform has no bundled binary.
+ * A real ffmpeg over generated clips: every strategy, mosaics, subtitles, refusals. It uses
+ * VIDEO_TEST_FFMPEG, else whatever the node itself would find (bundled on Linux, then the PATH),
+ * and skips when there is none. To run it against the bundled Linux build from a Mac, see
+ * CLAUDE.md, "Testing".
  */
 
-let ffmpeg: string | null = null;
-try {
-	ffmpeg = (require('@ffmpeg-installer/ffmpeg') as { path: string }).path;
-} catch {
-	ffmpeg = null;
-}
+const runs = (path: string): boolean => {
+	try {
+		execFileSync(path, ['-hide_banner', '-version'], { stdio: 'pipe' });
+		return true;
+	} catch {
+		return false;
+	}
+};
 
-const skip = ffmpeg ? false : 'no bundled ffmpeg for this platform';
+const ffmpeg: string | null =
+	process.env.VIDEO_TEST_FFMPEG ||
+	ffmpegCandidates('').candidates.find((c) => runs(c.path))?.path ||
+	null;
+
+const skip = ffmpeg ? false : 'no ffmpeg: none bundled for this platform and none on the PATH';
 
 let dir = '';
 const run = (args: string[]) => execFileSync(ffmpeg as string, args, { stdio: 'pipe' });
@@ -54,7 +63,7 @@ const spec = (over: Partial<SamplingSpec>, extra: Partial<ExtractSpec> = {}): Ex
 	sampling: sampling(over),
 	burnTimestamps: true,
 	includeSubtitles: true,
-	ffmpegPath: '',
+	ffmpegPath: ffmpeg ?? '',
 	timeoutMs: 60_000,
 	workDir: join(dir, `work-${work++}`),
 	...extra,
@@ -120,7 +129,7 @@ describe('video extraction with the real ffmpeg', { skip }, () => {
 			[[5], [15], [25]],
 		);
 		assert.deepEqual(sizeOf(result.images[0].path), [640, 360]);
-		assert.equal(result.report.ffmpeg.source, 'bundled');
+		assert.equal(result.report.ffmpeg.source, 'configured');
 		assert.equal(result.report.video.durationSec, 30);
 	});
 

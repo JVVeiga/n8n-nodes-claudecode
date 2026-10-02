@@ -417,11 +417,15 @@ nodes/
   picks mid-interval frames and its `%{pts}` is its own output pts: labels were 2–14 s off the
   content (spike S-2). `select` keeps the source pts, a seek knows its target, and `showinfo` on
   the same pass is where every reported time comes from. A test pins "no `fps=` in any argv".
-- **ffmpeg is bundled as `@ffmpeg-installer/ffmpeg`, a regular dependency.** n8n installs
-  community packages with `--ignore-scripts=true` (`community-packages.service.js`), so a package
-  that downloads its binary in a postinstall (`ffmpeg-static`) installs with none. The installer's
-  platform packages carry the binary in the tarball with its exec bit; measured working on the
-  stock image, amd64 and arm64. That build has no AV1 decoder, which is a named failure.
+- **ffmpeg is bundled for Linux only, as `optionalDependencies` on `@ffmpeg-installer/linux-x64`
+  and `linux-arm64`, never the `@ffmpeg-installer/ffmpeg` umbrella.** n8n installs community
+  packages with `--ignore-scripts=true` (`community-packages.service.js`), so a package that
+  downloads its binary in a postinstall (`ffmpeg-static`) installs with none. These carry the binary
+  in the tarball with its exec bit; measured working on the stock image, amd64 and arm64. Both are
+  GPLv3 (`-buildconf`: `--enable-gpl --enable-version3`, no nonfree). The umbrella would also pull
+  `darwin-arm64`, which is configured `--enable-nonfree` and reports itself "not legally
+  redistributable"; a test pins that only the two Linux packages are declared. macOS and Windows
+  use the PATH or FFmpeg Path. No AV1 decoder in either build, which is a named failure.
 - **The Agent's input order is chosen so the canvas labels do not overlap.** The editor spaces AI
   ports by count, not by label length, so the short label (Tools) sits in the middle and Subagents
   and Parser at the ends. Reordering `inputs` is a visual change no test catches; look at the
@@ -462,7 +466,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1476 tests, node:test, no framework
+npm test                                    # 1478 tests, node:test, no framework (9 skip without ffmpeg)
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -495,6 +499,15 @@ npm run e2e:up && npm run e2e:run && npm run e2e:verdict
 The node must be installed **inside** the container: the SDK ships platform-specific CLI binaries,
 so a macOS-host install fetches the darwin build and cannot run on linux. `e2e:run` costs real API
 spend — the timeout cases run real agent turns, budget under US$1 for a full pass.
+
+`tests/videoFfmpeg.test.ts` runs a real ffmpeg and skips when there is none, which on a Mac without
+`brew install ffmpeg` is always. To run it against the bundled Linux build:
+
+```bash
+npx tsc -p tsconfig.test.json && docker run --rm --platform linux/arm64 --entrypoint sh -v "$PWD":/repo:ro n8nio/n8n:latest -c \
+  'cd $(mktemp -d) && npm init -y >/dev/null && npm i --ignore-scripts @ffmpeg-installer/linux-arm64@4.1.4 >/dev/null &&
+   cd /repo && VIDEO_TEST_FFMPEG=$OLDPWD/node_modules/@ffmpeg-installer/linux-arm64/ffmpeg node --test .tmp/tests/tests/videoFfmpeg.test.js'
+```
 
 `readUsage.ts` has no unit tests on purpose: it spawns a real CLI, and this suite covers it.
 

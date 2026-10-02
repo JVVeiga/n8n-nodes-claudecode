@@ -2,13 +2,9 @@
 // `n8n import:workflow --separate --input=<dir>`. Each is a manual trigger -> Claude Code node,
 // plus a Set node reading the payload fields the case is about, so the assertion is visible in the
 // UI without digging through JSON.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 const OUT = new URL('./workflows/', import.meta.url).pathname;
 rmSync(OUT, { recursive: true, force: true });
@@ -2120,36 +2116,18 @@ cases.push({
 	meta: { testCaseNotes: 'Canvas for the editor check. Named without "case" so run-cases skips it.' },
 });
 
-// Video (cases 100-102). The clip is generated here, on the host, with the package's own bundled
-// ffmpeg, and travels inside the workflow as base64 like case40's PNG. Every 5-second block shows a
-// 4-digit number unrelated to the time (VIDEO_BLOCK_NUMBER), so the model cannot answer from a time
-// label: only the pixels of a frame from the right block carry it.
-const VIDEO_SECONDS = 60;
-export const VIDEO_BLOCK_NUMBER = (block) => ((block * 7919 + 1234) % 9000) + 1000;
+// Video (cases 100-102). fixture-project/data/numbers.mp4 is a 60 s, 640x360, 10 fps H.264 clip in
+// which every 5-second block shows a 4-digit number unrelated to the time (VIDEO_BLOCK_NUMBER), so
+// the model cannot answer from a time label: only the pixels of a frame from the right block carry
+// it. It travels inside the workflow as base64, like case40's PNG. It was made with:
+//   ffmpeg -f lavfi -i color=c=0x203040:s=640x360:r=10:d=60 -vf "drawtext=fontfile=<a .ttf>:
+//     text='%{eif\:mod(floor(t/5)*7919+1234\,9000)+1000\:d}':fontsize=110:fontcolor=white:
+//     x=(w-tw)/2:y=(h-th)/2" -c:v libx264 -preset veryfast -g 20 -pix_fmt yuv420p numbers.mp4
+// It is a file rather than generated here because the host may have no ffmpeg: the package only
+// bundles the Linux builds.
+const VIDEO_BLOCK_NUMBER = (block) => ((block * 7919 + 1234) % 9000) + 1000;
 
-function numbersVideo() {
-	const require = createRequire(import.meta.url);
-	const ffmpeg = require('@ffmpeg-installer/ffmpeg').path;
-	const font = [
-		'/System/Library/Fonts/Supplemental/Arial.ttf',
-		'/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
-		'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-	].find((f) => existsSync(f));
-	if (!font) throw new Error('gen-workflows: no font to draw the video case numbers with');
-	const dir = mkdtempSync(join(tmpdir(), 'e2e-video-'));
-	const out = join(dir, 'numbers.mp4');
-	execFileSync(ffmpeg, [
-		'-hide_banner', '-loglevel', 'error', '-y',
-		'-f', 'lavfi', '-i', `color=c=0x203040:s=640x360:r=10:d=${VIDEO_SECONDS}`,
-		'-vf', `drawtext=fontfile='${font}':text='%{eif\\:mod(floor(t/5)*7919+1234\\,9000)+1000\\:d}':fontsize=110:fontcolor=white:x=(w-tw)/2:y=(h-th)/2`,
-		'-c:v', 'libx264', '-preset', 'veryfast', '-g', '20', '-pix_fmt', 'yuv420p', out,
-	]);
-	const bytes = readFileSync(out);
-	rmSync(dir, { recursive: true, force: true });
-	return bytes;
-}
-
-const NUMBERS_MP4 = numbersVideo().toString('base64');
+const NUMBERS_MP4 = readFileSync(new URL('./fixture-project/data/numbers.mp4', import.meta.url)).toString('base64');
 const VIDEO_TYPE = '@joaoveiga/n8n-nodes-claudecode.claudeCodeVideoFrames';
 
 /** Puts "Make video" -> "Video Frames" between the trigger and `target`. NOT 'Claude Code…': run-cases reads the target. */
@@ -2191,7 +2169,7 @@ const askAt = (clock) =>
 	const toClaudeCode = workflow({
 		name: 'case100 video - frames to the Claude Code node',
 		notes:
-			`A ${VIDEO_SECONDS}s clip -> Video Frames (Frames, 15) -> Claude Code with Attach All on. EXPECT ` +
+			`A 60s clip -> Video Frames (Frames, 15) -> Claude Code with Attach All on. EXPECT ` +
 			`${VIDEO_BLOCK_NUMBER(4)} (the number shown 00:00:20-00:00:25), which no label carries.`,
 		claude: { prompt: askAt('00:00:22'), timeout: 180, projectPath: PROJECT, additionalOptions: {} },
 		readFields: ['result'],

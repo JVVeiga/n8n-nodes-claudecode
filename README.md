@@ -1026,11 +1026,14 @@ CPUs. **Timeout** (default 300 s) bounds it.
 
 - No speech: audio is not transcribed. A recording whose content is what is *said* needs a
   transcription step of its own.
-- The bundled ffmpeg is the `@ffmpeg-installer` build (2018–2021). It decodes H.264, HEVC, VP9 and
-  MPEG-4 but **not AV1**. For AV1, set **FFmpeg Path** to a newer ffmpeg. npm installs only the
-  binary for your platform: 31 MB on linux-arm64, 65 MB on linux-x64. It works on the stock n8n
-  image, with no custom image, because the binary is inside the npm package rather than downloaded
-  by an install script (n8n installs community packages with scripts disabled).
+- **ffmpeg is bundled for Linux only** (x64 and arm64), which is what n8n runs in Docker. It works
+  on the stock n8n image, with no custom image, because the binary is inside the npm package rather
+  than downloaded by an install script (n8n installs community packages with scripts disabled). npm
+  installs only the one for your machine: 31 MB on arm64, 65 MB on x64. **On macOS or Windows**,
+  install ffmpeg yourself (`brew install ffmpeg`, `winget install ffmpeg`) or set **FFmpeg Path**.
+  The node says so if it finds none.
+- The bundled builds date from 2018–2019. They decode H.264, HEVC, VP9 and MPEG-4 but **not AV1**.
+  For AV1, set **FFmpeg Path** to a newer ffmpeg.
 - A mosaic tile is 640 px wide. Large content reads well; a form field or a log line may not. Use
   **Frames**, a smaller grid, or a narrower Start/End Time for those.
 - Videos stored in n8n's binary store (filesystem or S3 mode) are streamed to a temp file, never
@@ -1340,7 +1343,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1476 tests — node:test, no framework, no extra dependencies
+npm test    # 1478 tests — node:test, no framework; 9 need an ffmpeg and skip without one
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -1405,6 +1408,10 @@ The idea, the original node structure, and the n8n integration groundwork are th
 MIT, throughout the lineage. The original copyright notice is kept intact in
 [LICENSE.md](LICENSE.md).
 
-Claude Code Video Frames runs ffmpeg from the `@ffmpeg-installer` packages, which npm installs as
-separate dependencies. Those static builds are GPL-licensed; this package does not include or
-modify them, and calls the binary as a separate program.
+Claude Code Video Frames runs ffmpeg as a separate program, with an argument list. On Linux it
+comes from `@ffmpeg-installer/linux-x64` or `@ffmpeg-installer/linux-arm64`, optional dependencies
+that npm downloads from their publisher. This package's tarball does not contain them. Both are
+static builds configured `--enable-gpl --enable-version3` and no `--enable-nonfree`, so they are
+GPLv3; their source is the FFmpeg project's (the builds come from johnvansickle.com/ffmpeg). The
+`@ffmpeg-installer` macOS Apple Silicon build is deliberately not used: it is configured
+`--enable-nonfree`, and ffmpeg itself reports it as not legally redistributable.

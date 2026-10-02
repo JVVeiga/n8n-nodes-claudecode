@@ -355,7 +355,7 @@ describe('Claude Code Video Frames: registration', () => {
 		assert.ok(
 			pkg.n8n.nodes.includes('dist/nodes/ClaudeCodeVideoFrames/ClaudeCodeVideoFrames.node.js'),
 		);
-		assert.ok(pkg.dependencies['@ffmpeg-installer/ffmpeg']);
+		assert.ok(pkg.optionalDependencies['@ffmpeg-installer/linux-x64']);
 		const codex = JSON.parse(
 			readFileSync('nodes/ClaudeCodeVideoFrames/ClaudeCodeVideoFrames.node.json', 'utf8'),
 		);

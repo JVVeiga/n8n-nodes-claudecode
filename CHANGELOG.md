@@ -21,10 +21,13 @@ in the prompt, saying how the images are ordered and what they cover.
 - The extraction strategy follows the file's keyframes: keyframes only, a seek per moment, or one
   full decode. It is reported, together with the coverage and the ffmpeg that ran.
 - A text subtitle track inside the file is exported as an `.srt` binary property.
-- ffmpeg is bundled through `@ffmpeg-installer`, whose binary ships inside the npm package and so
-  survives n8n installing community packages with scripts disabled. npm installs only the binary
-  for the platform (31 MB on linux-arm64, 65 MB on linux-x64). That build cannot decode AV1; the
-  node says so, and **FFmpeg Path** points it at another ffmpeg.
+- ffmpeg is bundled for Linux x64 and arm64 through `@ffmpeg-installer/linux-*`, optional
+  dependencies whose binary ships inside the npm package and so survives n8n installing community
+  packages with scripts disabled. npm installs only the one for the machine (31 MB on arm64, 65 MB
+  on x64). They are GPLv3 builds. On macOS and Windows the node uses ffmpeg from the PATH or
+  **FFmpeg Path**. The `@ffmpeg-installer` macOS Apple Silicon build is configured `--enable-nonfree`
+  and is not redistributable, so it is not used. The Linux builds cannot decode AV1; the node says
+  so, and **FFmpeg Path** points it at another ffmpeg.
 
 ## [2.6.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.5.0...v2.6.0) (2026-09-29)
 

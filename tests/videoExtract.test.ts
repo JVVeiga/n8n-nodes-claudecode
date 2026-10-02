@@ -133,7 +133,9 @@ describe('extractFrames over a fake ffmpeg', () => {
 		const { deps } = fakeDeps(() => ok({ code: null, spawnError: 'ENOENT' }), {
 			candidates: () => ({
 				candidates: [{ path: 'ffmpeg', source: 'path' }],
-				notes: ['bundled: Unsupported platform/architecture: freebsd-x64'],
+				notes: [
+					'bundled: none for freebsd-x64 (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH)',
+				],
 			}),
 		});
 		const result = await extractFrames(INPUT, spec(), deps);
@@ -141,7 +143,7 @@ describe('extractFrames over a fake ffmpeg', () => {
 		assert.equal(result.problem.message, 'No usable ffmpeg was found');
 		assert.equal(
 			result.problem.description,
-			'Looked at: bundled: Unsupported platform/architecture: freebsd-x64; path (ffmpeg): not found. Reinstall the package so its bundled ffmpeg for this platform is present, install ffmpeg on the PATH, or set FFmpeg Path.',
+			'Looked at: bundled: none for freebsd-x64 (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH); path (ffmpeg): not found. On Linux x64 or arm64, reinstall the package so its bundled ffmpeg is present; elsewhere install ffmpeg on the PATH (brew install ffmpeg, winget install ffmpeg) or set FFmpeg Path.',
 		);
 	});
 
@@ -270,30 +272,53 @@ describe('extractFrames over a fake ffmpeg', () => {
 
 describe('which ffmpeg, which font', () => {
 	const deps = (over: Partial<BinaryDeps> = {}): BinaryDeps => ({
-		requireBundled: () => ({ path: '/nm/@ffmpeg-installer/linux-x64/ffmpeg' }),
+		platform: 'linux',
+		arch: 'x64',
+		resolve: (id) => `/nm/${id}`,
 		exists: () => false,
 		listDir: () => [],
 		...over,
 	});
 
-	it('bundled first, then the PATH', () => {
+	it('the bundled Linux binary first, then the PATH', () => {
 		assert.deepEqual(ffmpegCandidates('', deps()).candidates, [
 			{ path: '/nm/@ffmpeg-installer/linux-x64/ffmpeg', source: 'bundled' },
 			{ path: 'ffmpeg', source: 'path' },
 		]);
+		assert.equal(
+			ffmpegCandidates('', deps({ arch: 'arm64' })).candidates[0].path,
+			'/nm/@ffmpeg-installer/linux-arm64/ffmpeg',
+		);
 	});
 
-	it('a platform with no bundled package leaves a note and the PATH', () => {
+	it('bundles nothing outside Linux: the darwin-arm64 build is nonfree', () => {
+		const result = ffmpegCandidates('', deps({ platform: 'darwin', arch: 'arm64' }));
+		assert.deepEqual(result.candidates, [{ path: 'ffmpeg', source: 'path' }]);
+		assert.deepEqual(result.notes, [
+			'bundled: none for darwin-arm64 (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH)',
+		]);
+	});
+
+	it('a Linux install without its optional package falls back to the PATH, saying why', () => {
 		const result = ffmpegCandidates(
 			'',
 			deps({
-				requireBundled: () => {
-					throw new Error('Unsupported platform/architecture: linux-s390x\nmore');
+				resolve: () => {
+					throw new Error("Cannot find module '@ffmpeg-installer/linux-x64/package.json'");
 				},
 			}),
 		);
 		assert.deepEqual(result.candidates, [{ path: 'ffmpeg', source: 'path' }]);
-		assert.deepEqual(result.notes, ['bundled: Unsupported platform/architecture: linux-s390x']);
+		assert.deepEqual(result.notes, ['bundled: @ffmpeg-installer/linux-x64 is not installed']);
+	});
+
+	it('the package declares exactly the two Linux builds, as optional', () => {
+		const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+		assert.deepEqual(Object.keys(pkg.optionalDependencies ?? {}).sort(), [
+			'@ffmpeg-installer/linux-arm64',
+			'@ffmpeg-installer/linux-x64',
+		]);
+		assert.ok(!('@ffmpeg-installer/ffmpeg' in (pkg.dependencies ?? {})));
 	});
 
 	it('a configured path is the only candidate', () => {
