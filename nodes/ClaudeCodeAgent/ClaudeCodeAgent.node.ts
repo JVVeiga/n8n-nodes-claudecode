@@ -27,7 +27,7 @@ import {
 } from './report';
 import { extractStructured, structuredDeliveries } from './structured';
 import { buildSubagentReport, subagentModels } from './subagentReport';
-import { isEnabled } from './subagents';
+import { isEnabled, subagentsWithoutRead } from './subagents';
 import { createTurnRunner, runMainTurn, settleMainRun, type Attempt } from './turn';
 import { runVerification } from './verification/run';
 
@@ -151,10 +151,19 @@ async function runAgentItem(
 		params.attachments,
 		params.prompt,
 		[orchestration, unattended].filter((text): text is string => text !== null),
-		{ timeoutMs: item.timeoutSeconds * 1000, signal: abortController.signal },
+		{
+			timeoutMs: item.timeoutSeconds * 1000,
+			signal: abortController.signal,
+			stageVideoFrames: agent.behaviour.sharesVideoFrames && subagentNames.length > 0,
+		},
 	);
 	if ('problem' in attachments) {
 		throw fail(attachments.problem.message, attachments.problem.description);
+	}
+	// A subagent that cannot Read cannot open the staged frames: say which, rather than let it go blind.
+	const blind = subagentsWithoutRead(subagents.supplied);
+	for (const video of attachments.plan.report?.videos ?? []) {
+		if (video.stagedFrames) video.stagedFrames.subagentsWithoutRead = blind;
 	}
 	item.staged = attachments.staged;
 	const { plan } = attachments;

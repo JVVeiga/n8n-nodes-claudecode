@@ -44,6 +44,63 @@ export function imagesPerVideo(maxImages: number, otherImages: number, videos: n
 
 const baseName = (fileName: string): string => fileName.replace(/\.[^.]+$/, '') || 'video';
 
+/** A file to stage beside the inline images, for subagents, which cannot see those. */
+export type FrameFile = { propName: string; fileName: string; mimeType: string; buffer: Buffer };
+
+/**
+ * The images as files named by the time they show, plus an index that maps each to its times.
+ * The index is last. Names derive from the sanitized attachment name, so they stay inside the
+ * staging directory.
+ */
+export function framesOnDisk(
+	video: VideoAttachment,
+	result: ExtractResult,
+	readImage: (path: string) => Buffer,
+): FrameFile[] {
+	const base = baseName(video.fileName);
+	const files: FrameFile[] = result.images.map((image, i) => ({
+		propName: video.propName,
+		fileName: `${base}-frame-${String(i).padStart(3, '0')}-${clock(image.timestamps[0] ?? 0).replace(/:/g, '-')}.jpg`,
+		mimeType: 'image/jpeg',
+		buffer: readImage(image.path),
+	}));
+	const index = {
+		video: video.fileName,
+		mode: result.report.mode,
+		grid: result.report.grid,
+		images: files.map((file, i) => ({
+			file: file.fileName,
+			timestamps: result.images[i].timestamps,
+		})),
+	};
+	files.push({
+		propName: video.propName,
+		fileName: `${base}-frames.json`,
+		mimeType: 'application/json',
+		buffer: Buffer.from(`${JSON.stringify(index, null, 2)}\n`, 'utf8'),
+	});
+	return files;
+}
+
+/**
+ * What the orchestrator is told about the staged frames. Separate from the staged-files hint,
+ * which says a file was too large or had no inline route: these are copies of images it can see.
+ */
+export function framesHintBlock(dir: string, videos: VideoDiagnostics[]): ContentBlockParam {
+	const lines = videos
+		.filter((v) => v.stagedFrames)
+		.map((v) => `  ${v.name}: ${v.stagedFrames?.files} images, index ${v.stagedFrames?.index}`);
+	return {
+		type: 'text',
+		text: [
+			`<video-frames-on-disk dir="${dir}">`,
+			...lines,
+			'</video-frames-on-disk>',
+			'These are copies of the video images above, one file per image, named with the time it shows; each index file maps every image to its times. A subagent cannot see the images in this message: when you delegate work on a video, give the subagent these paths, and it can open each .jpg with the Read tool.',
+		].join('\n'),
+	};
+}
+
 /** The blocks for one video: what it is, its subtitles, then each image after its times. Pure. */
 export function videoBlocks(
 	video: VideoAttachment,
@@ -105,12 +162,16 @@ export async function prepareVideos(
 	videos: VideoAttachment[],
 	spec: AttachmentSpec,
 	otherImages: number,
-	run: { timeoutMs: number; signal?: AbortSignal },
+	run: { timeoutMs: number; signal?: AbortSignal; stageFrames?: boolean },
 	deps: VideoDeps = defaultVideoDeps,
-): Promise<{ blocks: ContentBlockParam[]; reports: VideoDiagnostics[] } | { problem: Problem }> {
+): Promise<
+	| { blocks: ContentBlockParam[]; reports: VideoDiagnostics[]; frameFiles: FrameFile[] }
+	| { problem: Problem }
+> {
 	const perVideo = imagesPerVideo(spec.video.maxImages, otherImages, videos.length);
 	const blocks: ContentBlockParam[] = [];
 	const reports: VideoDiagnostics[] = [];
+	const frameFiles: FrameFile[] = [];
 
 	for (const video of videos) {
 		const workDir = deps.makeWorkDir();
@@ -141,16 +202,32 @@ export async function prepareVideos(
 				},
 			);
 			if ('problem' in result) return { problem: asAttachmentProblem(video, result.problem) };
-			blocks.push(...videoBlocks(video, result, deps.readImage));
-			reports.push({
+			// Read once: the same bytes go inline and, for subagents, to disk.
+			const images = new Map(
+				result.images.map((image) => [image.path, deps.readImage(image.path)]),
+			);
+			const read = (path: string) => images.get(path) ?? deps.readImage(path);
+			blocks.push(...videoBlocks(video, result, read));
+			const report: VideoDiagnostics = {
 				name: video.fileName,
 				bytes: video.bytes,
 				images: result.images.length,
 				...result.report,
-			});
+			};
+			if (run.stageFrames) {
+				const files = framesOnDisk(video, result, read);
+				frameFiles.push(...files);
+				report.stagedFrames = {
+					dir: '',
+					index: files[files.length - 1].fileName,
+					files: files.length - 1,
+					subagentsWithoutRead: [],
+				};
+			}
+			reports.push(report);
 		} finally {
 			deps.removeWorkDir(workDir);
 		}
 	}
-	return { blocks, reports };
+	return { blocks, reports, frameFiles };
 }

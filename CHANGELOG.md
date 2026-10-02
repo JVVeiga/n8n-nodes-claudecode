@@ -1,3 +1,21 @@
+## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.7.0...HEAD)
+
+The Claude Code Agent gains version 1.3, now the default; existing nodes keep their version and what
+it emits.
+
+### Subagents can see an attached video
+
+A subagent receives only the prompt the orchestrator writes for it, not the images in the
+orchestrator's message, so in 2.7.0 a subagent could not look at a video the Agent was given. From
+**Agent 1.3**, when a video is converted to frames and at least one subagent is enabled, copies of
+the images are also written to the temporary directory the CLI can read. There is one `.jpg` per
+image, named with the time it shows, plus an index mapping each to its times. The orchestrator is
+told the paths and that a subagent can open them with `Read`.
+
+`diagnostics.attachments.videos[].stagedFrames` reports the directory, the index and the file count,
+and `subagentsWithoutRead` names any enabled subagent whose tools leave out `Read`.
+`diagnostics.attachments.staged` keeps listing only files that could not go inline.
+
 ## [2.7.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.6.0...v2.7.0) (2026-10-02)
 
 Claude Code gains version 1.5 and the Agent 1.2, both now the default; existing nodes keep their

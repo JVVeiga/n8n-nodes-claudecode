@@ -54,7 +54,13 @@ export type VideoAttachment = {
 	meta: IBinaryData;
 };
 
-export type VideoDiagnostics = { name: string; bytes: number; images: number } & VideoFramesReport;
+export type VideoDiagnostics = {
+	name: string;
+	bytes: number;
+	images: number;
+	/** Copies of the images in the staging directory, for subagents. Absent unless staged. */
+	stagedFrames?: { dir: string; index: string; files: number; subagentsWithoutRead: string[] };
+} & VideoFramesReport;
 
 /** One binary property, resolved to bytes and named. */
 export type Attachment = {

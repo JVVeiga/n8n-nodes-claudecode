@@ -2261,6 +2261,50 @@ function withVideo(wf, target) {
 	cases.push(withVideo(stored, 'Claude Code'));
 }
 
+// Frames staged for a subagent (case106): the subagent cannot see the orchestrator's inline images
+// (spike S-4), so the answer has to come from it Reading a staged frame file.
+cases.push(
+	withVideo(
+		agentRootWorkflow({
+			name: 'case106 video - Agent 1.3 stages the frames and a subagent Reads one',
+			notes:
+				'Agent 1.3, a video attached, one Subagent (frame-reader, tools: Read) and orchestration ' +
+				`Required. EXPECT SUB=${VIDEO_BLOCK_NUMBER(7)}, videos[0].stagedFrames with 15 files, and ` +
+				'frame-reader invoked with at least one tool use.',
+			params: {
+				model: 'claude-sonnet-5',
+				attachAllBinaries: 'on',
+				subagentOrchestration: 'required',
+				prompt:
+					'A video is attached, and copies of its frames are on disk. Do not answer from the images yourself. ' +
+					'Delegate to the frame-reader subagent: give it the full path of the staged frame file whose time is ' +
+					'closest to 00:00:37, and ask it to Read that file and report the large 4-digit number on screen. ' +
+					'Then reply with exactly: SUB=<the number the subagent reported>',
+			},
+			version: 1.3,
+			subNodes: [
+				{
+					connection: 'ai_agent',
+					node: {
+						name: 'Subagent frame-reader',
+						type: SUBAGENT_TYPE,
+						typeVersion: 1,
+						parameters: {
+							agentName: 'frame-reader',
+							whenToUse: 'Reads a video frame image file from disk and reports what it shows.',
+							instructions:
+								'You are given the path of an image file. Open it with the Read tool and report the large 4-digit number it shows. Reply with the number only.',
+							model: 'inherit',
+							options: { maxTurns: 4, tools: ['Read'] },
+						},
+					},
+				},
+			],
+		}),
+		'Claude Code Agent',
+	),
+);
+
 let n = 0;
 for (const wf of cases) {
 	const file = `${String(++n).padStart(2, '0')}-${wf.name.split(' ')[0]}.json`;
