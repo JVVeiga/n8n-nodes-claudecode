@@ -1,6 +1,20 @@
 ## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.6.0...HEAD)
 
-Additive. No typeVersion moved, the 48 golden fixtures and the Agent 1 recordings are byte-identical.
+Claude Code gains version 1.5 and the Agent 1.2, both now the default; existing nodes keep their
+version and what it emits. The 48 golden fixtures and the Agent 1 recordings are byte-identical.
+
+### Video attachments convert themselves
+
+From **Claude Code 1.5** and **Claude Code Agent 1.2**, the new default versions, a video attached
+to the item is converted to timestamped frames or mosaics before the request, through the same
+extraction as the Video Frames node. No node in front is needed. It is recognised from its type or
+extension and streamed to disk, never loaded into memory. The images of all the item's videos share
+**Video Max Images** (15), and the request is held to 20 images in all. Each video is reported under
+`diagnostics.attachments.videos[]`, and a video that cannot be converted fails the item rather than
+being staged.
+
+Earlier versions keep staging a video, as they always did: **Video Attachments** on `Auto` resolves
+by version, and `Convert to Frames` opts a 1.4 node in without recreating it.
 
 ### Claude Code Video Frames
 
