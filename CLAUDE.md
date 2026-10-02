@@ -107,7 +107,7 @@ nodes/
       showinfo.ts              showinfo lines -> each frame's real time (pure) — every time we report
       plan.ts                  THE sampling policy: mode, targets, keyframes/seek/decode (pure)
       args.ts                  plan -> ffmpeg argv (pure); never the fps filter
-      binary.ts                which ffmpeg (configured -> bundled -> PATH) and which font
+      binary.ts                which ffmpeg (FFmpeg Path -> FFMPEG_PATH -> PATH) and which font
       ffmpeg.ts                the ONLY module that spawns ffmpeg: execFile, never throws
       extract.ts               probe -> keyframe scan -> plan -> passes -> files + report
       subtitles.ts             an exported SRT, without the tags ffmpeg adds
@@ -432,15 +432,17 @@ nodes/
   picks mid-interval frames and its `%{pts}` is its own output pts: labels were 2–14 s off the
   content (spike S-2). `select` keeps the source pts, a seek knows its target, and `showinfo` on
   the same pass is where every reported time comes from. A test pins "no `fps=` in any argv".
-- **ffmpeg is bundled for Linux only, as `optionalDependencies` on `@ffmpeg-installer/linux-x64`
-  and `linux-arm64`, never the `@ffmpeg-installer/ffmpeg` umbrella.** n8n installs community
-  packages with `--ignore-scripts=true` (`community-packages.service.js`), so a package that
-  downloads its binary in a postinstall (`ffmpeg-static`) installs with none. These carry the binary
-  in the tarball with its exec bit; measured working on the stock image, amd64 and arm64. Both are
-  GPLv3 (`-buildconf`: `--enable-gpl --enable-version3`, no nonfree). The umbrella would also pull
-  `darwin-arm64`, which is configured `--enable-nonfree` and reports itself "not legally
-  redistributable"; a test pins that only the two Linux packages are declared. macOS and Windows
-  use the PATH or FFmpeg Path. No AV1 decoder in either build, which is a named failure.
+- **ffmpeg is never bundled: n8n's community installer cannot deliver one.** It deletes
+  `devDependencies`, `peerDependencies` **and `optionalDependencies`** from the package.json before
+  `npm install --ignore-scripts=true` (`community-packages.service.js`). So a platform binary can
+  neither come as an optional dependency (2.7.0 and 2.8.0 declared `@ffmpeg-installer/linux-*` that
+  way, and no n8n install ever got them) nor be downloaded by a postinstall (`ffmpeg-static`). The
+  node runs FFmpeg Path, then `FFMPEG_PATH`, then `ffmpeg` on the PATH, and fails with install
+  instructions. n8n's image has no package manager; the README's answer is
+  `COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/` (7.1, GPLv3, decodes AV1, measured
+  in the image). The Agent SDK ships its CLI as optional dependencies **of the SDK**, a nested
+  package, which n8n leaves alone. **The e2e rig installs through `install-like-n8n.sh` for this
+  reason**: the plain `npm install <tgz>` it used before kept optional dependencies and passed.
 - **The Agent's input order is chosen so the canvas labels do not overlap.** The editor spaces AI
   ports by count, not by label length, so the short label (Tools) sits in the middle and Subagents
   and Parser at the ends. Reordering `inputs` is a visual change no test catches; look at the
@@ -485,7 +487,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1505 tests, node:test, no framework (10 skip without ffmpeg)
+npm test                                    # 1504 tests, node:test, no framework (10 skip without ffmpeg)
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -520,12 +522,13 @@ so a macOS-host install fetches the darwin build and cannot run on linux. `e2e:r
 spend — the timeout cases run real agent turns, budget under US$1 for a full pass.
 
 `tests/videoFfmpeg.test.ts` runs a real ffmpeg and skips when there is none, which on a Mac without
-`brew install ffmpeg` is always. To run it against the bundled Linux build:
+`brew install ffmpeg` is always. To run it in n8n's image with the ffmpeg the rig uses
+(`npm run e2e:up` extracts it to `scripts/e2e/.ffmpeg/`):
 
 ```bash
-npx tsc -p tsconfig.test.json && docker run --rm --platform linux/arm64 --entrypoint sh -v "$PWD":/repo:ro n8nio/n8n:latest -c \
-  'cd $(mktemp -d) && npm init -y >/dev/null && npm i --ignore-scripts @ffmpeg-installer/linux-arm64@4.1.4 >/dev/null &&
-   cd /repo && VIDEO_TEST_FFMPEG=$OLDPWD/node_modules/@ffmpeg-installer/linux-arm64/ffmpeg node --test .tmp/tests/tests/videoFfmpeg.test.js'
+npx tsc -p tsconfig.test.json && docker run --rm --entrypoint sh -v "$PWD":/repo:ro \
+  -v "$PWD/scripts/e2e/.ffmpeg/ffmpeg":/usr/local/bin/ffmpeg:ro n8nio/n8n:latest \
+  -c 'cd /repo && node --test .tmp/tests/tests/videoFfmpeg.test.js'
 ```
 
 `readUsage.ts` has no unit tests on purpose: it spawns a real CLI, and this suite covers it.
