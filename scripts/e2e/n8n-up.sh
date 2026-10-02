@@ -90,7 +90,11 @@ docker run --rm \
 		mkdir -p /home/node/.n8n/nodes
 		cd /home/node/.n8n/nodes
 		[ -f package.json ] || npm init -y >/dev/null
-		npm install --omit=dev '/pkg/$(basename "$TARBALL")' 2>&1 | tail -5
+		# --ignore-scripts, as n8n's own community install does (community-packages.service.js).
+		# Without it npm builds the auto-installed n8n-workflow peer's isolated-vm from source, which
+		# fails on images with no prebuilt addon for their Node (Node 26 arm64) and no python. It is
+		# also what proves the bundled ffmpeg works with no install script.
+		npm install --omit=dev --ignore-scripts=true '/pkg/$(basename "$TARBALL")' 2>&1 | tail -5
 		node -e \"require('/home/node/.n8n/nodes/node_modules/@joaoveiga/n8n-nodes-claudecode/dist/nodes/ClaudeCode/timeout.js'); console.log('node module loads OK')\"
 		ls /home/node/.n8n/nodes/node_modules/@anthropic-ai/ 2>/dev/null || true
 		chown -R node:node /home/node/.n8n
