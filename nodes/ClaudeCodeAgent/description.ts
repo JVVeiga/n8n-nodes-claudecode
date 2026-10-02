@@ -175,8 +175,9 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	// 1.1: metrics summed over every result, structured deliveries and subagent models reported,
 	// and the user turn says nobody is there to answer.
 	// 1.2: a video attachment is converted to frames (Video Attachments on Auto).
-	version: [1, 1.1, 1.2],
-	defaultVersion: 1.2,
+	// 1.3: with a subagent enabled, copies of those frames are staged for it to Read.
+	version: [1, 1.1, 1.2, 1.3],
+	defaultVersion: 1.3,
 	subtitle:
 		'={{$parameter["model"] + ($parameter["outputMode"] === "jsonSchema" ? " · Schema" : $parameter["outputMode"] === "outputParser" ? " · Parser" : "") + ($parameter["verification"] && $parameter["verification"].enabled ? " · Verify" : "")}}',
 	description:

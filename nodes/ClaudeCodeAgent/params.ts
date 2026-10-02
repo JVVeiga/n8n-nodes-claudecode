@@ -52,6 +52,8 @@ export type AgentBehaviour = {
 	reportsSubagentModels: boolean;
 	/** The user turn ends by saying nobody is there to answer. */
 	tellsUnattended: boolean;
+	/** Copies of a video's frames are staged for subagents, which cannot see the inline images. */
+	sharesVideoFrames: boolean;
 };
 
 export const agentBehaviour = (nodeVersion: number): AgentBehaviour => {
@@ -61,6 +63,7 @@ export const agentBehaviour = (nodeVersion: number): AgentBehaviour => {
 		reportsDeliveries: from11,
 		reportsSubagentModels: from11,
 		tellsUnattended: from11,
+		sharesVideoFrames: nodeVersion >= 1.3,
 	};
 };
 

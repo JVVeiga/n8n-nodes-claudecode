@@ -7,6 +7,17 @@ export type Subagents = { agents: Record<string, AgentDefinition>; supplied: Sup
 
 export const isEnabled = (s: SuppliedSubagent): boolean => s.enabled !== false;
 
+/** The enabled subagents whose tools exclude Read: they cannot open a staged file. */
+export const subagentsWithoutRead = (supplied: SuppliedSubagent[]): string[] =>
+	supplied
+		.filter(isEnabled)
+		.filter(({ definition }) =>
+			definition.tools
+				? !definition.tools.includes('Read')
+				: (definition.disallowedTools ?? []).includes('Read'),
+		)
+		.map((s) => s.name);
+
 const describeValue = (value: unknown): string => {
 	if (value === null) return 'null';
 	if (Array.isArray(value)) return 'an array';

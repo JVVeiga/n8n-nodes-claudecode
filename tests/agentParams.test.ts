@@ -119,6 +119,7 @@ describe('readAgentParams — the Agent’s own settings', () => {
 				reportsDeliveries: false,
 				reportsSubagentModels: false,
 				tellsUnattended: false,
+				sharesVideoFrames: false,
 			},
 		});
 	});
@@ -132,9 +133,15 @@ describe('readAgentParams — the Agent’s own settings', () => {
 			reportsDeliveries: true,
 			reportsSubagentModels: true,
 			tellsUnattended: true,
+			sharesVideoFrames: false,
 		});
 		assert.deepEqual(agentBehaviour(1), at(1));
 		assert.equal(Object.values(at(1)).some(Boolean), false);
+	});
+
+	it('1.2 behaves as 1.1; 1.3 adds staged video frames for subagents', () => {
+		assert.deepEqual(agentBehaviour(1.2), agentBehaviour(1.1));
+		assert.deepEqual(agentBehaviour(1.3), { ...agentBehaviour(1.1), sharesVideoFrames: true });
 	});
 
 	it('reads each setting', () => {

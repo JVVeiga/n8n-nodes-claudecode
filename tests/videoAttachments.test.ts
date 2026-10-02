@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -8,11 +8,14 @@ import { collectAttachments } from '../nodes/ClaudeCode/attachments/collect';
 import { prepareAttachments } from '../nodes/ClaudeCode/attachments/prepare';
 import type { AttachmentSpec, VideoAttachment } from '../nodes/ClaudeCode/attachments/types';
 import {
+	framesOnDisk,
 	imagesPerVideo,
 	prepareVideos,
 	videoBlocks,
 	type VideoDeps,
 } from '../nodes/ClaudeCode/attachments/video';
+import { subagentsWithoutRead } from '../nodes/ClaudeCodeAgent/subagents';
+import { SUBAGENT_TAG, type SuppliedSubagent } from '../nodes/shared/subagent';
 import { readVideoSpec } from '../nodes/ClaudeCode/attachments/videoSpec';
 import { readParams, videoFramesByDefault } from '../nodes/ClaudeCode/params';
 import { agentVideoFramesByDefault, readAgentParams } from '../nodes/ClaudeCodeAgent/params';
@@ -476,5 +479,143 @@ describe('video attachments: prepareVideos and prepareAttachments', () => {
 		assert.ok('plan' in out);
 		assert.ok(!('videos' in (out.plan.report ?? {})));
 		assert.ok(!existsSync('/nonexistent'));
+	});
+});
+
+describe('video frames staged for subagents (Agent 1.3)', () => {
+	const video: VideoAttachment = {
+		propName: 'clip',
+		fileName: 'rec.mp4',
+		mimeType: 'video/mp4',
+		bytes: 10,
+		meta: { data: '', mimeType: 'video/mp4' },
+	};
+
+	it('one file per image, named by the time it shows, then an index mapping each to its times', () => {
+		const files = framesOnDisk(video, result(), (p) => Buffer.from(`JPEG ${p}`));
+		assert.deepEqual(
+			files.map((f) => [f.fileName, f.mimeType]),
+			[
+				['rec-frame-000-00-00-15.jpg', 'image/jpeg'],
+				['rec-frame-001-00-01-05.jpg', 'image/jpeg'],
+				['rec-frames.json', 'application/json'],
+			],
+		);
+		assert.equal(files[0].buffer.toString(), 'JPEG /w/a.jpg');
+		assert.deepEqual(JSON.parse(files[2].buffer.toString()), {
+			video: 'rec.mp4',
+			mode: 'frames',
+			grid: 1,
+			images: [
+				{ file: 'rec-frame-000-00-00-15.jpg', timestamps: [15] },
+				{ file: 'rec-frame-001-00-01-05.jpg', timestamps: [65.5] },
+			],
+		});
+	});
+
+	const withVideo = () => createFakeContext({ items: [itemWithBinary({ clip: mp4() })] }).ctx;
+
+	it('with stageVideoFrames the files land in the staging dir, the report says where, the hint follows the images', async () => {
+		const { deps } = fakeVideoDeps();
+		const out = await prepareAttachments(withVideo(), 0, spec(), 'Delegate this.', [], {
+			timeoutMs: 1000,
+			stageVideoFrames: true,
+			videoDeps: deps,
+		});
+		assert.ok('plan' in out);
+		try {
+			assert.ok(out.staged);
+			assert.deepEqual(readdirSync(out.staged.dir).sort(), [
+				'rec-frame-000-00-00-15.jpg',
+				'rec-frame-001-00-01-05.jpg',
+				'rec-frames.json',
+			]);
+			assert.equal(
+				out.plan.report?.staged,
+				null,
+				'report.staged lists files that could not go inline',
+			);
+			assert.deepEqual(out.plan.report?.videos?.[0].stagedFrames, {
+				dir: out.staged.dir,
+				index: 'rec-frames.json',
+				files: 2,
+				subagentsWithoutRead: [],
+			});
+			const content = out.promptContent as Array<{ type: string; text?: string }>;
+			const hint = content[content.length - 2].text ?? '';
+			assert.match(
+				hint,
+				new RegExp(
+					`^<video-frames-on-disk dir="${out.staged.dir}">\\n  rec\\.mp4: 2 images, index rec-frames\\.json`,
+				),
+			);
+			assert.match(hint, /A subagent cannot see the images in this message/);
+			assert.ok(!content.some((b) => /attachments-on-disk/.test(b.text ?? '')));
+			assert.equal(content[content.length - 1].text, 'Delegate this.');
+		} finally {
+			out.staged?.cleanup();
+		}
+		assert.ok(!existsSync(out.staged?.dir ?? ''), 'cleanup removes the frames too');
+	});
+
+	it('without it nothing is staged and no hint is added', async () => {
+		const { deps } = fakeVideoDeps();
+		const out = await prepareAttachments(withVideo(), 0, spec(), 'x', [], {
+			timeoutMs: 1000,
+			videoDeps: deps,
+		});
+		assert.ok('plan' in out);
+		assert.equal(out.staged, null);
+		assert.ok(!('stagedFrames' in (out.plan.report?.videos?.[0] ?? {})));
+	});
+
+	it('beside a file staged for its size, both hints appear and report.staged lists only that file', async () => {
+		const { deps } = fakeVideoDeps();
+		const ctx = createFakeContext({
+			items: [
+				itemWithBinary({
+					clip: mp4(),
+					log: binaryProperty('x'.repeat(4096), { fileName: 'big.log', mimeType: 'text/plain' }),
+				}),
+			],
+		}).ctx;
+		const out = await prepareAttachments(ctx, 0, { ...spec(), inlineTextLimitKb: 1 }, 'x', [], {
+			timeoutMs: 1000,
+			stageVideoFrames: true,
+			videoDeps: deps,
+		});
+		assert.ok('plan' in out);
+		try {
+			assert.deepEqual(
+				out.plan.report?.staged?.files.map((f) => f.name),
+				['big.log'],
+			);
+			const texts = (out.promptContent as Array<{ text?: string }>).map((b) => b.text ?? '');
+			assert.ok(texts.some((t) => t.startsWith('<attachments-on-disk')));
+			assert.ok(texts.some((t) => t.startsWith('<video-frames-on-disk')));
+			assert.equal(readdirSync(out.staged?.dir ?? '').length, 4);
+		} finally {
+			out.staged?.cleanup();
+		}
+	});
+
+	it('names the enabled subagents that cannot Read: a tool list without it, or Read disallowed', () => {
+		const sub = (name: string, definition: Record<string, unknown>, enabled?: boolean) =>
+			({
+				[SUBAGENT_TAG]: 1,
+				name,
+				definition: { description: name, prompt: name, ...definition },
+				...(enabled === undefined ? {} : { enabled }),
+			}) as SuppliedSubagent;
+		assert.deepEqual(
+			subagentsWithoutRead([
+				sub('inherits', {}),
+				sub('reader', { tools: ['Read', 'Grep'] }),
+				sub('grepper', { tools: ['Grep'] }),
+				sub('denied', { disallowedTools: ['Read'] }),
+				sub('off', { tools: ['Grep'] }, false),
+			]),
+			['grepper', 'denied'],
+		);
 	});
 });
