@@ -108,6 +108,7 @@ const mainNodeParams = () =>
 			maxAttachmentMb: 50,
 			maxAttachmentCount: 16,
 			allowedExtensions: [],
+			video: { handling: 'stage', mode: 'auto', maxImages: 15, maxVideoMb: 2048 },
 		},
 		additional: { permissionMode: 'bypassPermissions', wrapUpGraceSeconds: 60 },
 		nodeVersion: 1.3,

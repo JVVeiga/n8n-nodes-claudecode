@@ -2,6 +2,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import type { Problem } from '../shared/problem';
 import { text } from '../shared/text';
 import type { AttachmentSpec } from './attachments/types';
+import { readVideoSpec } from './attachments/videoSpec';
 import type {
 	AdditionalOptions,
 	AttachAllSelection,
@@ -39,6 +40,9 @@ export const attachAllByDefault = (nodeVersion: number): boolean => nodeVersion 
 /** From 1.4 a run answers from its final result, and a result written while a background
  * subagent is still out neither ends the run nor stops the graceful timeout. */
 export const answersFromFinalResult = (nodeVersion: number): boolean => nodeVersion >= 1.4;
+
+/** From 1.5 a video attachment is converted to frames; below it is staged, as it always was. */
+export const videoFramesByDefault = (nodeVersion: number): boolean => nodeVersion >= 1.5;
 
 /** Resolve the selector against the node version. Only `auto` consults the version. */
 export const resolveAttachAll = (selection: AttachAllSelection, nodeVersion: number): boolean => {
@@ -85,6 +89,7 @@ function readAttachmentSpec(
 		// no sensible non-empty default: any list we picked would silently drop file types the
 		// user never asked us to drop.
 		allowedExtensions: additional.allowedExtensions ?? [],
+		video: readVideoSpec(additional, videoFramesByDefault(nodeVersion)),
 	};
 }
 

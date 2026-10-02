@@ -83,8 +83,8 @@ export const claudeCodeDescription: INodeTypeDescription = {
 	//   1.4  When a subagent runs in the background the CLI writes an interim result before the
 	//        final one; the answer and diagnostics come from the final result, and the graceful
 	//        timeout waits for a pending subagent instead of bailing on the interim result.
-	version: [1, 1.1, 1.2, 1.3, 1.4],
-	defaultVersion: 1.4,
+	version: [1, 1.1, 1.2, 1.3, 1.4, 1.5],
+	defaultVersion: 1.5,
 	subtitle: '={{$parameter["operation"] + ": " + $parameter["prompt"]}}',
 	description:
 		'Use Claude Code SDK to execute AI-powered coding tasks with customizable tool support',

@@ -25,6 +25,10 @@ import {
 	thinkingOption,
 	timeoutOption,
 	wrapUpGraceOption,
+	maxVideoSizeOption,
+	videoAttachmentsOption,
+	videoMaxImagesOption,
+	videoSamplingOption,
 } from '../shared/runOptions';
 import { DEFAULT_VERIFIER_INSTRUCTIONS } from './verification/prompt';
 
@@ -88,6 +92,7 @@ export const AGENT_OPTIONS: INodeProperties = {
 			'Spend limit for one item’s run, checked between turns: the run stops once it is exceeded, but the turn in progress finishes first and can go past it. Timeout and Max Turns are the hard limits. Set to 0 to disable.',
 		),
 		maxThinkingTokensOption(),
+		maxVideoSizeOption(),
 		PERMISSION_MODE_OPTION,
 		processNameOption(),
 		reportUsageToOption(),
@@ -99,6 +104,9 @@ export const AGENT_OPTIONS: INodeProperties = {
 		),
 		thinkingOption(),
 		wrapUpGraceOption(),
+		videoAttachmentsOption('1.2'),
+		videoMaxImagesOption(),
+		videoSamplingOption(),
 	],
 };
 
@@ -166,8 +174,9 @@ export const claudeCodeAgentDescription: INodeTypeDescription = {
 	group: ['transform'],
 	// 1.1: metrics summed over every result, structured deliveries and subagent models reported,
 	// and the user turn says nobody is there to answer.
-	version: [1, 1.1],
-	defaultVersion: 1.1,
+	// 1.2: a video attachment is converted to frames (Video Attachments on Auto).
+	version: [1, 1.1, 1.2],
+	defaultVersion: 1.2,
 	subtitle:
 		'={{$parameter["model"] + ($parameter["outputMode"] === "jsonSchema" ? " · Schema" : $parameter["outputMode"] === "outputParser" ? " · Parser" : "") + ($parameter["verification"] && $parameter["verification"].enabled ? " · Verify" : "")}}',
 	description:

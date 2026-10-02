@@ -10,6 +10,7 @@ const spec = (over: Partial<AttachmentSpec> = {}): AttachmentSpec => ({
 	maxAttachmentMb: 50,
 	maxAttachmentCount: 16,
 	allowedExtensions: [],
+	video: { handling: 'stage', mode: 'auto', maxImages: 15, maxVideoMb: 2048 },
 	...over,
 });
 

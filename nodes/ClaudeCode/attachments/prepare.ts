@@ -5,6 +5,7 @@ import { collectAttachments } from './collect';
 import { planAttachments, stagedHintBlock } from './plan';
 import { stageAttachments } from './stage';
 import type { AttachmentPlan, AttachmentSpec, StagedAttachments } from './types';
+import { defaultVideoDeps, prepareVideos, type VideoDeps } from './video';
 
 export type PreparedAttachments = {
 	plan: AttachmentPlan;
@@ -13,9 +14,12 @@ export type PreparedAttachments = {
 	promptContent: PromptContent;
 };
 
+/** How long extracting a video's frames may take, and what cancels it. */
+export type PrepareRun = { timeoutMs: number; signal?: AbortSignal; videoDeps?: VideoDeps };
+
 /**
- * collect -> plan -> stage -> the user turn, for any node that sends a prompt with attachments.
- * `trailing` is text that follows the prompt in the same turn.
+ * collect -> plan -> videos -> stage -> the user turn, for any node that sends a prompt with
+ * attachments. `trailing` is text that follows the prompt in the same turn.
  */
 export async function prepareAttachments(
 	ctx: IExecuteFunctions,
@@ -23,10 +27,47 @@ export async function prepareAttachments(
 	spec: AttachmentSpec,
 	prompt: string,
 	trailing: string[] = [],
+	run: PrepareRun = { timeoutMs: 300_000 },
 ): Promise<PreparedAttachments | { problem: Problem }> {
 	const collected = await collectAttachments(ctx, itemIndex, spec);
 	if ('problem' in collected) return collected;
 	const plan = planAttachments(collected.attachments, spec, collected.skipped);
+
+	// Videos after the other attachments, before the prompt. The report keeps `videos` absent
+	// unless one was converted, so no other run's output moves.
+	if (collected.videos.length > 0) {
+		const otherImages = plan.report?.inline.filter((a) => a.as === 'image').length ?? 0;
+		const videos = await prepareVideos(
+			ctx,
+			itemIndex,
+			collected.videos,
+			spec,
+			otherImages,
+			run,
+			run.videoDeps ?? defaultVideoDeps,
+		);
+		if ('problem' in videos) return videos;
+		plan.blocks.push(...videos.blocks);
+		const base = plan.report ?? {
+			count: 0,
+			totalBytes: 0,
+			skipped: collected.skipped,
+			inline: [],
+			staged: null,
+		};
+		plan.report = {
+			...base,
+			count: base.count + collected.videos.length,
+			totalBytes: base.totalBytes + collected.videos.reduce((sum, v) => sum + v.bytes, 0),
+			videos: videos.reports,
+		};
+		plan.notes = {
+			...plan.notes,
+			attachmentVideos: videos.reports.map(
+				(v) => `${v.name}: ${v.images} ${v.mode} image(s), ${v.strategy}, ${v.elapsedMs} ms`,
+			),
+		};
+	}
 	let staged: StagedAttachments | null = null;
 	if (plan.toStage.length > 0) {
 		staged = stageAttachments(plan.toStage);

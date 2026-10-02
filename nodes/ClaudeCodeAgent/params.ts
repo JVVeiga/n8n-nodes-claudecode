@@ -1,4 +1,5 @@
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
+import { readVideoSpec, type VideoOptions } from '../ClaudeCode/attachments/videoSpec';
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { parseBinaryPropertyNames } from '../ClaudeCode/params';
 import type { AttachAllSelection, ClaudeCodeParams, EffortSelection } from '../ClaudeCode/types';
@@ -65,11 +66,12 @@ export const agentBehaviour = (nodeVersion: number): AgentBehaviour => {
 
 export type AgentParams = { run: ClaudeCodeParams; agent: AgentExtras };
 
-type AgentOptions = Omit<SubNodeOptions, 'effort' | 'maxTurns' | 'timeout'> & {
-	permissionMode?: PermissionMode;
-	includeTranscript?: boolean;
-	allowClaudeAiConnectors?: boolean;
-};
+type AgentOptions = Omit<SubNodeOptions, 'effort' | 'maxTurns' | 'timeout'> &
+	VideoOptions & {
+		permissionMode?: PermissionMode;
+		includeTranscript?: boolean;
+		allowClaudeAiConnectors?: boolean;
+	};
 
 /** A list field: an array from an expression is taken as the list, text is split. */
 const list = (value: unknown, separator: RegExp | string): string[] =>
@@ -78,6 +80,9 @@ const list = (value: unknown, separator: RegExp | string): string[] =>
 		.filter((entry) => entry !== '');
 
 export const parseInstructionFiles = (raw: unknown): string[] => list(raw, /\r?\n/);
+
+/** From 1.2 a video attachment is converted to frames; 1 and 1.1 stage it, as they always did. */
+export const agentVideoFramesByDefault = (nodeVersion: number): boolean => nodeVersion >= 1.2;
 
 /** The Agent is a new node, so Attach All's `auto` means on, as it does from Claude Code 1.3. */
 export const resolveAgentAttachAll = (selection: AttachAllSelection): boolean =>
@@ -101,6 +106,7 @@ export function readAgentParams(ctx: AgentReadContext, itemIndex: number): Agent
 				ctx.getNodeParameter('attachAllBinaries', itemIndex, 'auto') as AttachAllSelection,
 			),
 			names: parseBinaryPropertyNames(ctx.getNodeParameter('binaryProperties', itemIndex, '')),
+			video: readVideoSpec(options, agentVideoFramesByDefault(base.nodeVersion)),
 		},
 		additional: {
 			...base.additional,

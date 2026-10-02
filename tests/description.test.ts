@@ -38,10 +38,10 @@ describe('node description — identity', () => {
 		assert.equal(claudeCodeDescription.displayName, 'Claude Code');
 	});
 
-	it('declares versions 1 through 1.4, defaulting to 1.4', () => {
+	it('declares versions 1 through 1.5, defaulting to 1.5', () => {
 		// A node keeps the version it was created with, so raising the default moves new nodes only.
-		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2, 1.3, 1.4]);
-		assert.equal(claudeCodeDescription.defaultVersion, 1.4);
+		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2, 1.3, 1.4, 1.5]);
+		assert.equal(claudeCodeDescription.defaultVersion, 1.5);
 	});
 
 	it('never drops a version — an existing workflow pinned to it would stop loading', () => {
@@ -146,6 +146,10 @@ describe('node description — additionalOptions collection', () => {
 		'inlineTextLimitKb',
 		'maxAttachmentMb',
 		'maxAttachmentCount',
+		'videoAttachments',
+		'videoSampling',
+		'videoMaxImages',
+		'maxVideoMb',
 		'maxBudgetUsd',
 		'fallbackModel',
 		'thinking',
