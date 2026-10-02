@@ -1,7 +1,8 @@
-## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.7.0...HEAD)
+## [2.8.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.7.0...v2.8.0) (2026-10-02)
 
 The Claude Code Agent gains version 1.3, now the default; existing nodes keep their version and what
-it emits.
+it emits. Agent 1.2 sends exactly what 2.7.0 published, and a 1.3 run with no video or no enabled
+subagent matches it too. The 48 golden fixtures and the Agent 1 recordings are byte-identical.
 
 ### Subagents can see an attached video
 
