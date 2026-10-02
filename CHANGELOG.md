@@ -6,8 +6,9 @@ Additive. No typeVersion moved, the 48 golden fixtures and the Agent 1 recording
 
 A new node that turns a video binary into images Claude can read. The Claude API has no video
 input. The node samples the video into single frames for a clip, or into timestamped 3×3 mosaics
-for a long recording, and draws each moment's time on its image. Twenty mosaics cover 180 moments
-of a recording of any length, for about 54k input tokens.
+for a long recording, and draws each moment's time on its image. The default 15 mosaics cover 135
+moments of a recording of any length, for about 40k input tokens. That is 15 so that, with a
+subtitles file, they fit the 16 attachments the Claude Code node and the Agent accept by default.
 
 It is a node of its own because n8n's AI Agent forwards only images, PDFs and text to its model,
 and a video on its input never reaches the Claude Code Chat Model. Put the node before the AI Agent

@@ -61,9 +61,9 @@ export const videoFramesDescription: INodeTypeDescription = {
 			name: 'maxImages',
 			type: 'number',
 			typeOptions: { minValue: 1, maxValue: 100 },
-			default: 20,
+			default: 15,
 			description:
-				'How many images to output. 20 is the most that stays clear of the API rule that shrinks every image in a request carrying more than 20.',
+				'How many images to output. 15 plus a subtitles file fits the 16 attachments the Claude Code node and Agent accept by default. Above 20, the API shrinks every image in the request.',
 		},
 		{
 			displayName: 'Options',

@@ -43,7 +43,7 @@ export function readVideoFramesParams(
 			String(ctx.getNodeParameter('binaryProperty', itemIndex, 'data') ?? '').trim() || 'data',
 		sampling: {
 			mode: MODES.includes(mode as SamplingMode) ? (mode as SamplingMode) : 'auto',
-			maxImages: Math.max(1, Math.round(num(ctx.getNodeParameter('maxImages', itemIndex, 20), 20))),
+			maxImages: Math.max(1, Math.round(num(ctx.getNodeParameter('maxImages', itemIndex, 15), 15))),
 			grid: Math.min(4, Math.max(2, Math.round(num(options.grid, 3)))),
 			minIntervalSec: Math.max(0.1, num(options.minIntervalSec, 1)),
 			// 0 is the field's empty state, so it means "the start" / "the end".

@@ -1000,11 +1000,12 @@ Read/Write Files (video) → Claude Code Video Frames → AI Agent + Claude Code
 |---|---|---|
 | **Auto** (default) | Frames when each covers 5 s or less, mosaics beyond | Anything |
 | **Frames** | One image per moment, 1280 px on the long edge | Small text on screen, short clips |
-| **Mosaic** | 3×3 moments per image (2×2 or 4×4 in Options), 1920 px | Long recordings: 20 mosaics cover 180 moments |
+| **Mosaic** | 3×3 moments per image (2×2 or 4×4 in Options), 1920 px | Long recordings: 15 mosaics cover 135 moments |
 
-**Max Images** (default 20) is how many images come out, whatever the length. 20 is the most that
-stays clear of the API rule that shrinks every image in a request carrying more than 20. Twenty
-1080p mosaics are about 54k input tokens. Moments are spread evenly, never closer than **Minimum
+**Max Images** (default 15) is how many images come out, whatever the length. 15, plus a subtitles
+file, fits the 16 attachments the Claude Code node and the Agent accept by default; the Agent's
+limit cannot be raised. Above 20 images the API shrinks every image in the request. Fifteen 1080p
+mosaics are about 40k input tokens. Moments are spread evenly, never closer than **Minimum
 Interval**, and **Start Time** / **End Time** look closely at one stretch.
 
 Each image is a binary property, `frame_000`, `frame_001` and so on, in time order. Its file name

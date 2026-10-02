@@ -292,7 +292,7 @@ describe('Claude Code Video Frames: params and hint', () => {
 		assert.equal(p.binaryProperty, 'data');
 		assert.deepEqual(p.sampling, {
 			mode: 'auto',
-			maxImages: 20,
+			maxImages: 15,
 			grid: 3,
 			minIntervalSec: 1,
 			startSec: null,
