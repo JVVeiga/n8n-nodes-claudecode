@@ -1,3 +1,24 @@
+## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.8.0...HEAD)
+
+### ffmpeg must be installed on the n8n server
+
+2.7.0 and 2.8.0 declared a bundled ffmpeg for Linux (`@ffmpeg-installer/linux-x64` and
+`linux-arm64`) as optional dependencies. n8n's community-node installer deletes
+`optionalDependencies` from a package before installing it, so no install made through n8n ever
+received that binary. Video Frames and video attachments failed with "No usable ffmpeg was found".
+The test rig had installed the package with plain npm, which kept the optional dependencies, so it
+did not catch this.
+
+The package no longer declares an ffmpeg. The node runs **FFmpeg Path** (Video Frames), then the
+`FFMPEG_PATH` environment variable, then `ffmpeg` on the PATH. When it finds none, the item fails
+with `ffmpeg is not installed on the n8n server` and how to install one. n8n's Docker image has no
+package manager, so the README's recipe is one Dockerfile line:
+`COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/`. That ffmpeg 7.1 build also decodes
+AV1, which the old bundled builds could not.
+
+`ffmpeg.source` in the reports is now `configured`, `env` or `path`. The e2e rig installs the
+package exactly as n8n does (`scripts/e2e/install-like-n8n.sh`) and mounts that static ffmpeg.
+
 ## [2.8.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.7.0...v2.8.0) (2026-10-02)
 
 The Claude Code Agent gains version 1.3, now the default; existing nodes keep their version and what

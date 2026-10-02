@@ -33,7 +33,7 @@ export type ExtractSpec = {
 	sampling: SamplingSpec;
 	burnTimestamps: boolean;
 	includeSubtitles: boolean;
-	/** Empty: the bundled binary, then `ffmpeg` on the PATH. */
+	/** Empty: FFMPEG_PATH, then `ffmpeg` on the PATH. */
 	ffmpegPath: string;
 	timeoutMs: number;
 	signal?: AbortSignal;
@@ -96,7 +96,7 @@ function failureOf(pass: string, run: FfmpegRun, timeoutSec: number): Problem {
 		return {
 			message: `ffmpeg cannot decode ${decoder[1]} video`,
 			description:
-				'The bundled ffmpeg predates this codec. Set FFmpeg Path to a newer ffmpeg build, or convert the video to H.264 first.',
+				'The ffmpeg on this server was built without that decoder. Install a fuller build (the static mwader/static-ffmpeg:7.1 decodes AV1), point FFmpeg Path or FFMPEG_PATH at one, or convert the video to H.264 first.',
 		};
 	}
 	return {
@@ -131,8 +131,8 @@ async function pickBinary(
 	}
 	return {
 		problem: {
-			message: 'No usable ffmpeg was found',
-			description: `Looked at: ${tried.join('; ')}. On Linux x64 or arm64, reinstall the package so its bundled ffmpeg is present; elsewhere install ffmpeg on the PATH (brew install ffmpeg, winget install ffmpeg) or set FFmpeg Path.`,
+			message: 'ffmpeg is not installed on the n8n server',
+			description: `Looked at: ${tried.join('; ')}. Install ffmpeg on the n8n server. In n8n's Docker image, which has no package manager, add to the Dockerfile: COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/ . On Debian or Ubuntu: apt-get install ffmpeg. On macOS: brew install ffmpeg. Or set FFMPEG_PATH (or the Video Frames node's FFmpeg Path) to an ffmpeg binary.`,
 		},
 	};
 }

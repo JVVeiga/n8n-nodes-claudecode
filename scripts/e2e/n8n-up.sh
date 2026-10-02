@@ -79,26 +79,35 @@ if [[ "${E2E_KEEP_DATA:-0}" != "1" ]]; then
 fi
 docker volume create "$VOLUME" >/dev/null
 
-echo "==> installing the node inside the container (fetches the linux Claude CLI)"
+echo "==> installing the node inside the container, the way n8n's community installer does"
+# install-like-n8n.sh strips dev, peer and optional dependencies and runs n8n's npm flags. A plain
+# `npm install <tgz>` kept optionalDependencies and hid that n8n never installs them.
 docker run --rm \
 	--user root \
 	-v "$VOLUME":/home/node/.n8n \
 	-v "$PACKDIR":/pkg:ro \
+	-v "$HERE":/rig:ro \
 	--entrypoint sh \
 	"$IMAGE" -c "
 		set -e
-		mkdir -p /home/node/.n8n/nodes
-		cd /home/node/.n8n/nodes
-		[ -f package.json ] || npm init -y >/dev/null
-		# --ignore-scripts, as n8n's own community install does (community-packages.service.js).
-		# Without it npm builds the auto-installed n8n-workflow peer's isolated-vm from source, which
-		# fails on images with no prebuilt addon for their Node (Node 26 arm64) and no python. It is
-		# also what proves the bundled ffmpeg works with no install script.
-		npm install --omit=dev --ignore-scripts=true '/pkg/$(basename "$TARBALL")' 2>&1 | tail -5
-		node -e \"require('/home/node/.n8n/nodes/node_modules/@joaoveiga/n8n-nodes-claudecode/dist/nodes/ClaudeCode/timeout.js'); console.log('node module loads OK')\"
-		ls /home/node/.n8n/nodes/node_modules/@anthropic-ai/ 2>/dev/null || true
+		sh /rig/install-like-n8n.sh '/pkg/$(basename "$TARBALL")'
+		# Peers are stripped, as n8n does; n8n resolves them from its own modules.
+		NODE_PATH=/usr/local/lib/node_modules/n8n/node_modules node -e \"require('/home/node/.n8n/nodes/node_modules/@joaoveiga/n8n-nodes-claudecode/dist/nodes/ClaudeCodeAgent/ClaudeCodeAgent.node.js'); console.log('node module loads OK')\"
 		chown -R node:node /home/node/.n8n
 	"
+
+# ffmpeg is not bundled (n8n strips optionalDependencies), and n8n's image has no package manager,
+# so the rig does what the README tells users to: a static ffmpeg in /usr/local/bin.
+FFMPEG_IMAGE="${E2E_FFMPEG_IMAGE:-mwader/static-ffmpeg:7.1}"
+FFDIR="$HERE/.ffmpeg"
+if [[ ! -x "$FFDIR/ffmpeg" ]]; then
+	echo "==> extracting ffmpeg from $FFMPEG_IMAGE"
+	mkdir -p "$FFDIR"
+	FFCID="$(docker create "$FFMPEG_IMAGE")"
+	docker cp "$FFCID":/ffmpeg "$FFDIR/ffmpeg" >/dev/null
+	docker rm "$FFCID" >/dev/null
+fi
+echo "==> ffmpeg: $("$FFDIR/ffmpeg" -hide_banner -version 2>/dev/null | head -1 || echo "$FFMPEG_IMAGE (not runnable on the host; the container runs it)")"
 
 echo "==> starting n8n on http://localhost:$PORT"
 docker run -d \
@@ -106,6 +115,7 @@ docker run -d \
 	-p "$PORT":5678 \
 	-v "$VOLUME":/home/node/.n8n \
 	-v "$HERE/fixture-project":/workspace \
+	-v "$FFDIR/ffmpeg":/usr/local/bin/ffmpeg:ro \
 	-e N8N_SECURE_COOKIE=false \
 	-e N8N_DIAGNOSTICS_ENABLED=false \
 	-e N8N_RUNNERS_ENABLED=true \

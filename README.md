@@ -55,7 +55,7 @@ content block can carry is written to a temporary directory the agent can read f
 
 **Video, as frames Claude can read.** Claude cannot watch a video. **Claude Code Video Frames** samples
 one into timestamped images, single frames for a clip and labelled mosaics for an hour-long
-recording, with the bundled ffmpeg. The images then go to the AI Agent, the Claude Code node or
+recording, with ffmpeg ([installed on the n8n server](#installing-ffmpeg)). The images then go to the AI Agent, the Claude Code node or
 the Claude Code Agent like any other image. See [Claude Code Video Frames](#claude-code-video-frames).
 
 **Sessions you can resume.** A **Session ID** on Continue, so concurrent executions stop sharing
@@ -283,9 +283,9 @@ Four options, in Additional Options on Claude Code and in Options on the Agent:
 `diagnostics.attachments.videos[]` reports each video: the sampling mode, the strategy, the
 coverage, the images and their times, and the ffmpeg that ran. It is absent when no video was
 converted. A video that cannot be converted fails the item, naming the property. It never falls
-back to staging, which would mean an answer given without the video. For another ffmpeg build (an
-AV1 recording, or macOS without `brew install ffmpeg`), put Claude Code Video Frames in front and set
-its FFmpeg Path. The rest of [What to know](#claude-code-video-frames) applies here too.
+back to staging, which would mean an answer given without the video. It needs ffmpeg on the n8n
+server ([Installing ffmpeg](#installing-ffmpeg)); this path finds it through `FFMPEG_PATH` or the
+PATH. The rest of [What to know](#claude-code-video-frames) applies here too.
 
 **Subagents see the video through files.** A subagent receives only the prompt the orchestrator
 writes for it, never the images in the orchestrator's message. So from **Agent 1.3**, when at least
@@ -1019,7 +1019,8 @@ three new nodes together.
 
 Claude cannot watch video: the API takes images, PDFs and text, nothing else. This node turns a
 video binary into images Claude can read, each with the moment it shows drawn in its top-left
-corner. It runs a bundled ffmpeg and no model, so it costs no tokens itself.
+corner. It runs ffmpeg and no model, so it costs no tokens itself. **ffmpeg must be installed on the
+n8n server**: see [Installing ffmpeg](#installing-ffmpeg).
 
 ```
 Read/Write Files (video) → Claude Code Video Frames → AI Agent + Claude Code Chat Model
@@ -1064,16 +1065,34 @@ CPUs. **Timeout** (default 300 s) bounds it.
 
 - No speech: audio is not transcribed. A recording whose content is what is *said* needs a
   transcription step of its own.
-- **ffmpeg is bundled for Linux only** (x64 and arm64), which is what n8n runs in Docker. It works
-  on the stock n8n image, with no custom image, because the binary is inside the npm package rather
-  than downloaded by an install script (n8n installs community packages with scripts disabled). npm
-  installs only the one for your machine: 31 MB on arm64, 65 MB on x64. **On macOS or Windows**,
-  install ffmpeg yourself (`brew install ffmpeg`, `winget install ffmpeg`) or set **FFmpeg Path**.
-  The node says so if it finds none.
-- The bundled builds date from 2018–2019. They decode H.264, HEVC, VP9 and MPEG-4 but **not AV1**.
-  For AV1, set **FFmpeg Path** to a newer ffmpeg.
+- What decodes depends on the ffmpeg you install. The static 7.1 build below reads H.264, HEVC,
+  VP9, MPEG-4 and AV1; a codec the build lacks is a clear failure naming it.
 - A mosaic tile is 640 px wide. Large content reads well; a form field or a log line may not. Use
   **Frames**, a smaller grid, or a narrower Start/End Time for those.
+
+### Installing ffmpeg
+
+The video features run the ffmpeg of the machine n8n runs on. The package cannot bring its own: n8n's
+community-node installer removes `optionalDependencies` and runs no install scripts, which are the
+two ways an npm package can ship a platform binary.
+
+**n8n's Docker image** has no package manager (`apk` and `apt` are absent), so copy a static build in:
+
+```dockerfile
+FROM n8nio/n8n:latest
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/
+```
+
+Or mount one at run time: `-v /path/to/ffmpeg:/usr/local/bin/ffmpeg:ro`, which is what the e2e rig
+does (measured on the official image, arm64: every filter the node uses, the time labels drawn with
+the image's own fonts, and AV1).
+
+**Elsewhere:** `apt-get install ffmpeg` (Debian, Ubuntu), `apk add ffmpeg` (Alpine), `brew install
+ffmpeg` (macOS), `winget install ffmpeg` (Windows).
+
+The node looks at **FFmpeg Path** (Video Frames only), then the `FFMPEG_PATH` environment variable,
+then `ffmpeg` on the PATH, and reports which one ran in `ffmpeg.source`. If it finds none, the item
+fails with these instructions.
 - Videos stored in n8n's binary store (filesystem or S3 mode) are streamed to a temp file, never
   held in memory. **Max Video Size** defaults to 2 GB.
 
@@ -1381,7 +1400,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1505 tests — node:test, no framework; 10 need an ffmpeg and skip without one
+npm test    # 1504 tests — node:test, no framework; 10 need an ffmpeg and skip without one
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -1446,10 +1465,6 @@ The idea, the original node structure, and the n8n integration groundwork are th
 MIT, throughout the lineage. The original copyright notice is kept intact in
 [LICENSE.md](LICENSE.md).
 
-Claude Code Video Frames runs ffmpeg as a separate program, with an argument list. On Linux it
-comes from `@ffmpeg-installer/linux-x64` or `@ffmpeg-installer/linux-arm64`, optional dependencies
-that npm downloads from their publisher. This package's tarball does not contain them. Both are
-static builds configured `--enable-gpl --enable-version3` and no `--enable-nonfree`, so they are
-GPLv3; their source is the FFmpeg project's (the builds come from johnvansickle.com/ffmpeg). The
-`@ffmpeg-installer` macOS Apple Silicon build is deliberately not used: it is configured
-`--enable-nonfree`, and ffmpeg itself reports it as not legally redistributable.
+The video features run ffmpeg as a separate program, with an argument list. The package neither
+contains nor installs ffmpeg; the build on the server is the operator's choice, under its own
+license (the `mwader/static-ffmpeg` build suggested above is GPLv3).

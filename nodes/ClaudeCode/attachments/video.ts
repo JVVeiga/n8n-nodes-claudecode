@@ -151,7 +151,7 @@ function asAttachmentProblem(video: VideoAttachment, problem: Problem): Problem 
 	return {
 		message: `Video attachment "${video.propName}": ${problem.message}`,
 		description: /FFmpeg Path/.test(description)
-			? `${description} FFmpeg Path is an option of the Claude Code Video Frames node: put it before this one, or set Video Attachments to Stage the File.`
+			? `${description} This node reads FFMPEG_PATH and the PATH; FFmpeg Path is an option of the Claude Code Video Frames node. Or set Video Attachments to Stage the File.`
 			: description || 'Set Video Attachments to Stage the File to send the file as it is.',
 	};
 }

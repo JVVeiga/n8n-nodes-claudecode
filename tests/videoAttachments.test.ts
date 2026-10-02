@@ -57,7 +57,7 @@ const report = (over: Partial<ExtractResult['report']> = {}): ExtractResult['rep
 	labels: 'burned',
 	subtitles: null,
 	notes: [],
-	ffmpeg: { source: 'bundled', version: 'N-49006' },
+	ffmpeg: { source: 'path', version: '7.1' },
 	elapsedMs: 120,
 	...over,
 });

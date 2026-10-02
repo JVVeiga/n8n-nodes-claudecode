@@ -51,7 +51,7 @@ const report = (over: Partial<ExtractResult['report']> = {}): ExtractResult['rep
 	labels: 'burned',
 	subtitles: null,
 	notes: [],
-	ffmpeg: { source: 'bundled', version: 'N-49006' },
+	ffmpeg: { source: 'path', version: '7.1' },
 	elapsedMs: 4200,
 	...over,
 });
@@ -355,7 +355,7 @@ describe('Claude Code Video Frames: registration', () => {
 		assert.ok(
 			pkg.n8n.nodes.includes('dist/nodes/ClaudeCodeVideoFrames/ClaudeCodeVideoFrames.node.js'),
 		);
-		assert.ok(pkg.optionalDependencies['@ffmpeg-installer/linux-x64']);
+		assert.equal(pkg.optionalDependencies, undefined, 'n8n strips optionalDependencies on install');
 		const codex = JSON.parse(
 			readFileSync('nodes/ClaudeCodeVideoFrames/ClaudeCodeVideoFrames.node.json', 'utf8'),
 		);

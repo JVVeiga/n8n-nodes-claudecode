@@ -18,3 +18,4 @@ scripts/e2e/workflows/
 scripts/e2e/results.json
 scripts/e2e/run-*.log
 scripts/e2e/.pack/
+scripts/e2e/.ffmpeg/
