@@ -1,0 +1,1 @@
+ffmpeg version N-49006-gd81913e680-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2019 the FFmpeg developers

@@ -250,20 +250,23 @@ describe('Code Review Kit — git.ts runs git with an argument array', () => {
 	});
 });
 
-describe('Code Review Kit — only shared/git.ts spawns, and never through a shell', () => {
+describe('only shared/git.ts and shared/video/ffmpeg.ts spawn, and never through a shell', () => {
 	const root = join(process.cwd(), 'nodes');
 	const sources = (readdirSync(root, { recursive: true }) as string[])
 		.filter((f) => f.endsWith('.ts'))
 		.map((f) => ({ file: f.split('\\').join('/'), text: readFileSync(join(root, f), 'utf8') }));
+	const SPAWNERS = ['shared/git.ts', 'shared/video/ffmpeg.ts'];
 
 	it('no other module imports child_process', () => {
 		const spawners = sources.filter((s) => /child_process/.test(s.text)).map((s) => s.file);
-		assert.deepEqual(spawners, ['shared/git.ts']);
+		assert.deepEqual(spawners.sort(), SPAWNERS);
 	});
 
-	it('git.ts uses execFile, never exec, execSync, spawn or a shell option', () => {
-		const git = sources.find((s) => s.file === 'shared/git.ts')?.text ?? '';
-		assert.match(git, /import \{ execFile \} from 'node:child_process'/);
-		assert.doesNotMatch(git, /(?<![.\w])exec(Sync)?\(|\bspawn(Sync)?\b|execFileSync|shell\s*:/);
-	});
+	for (const file of SPAWNERS) {
+		it(`${file} uses execFile, never exec, execSync, spawn or a shell option`, () => {
+			const text = sources.find((s) => s.file === file)?.text ?? '';
+			assert.match(text, /import \{ execFile \} from 'node:child_process'/);
+			assert.doesNotMatch(text, /(?<![.\w])exec(Sync)?\(|\bspawn(Sync)?\b|execFileSync|shell\s*:/);
+		});
+	}
 });

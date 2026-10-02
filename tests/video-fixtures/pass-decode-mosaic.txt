@@ -1,0 +1,43 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'landscape.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+  Duration: 00:00:12.02, start: 0.000000, bitrate: 2884 kb/s
+    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1280x720 [SAR 1:1 DAR 16:9], 2807 kb/s, 30 fps, 30 tbr, 15360 tbn, 60 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+    Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 73 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+[swscaler @ 0x3de10b40] deprecated pixel format used, make sure you did set range correctly
+[Parsed_showinfo_3 @ 0x3d975a70] config in time_base: 1/15360, frame_rate: 30/1
+[Parsed_showinfo_3 @ 0x3d975a70] config out time_base: 0/0, frame_rate: 0/0
+Output #0, image2, to '/tmp/tmp.Ocfkdo/dm_%03d.jpg':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+    Stream #0:0(und): Video: mjpeg, yuvj420p(pc), 1280x720 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 7.50 fps, 7.50 tbn, 7.50 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+      encoder         : Lavc58.52.102 mjpeg
+    Side data:
+      cpb: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: -1
+[Parsed_showinfo_3 @ 0x3d975a70] n:   0 pts:  15360 pts_time:1       pos:   358852 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:B checksum:69086BA6 plane_checksum:[E8548D06 3563270A 6B37B787] mean:[126 126 125 ] stdev:[65.8 88.3 93.8 ]
+[Parsed_showinfo_3 @ 0x3d975a70] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_3 @ 0x3d975a70] n:   1 pts:  61440 pts_time:4       pos:  1471194 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:B checksum:337D44D5 plane_checksum:[B09FEED4 ADE82110 CE3234E2] mean:[127 126 125 ] stdev:[65.7 88.2 93.8 ]
+[Parsed_showinfo_3 @ 0x3d975a70] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_3 @ 0x3d975a70] n:   2 pts: 107520 pts_time:7       pos:  2567966 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:B checksum:8B7145B1 plane_checksum:[728D63BE 6933271E 0B53BAC6] mean:[127 126 125 ] stdev:[65.8 88.2 93.7 ]
+[Parsed_showinfo_3 @ 0x3d975a70] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_3 @ 0x3d975a70] n:   3 pts: 153600 pts_time:10      pos:  3589265 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:P checksum:5660D5D8 plane_checksum:[54A3DC71 419F2CFD BA11CC5B] mean:[126 126 125 ] stdev:[66.5 86.8 93.7 ]
+[Parsed_showinfo_3 @ 0x3d975a70] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_3 @ 0x3d975a70] n:   4 pts: 168960 pts_time:11      pos:  3996468 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:B checksum:8B7DC46A plane_checksum:[D2C1F623 B6251D02 E08CB136] mean:[125 126 125 ] stdev:[66.5 86.7 93.7 ]
+[Parsed_showinfo_3 @ 0x3d975a70] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    2 fps=0.0 q=3.0 Lsize=N/A time=00:00:11.20 bitrate=N/A speed=94.2x    
+video:116kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown

@@ -1,0 +1,41 @@
+Input #0, matroska,webm, from 'piped.mkv':
+  Metadata:
+    COMPATIBLE_BRANDS: isomiso2avc1mp41
+    MAJOR_BRAND     : isom
+    MINOR_VERSION   : 512
+    ENCODER         : Lavf58.27.103
+  Duration: N/A, start: 0.000000, bitrate: N/A
+    Stream #0:0: Video: h264 (High), yuv420p(progressive), 1280x720 [SAR 1:1 DAR 16:9], 30 fps, 30 tbr, 1k tbn, 60 tbc (default)
+    Metadata:
+      HANDLER_NAME    : VideoHandler
+    Stream #0:1: Audio: aac (LC), 44100 Hz, mono, fltp (default)
+    Metadata:
+      HANDLER_NAME    : SoundHandler
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+[swscaler @ 0x31eec910] deprecated pixel format used, make sure you did set range correctly
+[Parsed_showinfo_2 @ 0x31a05770] config in time_base: 1/1000, frame_rate: 30/1
+[Parsed_showinfo_2 @ 0x31a05770] config out time_base: 0/0, frame_rate: 0/0
+[Parsed_showinfo_2 @ 0x31a05770] n:   0 pts:      0 pts_time:0       pos:      897 fmt:yuvj420p sar:1/1 s:320x180 i:P iskey:1 type:I checksum:E5F9FE17 plane_checksum:[72F9B15A 6503CE59 B91C7E55] mean:[127 127 125 ] stdev:[65.0 88.0 93.7 ]
+[Parsed_showinfo_2 @ 0x31a05770] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+Output #0, image2, to '/tmp/tmp.Ocfkdo/u_%03d.jpg':
+  Metadata:
+    COMPATIBLE_BRANDS: isomiso2avc1mp41
+    MAJOR_BRAND     : isom
+    MINOR_VERSION   : 512
+    encoder         : Lavf58.27.103
+    Stream #0:0: Video: mjpeg, yuvj420p(pc), 320x180 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn, 30 tbc (default)
+    Metadata:
+      HANDLER_NAME    : VideoHandler
+      encoder         : Lavc58.52.102 mjpeg
+    Side data:
+      cpb: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: -1
+[Parsed_showinfo_2 @ 0x31a05770] n:   1 pts:   3023 pts_time:3.023   pos:  1070218 fmt:yuvj420p sar:1/1 s:320x180 i:P iskey:1 type:I checksum:3BDDD620 plane_checksum:[5ABD9A38 EE6AC52C E8C776AD] mean:[127 126 125 ] stdev:[65.0 87.7 93.6 ]
+[Parsed_showinfo_2 @ 0x31a05770] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_2 @ 0x31a05770] n:   2 pts:   6056 pts_time:6.056   pos:  2206455 fmt:yuvj420p sar:1/1 s:320x180 i:P iskey:0 type:B checksum:ED331A05 plane_checksum:[C6F7C74A BDD6D0B2 74DE81EB] mean:[127 127 125 ] stdev:[65.0 87.6 93.5 ]
+[Parsed_showinfo_2 @ 0x31a05770] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_2 @ 0x31a05770] n:   3 pts:   9056 pts_time:9.056   pos:  3298218 fmt:yuvj420p sar:1/1 s:320x180 i:P iskey:0 type:B checksum:CE7E20F9 plane_checksum:[1590D170 0EFECD52 A3AF8219] mean:[127 127 125 ] stdev:[65.0 87.9 93.5 ]
+[Parsed_showinfo_2 @ 0x31a05770] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    4 fps=0.0 q=1.6 Lsize=N/A time=00:00:09.10 bitrate=N/A speed=  86x    
+video:35kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown

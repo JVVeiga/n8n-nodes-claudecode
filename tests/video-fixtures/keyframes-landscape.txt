@@ -1,0 +1,38 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'landscape.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+  Duration: 00:00:12.02, start: 0.000000, bitrate: 2884 kb/s
+    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1280x720 [SAR 1:1 DAR 16:9], 2807 kb/s, 30 fps, 30 tbr, 15360 tbn, 60 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+    Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 73 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> wrapped_avframe (native))
+Press [q] to stop, [?] for help
+[Parsed_showinfo_0 @ 0x1535ceb0] config in time_base: 1/15360, frame_rate: 30/1
+[Parsed_showinfo_0 @ 0x1535ceb0] config out time_base: 0/0, frame_rate: 0/0
+[Parsed_showinfo_0 @ 0x1535ceb0] n:   0 pts:      0 pts_time:0       pos:       48 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:4E87C8FB plane_checksum:[A877566E CAE2E025 8A899259] mean:[125 127 126 ] stdev:[56.4 77.9 83.6 ]
+[Parsed_showinfo_0 @ 0x1535ceb0] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+Output #0, null, to 'pipe:':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+    Stream #0:0(und): Video: wrapped_avframe, yuv420p, 1280x720 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn, 30 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+      encoder         : Lavc58.52.102 wrapped_avframe
+[Parsed_showinfo_0 @ 0x1535ceb0] n:   1 pts:  46080 pts_time:3       pos:  1067371 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:117FC1A7 plane_checksum:[FD6F210F 589263CE DB943CCA] mean:[125 127 125 ] stdev:[56.4 77.9 83.5 ]
+[Parsed_showinfo_0 @ 0x1535ceb0] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_0 @ 0x1535ceb0] n:   2 pts:  92160 pts_time:6       pos:  2150015 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:CD8A1620 plane_checksum:[69A74D6A 9688077B A01BC12C] mean:[125 127 126 ] stdev:[56.4 77.9 83.5 ]
+[Parsed_showinfo_0 @ 0x1535ceb0] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_0 @ 0x1535ceb0] n:   3 pts: 138240 pts_time:9       pos:  3248364 fmt:yuv420p sar:1/1 s:1280x720 i:P iskey:1 type:I checksum:EE4B4DB6 plane_checksum:[9016DF40 327DBFB8 CBE9AEA0] mean:[125 127 126 ] stdev:[56.4 78.0 83.6 ]
+[Parsed_showinfo_0 @ 0x1535ceb0] color_range:unknown color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    4 fps=0.0 q=-0.0 Lsize=N/A time=00:00:09.03 bitrate=N/A speed= 393x    
+video:2kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown

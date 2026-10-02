@@ -1,0 +1,9 @@
+Input #0, matroska,webm, from 'clip.webm':
+  Metadata:
+    ENCODER         : Lavf58.27.103
+  Duration: 00:00:04.00, start: 0.000000, bitrate: 173 kb/s
+    Stream #0:0: Video: vp9 (Profile 0), yuv420p(tv), 640x360, SAR 1:1 DAR 16:9, 25 fps, 25 tbr, 1k tbn, 1k tbc (default)
+    Metadata:
+      ENCODER         : Lavc58.52.102 libvpx-vp9
+      DURATION        : 00:00:04.000000000
+At least one output file must be specified

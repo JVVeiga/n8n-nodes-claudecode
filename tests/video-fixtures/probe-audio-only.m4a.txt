@@ -1,0 +1,11 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'audio-only.m4a':
+  Metadata:
+    major_brand     : M4A 
+    minor_version   : 512
+    compatible_brands: isomiso2
+    encoder         : Lavf58.27.103
+  Duration: 00:00:05.02, start: 0.000000, bitrate: 76 kb/s
+    Stream #0:0(und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 73 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+At least one output file must be specified

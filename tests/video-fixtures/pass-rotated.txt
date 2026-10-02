@@ -1,0 +1,41 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'rotated.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+  Duration: 00:00:12.02, start: 0.000000, bitrate: 2884 kb/s
+    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1280x720 [SAR 1:1 DAR 16:9], 2807 kb/s, 30 fps, 30 tbr, 15360 tbn, 60 tbc (default)
+    Metadata:
+      rotate          : 270
+      handler_name    : VideoHandler
+    Side data:
+      displaymatrix: rotation of 90.00 degrees
+    Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 73 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+[swscaler @ 0x10985760] deprecated pixel format used, make sure you did set range correctly
+[Parsed_showinfo_1 @ 0x105cef50] config in time_base: 1/15360, frame_rate: 30/1
+[Parsed_showinfo_1 @ 0x105cef50] config out time_base: 0/0, frame_rate: 0/0
+Output #0, image2, to '/tmp/tmp.Ocfkdo/r.jpg':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+    Stream #0:0(und): Video: mjpeg, yuvj420p(pc), 360x640 [SAR 1:1 DAR 9:16], q=2-31, 200 kb/s, 30 fps, 30 tbn, 30 tbc (default)
+    Metadata:
+      encoder         : Lavc58.52.102 mjpeg
+      handler_name    : VideoHandler
+    Side data:
+      cpb: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: -1
+      displaymatrix: rotation of -0.00 degrees
+[Parsed_showinfo_1 @ 0x105cef50] n:   0 pts:      0 pts_time:0       pos:   358852 fmt:yuvj420p sar:1/1 s:360x640 i:P iskey:0 type:B checksum:851CCC4E plane_checksum:[C35AC468 6E7C1E94 A01CE943] mean:[126 126 125 ] stdev:[65.4 88.3 94.4 ]
+[Parsed_showinfo_1 @ 0x105cef50] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_1 @ 0x105cef50] n:   1 pts:    512 pts_time:0.0333333 pos:   323115 fmt:yuvj420p sar:1/1 s:360x640 i:P iskey:0 type:P checksum:DFEEC968 plane_checksum:[FF5CB0B6 40862584 8CDAF31F] mean:[126 126 125 ] stdev:[65.4 88.3 94.3 ]
+[Parsed_showinfo_1 @ 0x105cef50] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    1 fps=0.0 q=4.7 Lsize=N/A time=00:00:00.03 bitrate=N/A speed= 1.3x    
+video:14kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown
