@@ -423,6 +423,11 @@ nodes/
   metadata (`looksLikeVideo`) before the buffer read, and `video.ts` streams it to a work directory
   removed before the model runs. Max Video Size replaces Max Attachment Size for it. With
   `stage`, a video takes the old path untouched, which is what keeps 1.4 and Agent 1.1 identical.
+- **A subagent never sees the orchestrator's inline images** (spike S-4: it answered
+  `NO_ATTACHED_IMAGE`, then Read a staged JPEG fine). So Agent 1.3 stages copies of the frames with
+  an index (`framesOnDisk`) and tells the orchestrator the paths (`framesHintBlock`). They share the
+  staging directory and its cleanup but stay out of `report.staged`, which means "could not go
+  inline".
 - **A frame's time is read from the frame, never computed from the request.** The `fps` filter
   picks mid-interval frames and its `%{pts}` is its own output pts: labels were 2–14 s off the
   content (spike S-2). `select` keeps the source pts, a seek knows its target, and `showinfo` on
@@ -463,8 +468,9 @@ default.
 The Claude Code Agent has versions of its own. **1.1** sums `duration_ms`, `num_turns` and `usage`
 over every result of the run, reports each structured delivery (`accepted`, `rejected`,
 `rejections`, `superseded`) and each subagent's `model`, and ends the user turn saying nobody is
-there to answer. **1.2** (current default) is 1.1 plus a video attachment converted to frames
-(`agentVideoFramesByDefault`). 1 is unchanged, held byte-for-byte by `tests/agent-v1/`. The gate is
+there to answer. **1.2** is 1.1 plus a video attachment converted to frames
+(`agentVideoFramesByDefault`). **1.3** (current default) also stages copies of those frames when a
+subagent is enabled (`sharesVideoFrames`). 1 is unchanged, held byte-for-byte by `tests/agent-v1/`. The gate is
 `agentBehaviour` in its params.ts.
 
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
@@ -479,7 +485,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1499 tests, node:test, no framework (10 skip without ffmpeg)
+npm test                                    # 1505 tests, node:test, no framework (10 skip without ffmpeg)
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -502,7 +508,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 116 named behaviours against real executions:
+with the node installed and asserts 117 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

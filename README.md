@@ -287,6 +287,15 @@ back to staging, which would mean an answer given without the video. For another
 AV1 recording, or macOS without `brew install ffmpeg`), put Claude Code Video Frames in front and set
 its FFmpeg Path. The rest of [What to know](#claude-code-video-frames) applies here too.
 
+**Subagents see the video through files.** A subagent receives only the prompt the orchestrator
+writes for it, never the images in the orchestrator's message. So from **Agent 1.3**, when at least
+one subagent is enabled, copies of the images are also written to the temporary directory, one
+`.jpg` per image named with the time it shows (`rec-frame-003-00-01-05.jpg`). They come with an
+index, `rec-frames.json`, that maps each file to its times. The orchestrator is told the paths and
+that a subagent can open them with `Read`, so it can hand a stretch of a long recording to each
+subagent. `diagnostics.attachments.videos[].stagedFrames` says where the files are and lists, under
+`subagentsWithoutRead`, any enabled subagent whose tools leave out `Read` and so cannot open them.
+
 ### Attached directly, or staged on disk
 
 Each file takes one of two routes, decided by its type and its size.
@@ -819,13 +828,14 @@ resend a rejected one.
 
 ### Versions
 
-A node keeps the version it was created with; new nodes get 1.2.
+A node keeps the version it was created with; new nodes get 1.3.
 
 | | What it changed |
 |---|---|
 | 1 | the original |
 | 1.1 | `metrics.duration_ms`, `num_turns` and `usage` summed over every result of the run (the CLI reports them per turn; cost and `modelUsage` were already cumulative); `diagnostics.structuredOutput` reports each delivery; `diagnostics.subagents[].model`; the unattended line in the prompt |
 | 1.2 | a video attachment is converted to timestamped frames ([Video attachments](#video-attachments)); everything else as 1.1 |
+| 1.3 | with a subagent enabled, copies of those frames are also written to disk for it to `Read`; everything else as 1.2 |
 
 ### Verification
 
@@ -1371,7 +1381,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1499 tests — node:test, no framework; 10 need an ffmpeg and skip without one
+npm test    # 1505 tests — node:test, no framework; 10 need an ffmpeg and skip without one
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
