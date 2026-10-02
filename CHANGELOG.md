@@ -1,4 +1,8 @@
-## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.8.0...HEAD)
+## [2.8.1](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.8.0...v2.8.1) (2026-10-02)
+
+A fix. No typeVersion moved, the 48 golden fixtures and the Agent 1 recordings are byte-identical.
+An install that did receive the bundled ffmpeg (a plain `npm install`, not n8n's installer) now
+needs ffmpeg on the PATH or in `FFMPEG_PATH`.
 
 ### ffmpeg must be installed on the n8n server
 
