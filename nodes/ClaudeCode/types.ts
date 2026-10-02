@@ -1,3 +1,5 @@
+import type { VideoSelection } from './attachments/videoSpec';
+import type { SamplingMode } from '../shared/video/types';
 import type {
 	EffortLevel,
 	Options,
@@ -66,6 +68,10 @@ export type AdditionalOptions = {
 	maxAttachmentMb?: number;
 	maxAttachmentCount?: number;
 	allowedExtensions?: string[];
+	videoAttachments?: VideoSelection;
+	videoSampling?: SamplingMode;
+	videoMaxImages?: number;
+	maxVideoMb?: number;
 };
 
 /** Everything read off the node's parameters for one input item. The only thing produced by

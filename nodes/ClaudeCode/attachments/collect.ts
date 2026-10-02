@@ -1,8 +1,10 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IBinaryData, IExecuteFunctions } from 'n8n-workflow';
 import type { Problem } from '../../shared/problem';
+import { binarySize } from '../../shared/video/binaryFile';
+import { looksLikeVideo } from '../../shared/video/videoType';
 import { effectiveMime, extensionOf } from './mime';
 import { deriveFileName, resolveFileName } from './name';
-import type { Attachment, AttachmentSpec, SkippedAttachment } from './types';
+import type { Attachment, AttachmentSpec, SkippedAttachment, VideoAttachment } from './types';
 
 /**
  * Turning n8n binary properties into bytes.
@@ -21,7 +23,7 @@ import type { Attachment, AttachmentSpec, SkippedAttachment } from './types';
  */
 
 export type CollectOutcome =
-	| { attachments: Attachment[]; skipped: SkippedAttachment[] }
+	| { attachments: Attachment[]; skipped: SkippedAttachment[]; videos: VideoAttachment[] }
 	| { problem: Problem };
 
 const MB = 1024 * 1024;
@@ -93,11 +95,11 @@ export async function collectAttachments(
 	>;
 
 	const selected = selectPropertyNames(spec, binary);
-	if (selected.length === 0) return { attachments: [], skipped: [] };
+	if (selected.length === 0) return { attachments: [], skipped: [], videos: [] };
 
 	// Filter before counting and before reading anything. See applyExtensionFilter.
 	const { kept: propNames, skipped } = applyExtensionFilter(selected, binary, spec);
-	if (propNames.length === 0) return { attachments: [], skipped };
+	if (propNames.length === 0) return { attachments: [], skipped, videos: [] };
 
 	// Count first, so a 40-property item says "too many attachments" rather than naming whichever
 	// file happened to be oversized. The count is the thing the user has to fix.
@@ -113,6 +115,7 @@ export async function collectAttachments(
 
 	const maxBytes = spec.maxAttachmentMb * MB;
 	const attachments: Attachment[] = [];
+	const videos: VideoAttachment[] = [];
 	const usedNames = new Set<string>();
 
 	for (const propName of propNames) {
@@ -128,6 +131,34 @@ export async function collectAttachments(
 					}. Check the name, or turn on Attach All Binaries.`,
 				},
 			};
+		}
+
+		// A video to convert is decided from metadata and never read here: its bytes are streamed to
+		// disk only for ffmpeg. Max Video Size replaces Max Attachment Size for it.
+		if (
+			spec.video.handling === 'frames' &&
+			looksLikeVideo(meta.mimeType, deriveFileName(meta, propName))
+		) {
+			const bytes = await binarySize(ctx, meta as IBinaryData);
+			if (bytes > spec.video.maxVideoMb * MB) {
+				return {
+					problem: {
+						message: `Video attachment "${propName}" is ${formatMb(bytes)}, over the limit of ${spec.video.maxVideoMb} MB`,
+						description:
+							'Raise Max Video Size in Additional Options, trim the video first, or set Video Attachments to Stage the File.',
+					},
+				};
+			}
+			const fileName = resolveFileName(meta, propName, usedNames);
+			usedNames.add(fileName);
+			videos.push({
+				propName,
+				fileName,
+				mimeType: meta.mimeType ?? '',
+				bytes,
+				meta: meta as IBinaryData,
+			});
+			continue;
 		}
 
 		const buffer = await ctx.helpers.getBinaryDataBuffer(itemIndex, propName);
@@ -155,5 +186,5 @@ export async function collectAttachments(
 		});
 	}
 
-	return { attachments, skipped };
+	return { attachments, skipped, videos };
 }

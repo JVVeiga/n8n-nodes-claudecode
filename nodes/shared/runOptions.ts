@@ -234,3 +234,72 @@ export const modelProperty = (
 	default: 'sonnet',
 	description,
 });
+
+/** Video attachment options, shared by the Claude Code node and the Agent. `since` names the version from which Auto converts. */
+export const videoAttachmentsOption = (since: string): INodeProperties => ({
+	displayName: 'Video Attachments',
+	name: 'videoAttachments',
+	type: 'options',
+	options: [
+		{
+			name: 'Auto',
+			value: 'auto',
+			description: `Convert to frames from node version ${since}; stage the file on earlier versions`,
+		},
+		{
+			name: 'Convert to Frames',
+			value: 'frames',
+			description:
+				'Send the video as timestamped images Claude can see, extracted with ffmpeg (bundled on Linux)',
+		},
+		{
+			name: 'Stage the File',
+			value: 'stage',
+			description:
+				'Write the video to the temporary directory, as for any file with no inline route. Claude cannot watch it there.',
+		},
+	],
+	default: 'auto',
+	description:
+		'How a video attachment reaches Claude. The API has no video input, so frames are the only way it can see one.',
+});
+
+export const videoSamplingOption = (): INodeProperties => ({
+	displayName: 'Video Sampling',
+	name: 'videoSampling',
+	type: 'options',
+	options: [
+		{
+			name: 'Auto',
+			value: 'auto',
+			description: 'Single frames when each covers 5 seconds or less, 3×3 mosaics beyond',
+		},
+		{ name: 'Frames', value: 'frames', description: 'One image per moment: the most detail' },
+		{
+			name: 'Mosaic',
+			value: 'mosaic',
+			description: 'Nine moments per image, each labelled with its time: the most coverage',
+		},
+	],
+	default: 'auto',
+});
+
+export const videoMaxImagesOption = (): INodeProperties => ({
+	displayName: 'Video Max Images',
+	name: 'videoMaxImages',
+	type: 'number',
+	default: 15,
+	typeOptions: { minValue: 1, maxValue: 20 },
+	description:
+		'Images for all of an item’s videos together. The request never carries more than 20 images in all, counting attached images, because past 20 the API shrinks every image.',
+});
+
+export const maxVideoSizeOption = (): INodeProperties => ({
+	displayName: 'Max Video Size (MB)',
+	name: 'maxVideoMb',
+	type: 'number',
+	default: 2048,
+	typeOptions: { minValue: 1 },
+	description:
+		'Per-video cap when videos are converted to frames, in place of Max Attachment Size. The video is streamed to a temporary file, never held in memory.',
+});

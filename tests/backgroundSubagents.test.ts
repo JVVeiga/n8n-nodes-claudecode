@@ -34,9 +34,11 @@ const pendingAtTimeout = (): FakeQueryOptions => ({
 });
 
 describe('Claude Code — declared versions', () => {
-	it('adds 1.4 and makes it the default, keeping every earlier version', () => {
-		assert.deepEqual(claudeCodeDescription.version, [1, 1.1, 1.2, 1.3, 1.4]);
-		assert.equal(claudeCodeDescription.defaultVersion, 1.4);
+	it('adds 1.4, keeping every earlier version', () => {
+		assert.deepEqual(
+			(claudeCodeDescription.version as number[]).slice(0, 5),
+			[1, 1.1, 1.2, 1.3, 1.4],
+		);
 	});
 });
 

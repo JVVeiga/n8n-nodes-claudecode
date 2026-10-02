@@ -689,6 +689,25 @@ const checks = [
     return c?.status === 'success' && /\b3667\b/.test(String(c.itemJson?.output ?? '')) &&
       !/NO_IMAGES/.test(String(c.itemJson?.output ?? ''));
   }],
+  ['103 a video attached to Claude Code 1.5 converts itself and is answered from the pixels', () => {
+    const j = get('case103')?.itemJson;
+    const a = j?.diagnostics?.attachments;
+    const v = a?.videos?.[0];
+    console.log(`      103: ${String(j?.result).slice(0, 80)} | ${v?.images} ${v?.mode} ${v?.strategy} ${v?.ffmpeg?.source}`);
+    return j?.success === true && /\b6910\b/.test(String(j.result)) && a?.count === 1 &&
+      v?.name === 'numbers.mp4' && v.images === 15 && a.staged === null && a.inline.length === 0;
+  }],
+  ['104 a video attached to the Agent 1.2 converts itself and is answered', () => {
+    const j = get('case104')?.itemJson;
+    const v = j?.diagnostics?.attachments?.videos?.[0];
+    console.log(`      104: ${String(j?.result).slice(0, 80)} | ${v?.images} ${v?.mode}`);
+    return j?.success === true && /\b3667\b/.test(String(j.result)) && v?.images === 15;
+  }],
+  ['105 Claude Code 1.4 still stages a video, with no videos key', () => {
+    const j = get('case105')?.itemJson;
+    const a = j?.diagnostics?.attachments;
+    return j?.success === true && a?.staged?.files?.[0]?.name === 'numbers.mp4' && !('videos' in (a ?? {}));
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as

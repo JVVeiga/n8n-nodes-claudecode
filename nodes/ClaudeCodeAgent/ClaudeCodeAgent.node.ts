@@ -151,6 +151,7 @@ async function runAgentItem(
 		params.attachments,
 		params.prompt,
 		[orchestration, unattended].filter((text): text is string => text !== null),
+		{ timeoutMs: item.timeoutSeconds * 1000, signal: abortController.signal },
 	);
 	if ('problem' in attachments) {
 		throw fail(attachments.problem.message, attachments.problem.description);

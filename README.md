@@ -261,6 +261,32 @@ empty list for a text-only request.
 off until you say otherwise. To turn it on there without recreating it, set it to `On`, which
 overrides the version either way.
 
+### Video attachments
+
+Claude cannot watch video, so from **Claude Code 1.5** and **Claude Code Agent 1.2** a video on the
+item is converted to timestamped images before the request, by the same extraction as
+[Claude Code Video Frames](#claude-code-video-frames). It is recognised from its type or extension,
+and its bytes are streamed to a temporary file and never loaded into memory. Short clips become
+single frames and long recordings become 3×3 mosaics. Each image follows a caption with its times,
+the time is drawn on it, and a text subtitle track goes in as a document. The temporary files are
+gone before Claude starts.
+
+Four options, in Additional Options on Claude Code and in Options on the Agent:
+
+| Option | Default | |
+|---|---|---|
+| **Video Attachments** | `Auto` | `Auto` converts from those versions and stages the file below them (what earlier versions always did). `Convert to Frames` and `Stage the File` override the version either way. |
+| **Video Sampling** | `Auto` | `Frames`, `Mosaic`, or `Auto`, which picks frames when each covers 5 s or less |
+| **Video Max Images** | 15 | for all the item's videos together; the request never carries more than 20 images in all, counting attached images, because past 20 the API shrinks every image |
+| **Max Video Size (MB)** | 2048 | replaces Max Attachment Size for a video |
+
+`diagnostics.attachments.videos[]` reports each video: the sampling mode, the strategy, the
+coverage, the images and their times, and the ffmpeg that ran. It is absent when no video was
+converted. A video that cannot be converted fails the item, naming the property. It never falls
+back to staging, which would mean an answer given without the video. For another ffmpeg build (an
+AV1 recording, or macOS without `brew install ffmpeg`), put Claude Code Video Frames in front and set
+its FFmpeg Path. The rest of [What to know](#claude-code-video-frames) applies here too.
+
 ### Attached directly, or staged on disk
 
 Each file takes one of two routes, decided by its type and its size.
@@ -410,16 +436,17 @@ The grace is clamped to half the Timeout, so a large grace on a short Timeout ca
 
 Anything that changes what a node *emits* is gated behind its version, never switched on by a
 package upgrade. **A node keeps the version it was created with**, so upgrading the package never
-changes an existing workflow. New nodes start on the current default, `1.4`.
+changes an existing workflow. New nodes start on the current default, `1.5`.
 
-| | 1 | 1.1 | 1.2 | 1.3 | 1.4 (default) |
-|---|---|---|---|---|---|
-| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` | `60` | `60` |
-| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 | same as 1.1 | same as 1.1 |
-| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 | same as 1.1 | same as 1.1 |
-| Output shape | one per format | one per format | [one envelope](#output-formats) | one envelope | one envelope |
-| Attach All Binaries `Auto` | off | off | off | on | on |
-| A subagent in the background | answers from the first result | same as 1 | same as 1 | same as 1 | answers from the final result |
+| | 1 | 1.1 | 1.2 | 1.3 | 1.4 | 1.5 (default) |
+|---|---|---|---|---|---|---|
+| Timeout Wrap-Up Grace default | `0` — killed at the Timeout | `60` | `60` | `60` | `60` | `60` |
+| Failure item shape | flat report at the top level | `{ error, message, details }` | same as 1.1 | same as 1.1 | same as 1.1 | same as 1.1 |
+| Failure items on the error output | stay on the main output | routed to the error output | same as 1.1 | same as 1.1 | same as 1.1 | same as 1.1 |
+| Output shape | one per format | one per format | [one envelope](#output-formats) | one envelope | one envelope | one envelope |
+| Attach All Binaries `Auto` | off | off | off | on | on | on |
+| A subagent in the background | answers from the first result | same as 1 | same as 1 | same as 1 | answers from the final result | same as 1.4 |
+| Video Attachments `Auto` | staged | staged | staged | staged | staged | [converted to frames](#video-attachments) |
 
 All of them get the diagnostics, the session ID and the self-describing error message.
 [Attachments](#attachments) work on every version; only what Attach All's `Auto` means differs.
@@ -792,12 +819,13 @@ resend a rejected one.
 
 ### Versions
 
-A node keeps the version it was created with; new nodes get 1.1.
+A node keeps the version it was created with; new nodes get 1.2.
 
 | | What it changed |
 |---|---|
 | 1 | the original |
 | 1.1 | `metrics.duration_ms`, `num_turns` and `usage` summed over every result of the run (the CLI reports them per turn; cost and `modelUsage` were already cumulative); `diagnostics.structuredOutput` reports each delivery; `diagnostics.subagents[].model`; the unattended line in the prompt |
+| 1.2 | a video attachment is converted to timestamped frames ([Video attachments](#video-attachments)); everything else as 1.1 |
 
 ### Verification
 
@@ -1343,7 +1371,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1478 tests — node:test, no framework; 9 need an ffmpeg and skip without one
+npm test    # 1499 tests — node:test, no framework; 10 need an ffmpeg and skip without one
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.

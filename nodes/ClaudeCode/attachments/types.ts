@@ -1,4 +1,6 @@
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
+import type { IBinaryData } from 'n8n-workflow';
+import type { SamplingMode, VideoFramesReport } from '../../shared/video/types';
 
 /**
  * The plain-data vocabulary of the attachment path.
@@ -30,7 +32,29 @@ export type AttachmentSpec = {
 	 * reported, never an error: this narrows what counts as an attachment, it does not reject a
 	 * request the way a size cap does. */
 	allowedExtensions: string[];
+	video: VideoAttachmentSpec;
 };
+
+/** How a video attachment travels. `stage` is what every node did before video support. */
+export type VideoAttachmentSpec = {
+	handling: 'frames' | 'stage';
+	mode: SamplingMode;
+	/** Images for all the item's videos together, before the 20-image request cap. */
+	maxImages: number;
+	/** Replaces Max Attachment Size for a video, which routinely exceeds 50 MB. */
+	maxVideoMb: number;
+};
+
+/** A video kept as metadata: its bytes are streamed to disk only when frames are extracted. */
+export type VideoAttachment = {
+	propName: string;
+	fileName: string;
+	mimeType: string;
+	bytes: number;
+	meta: IBinaryData;
+};
+
+export type VideoDiagnostics = { name: string; bytes: number; images: number } & VideoFramesReport;
 
 /** One binary property, resolved to bytes and named. */
 export type Attachment = {
@@ -100,6 +124,8 @@ export type AttachmentDiagnostics = {
 		dir: string;
 		files: { name: string; mimeType: string; bytes: number }[];
 	} | null;
+	/** Present only when a video was converted to frames, so every other run's output is unchanged. */
+	videos?: VideoDiagnostics[];
 };
 
 /** A temp directory holding the staged files, and the one thing that must always be undone. */

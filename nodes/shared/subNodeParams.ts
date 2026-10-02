@@ -1,4 +1,5 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
+import { readVideoSpec } from '../ClaudeCode/attachments/videoSpec';
 import type { ClaudeCodeParams, EffortSelection, ThinkingSelection } from '../ClaudeCode/types';
 import { text } from './text';
 
@@ -83,6 +84,8 @@ export function readSubNodeParams(
 			maxAttachmentMb: 50,
 			maxAttachmentCount: 16,
 			allowedExtensions: [],
+			// Sub-nodes attach nothing; the Agent overrides this with its own options.
+			video: readVideoSpec({}, false),
 		},
 		additional: {
 			systemPrompt: options.systemPrompt || undefined,

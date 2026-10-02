@@ -1,35 +1,21 @@
-import { createWriteStream, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import type { IBinaryData, IExecuteFunctions } from 'n8n-workflow';
 import type { Problem } from '../shared/problem';
+import { binarySize, writeBinaryFile } from '../shared/video/binaryFile';
+import { isVideoMime, normalizeMime, UNINFORMATIVE_MIME } from '../shared/video/videoType';
 
-/**
- * The input binary -> a file ffmpeg can seek in. A binary with an `id` is in n8n's binary store and
- * is streamed, so a large recording is never held in memory.
- */
+/** The input binary -> a file ffmpeg can seek in, streamed when it lives in n8n's binary store. */
 
 const MB = 1024 * 1024;
-
-/** We were told nothing useful: let ffmpeg's probe decide. */
-const UNINFORMATIVE = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
-
-/** Containers n8n or an upstream service may label with an application/* type. */
-const VIDEO_APPLICATION_MIME = new Set([
-	'application/mp4',
-	'application/x-matroska',
-	'application/mxf',
-]);
 
 export type InputContext = Pick<IExecuteFunctions, 'getInputData' | 'helpers'>;
 
 export type StagedInput = { path: string; fileName: string; bytes: number; meta: IBinaryData };
 
+/** An uninformative type is let through: ffmpeg's probe decides. */
 function checkType(meta: IBinaryData, propName: string): Problem | null {
-	const mime = (meta.mimeType ?? '').toLowerCase().split(';')[0].trim();
-	if (UNINFORMATIVE.has(mime) || mime.startsWith('video/') || VIDEO_APPLICATION_MIME.has(mime)) {
-		return null;
-	}
+	const mime = normalizeMime(meta.mimeType);
+	if (UNINFORMATIVE_MIME.has(mime) || isVideoMime(mime)) return null;
 	return {
 		message: `Binary property "${propName}" is ${mime}, not a video`,
 		description: mime.startsWith('audio/')
@@ -68,21 +54,17 @@ export async function stageInput(
 	const typeProblem = checkType(meta, propName);
 	if (typeProblem) return { problem: typeProblem };
 
+	const bytes = await binarySize(ctx, meta);
+	if (bytes > maxVideoMb * MB) {
+		return {
+			problem: {
+				message: `Binary property "${propName}" is ${(bytes / MB).toFixed(1)} MB, over the limit of ${maxVideoMb} MB`,
+				description: 'Raise Max Video Size, or trim the video before this node.',
+			},
+		};
+	}
 	const fileName = meta.fileName || `${propName}.${meta.fileExtension || 'mp4'}`;
 	const path = join(dir, `input.${extensionOf(fileName)}`);
-	const tooBig = (bytes: number): Problem => ({
-		message: `Binary property "${propName}" is ${(bytes / MB).toFixed(1)} MB, over the limit of ${maxVideoMb} MB`,
-		description: 'Raise Max Video Size, or trim the video before this node.',
-	});
-
-	if (meta.id) {
-		const { fileSize } = await ctx.helpers.getBinaryMetadata(meta.id);
-		if (fileSize > maxVideoMb * MB) return { problem: tooBig(fileSize) };
-		await pipeline(await ctx.helpers.getBinaryStream(meta.id), createWriteStream(path));
-		return { path, fileName, bytes: fileSize, meta };
-	}
-	const buffer = await ctx.helpers.getBinaryDataBuffer(itemIndex, propName);
-	if (buffer.length > maxVideoMb * MB) return { problem: tooBig(buffer.length) };
-	writeFileSync(path, buffer);
-	return { path, fileName, bytes: buffer.length, meta };
+	await writeBinaryFile(ctx, itemIndex, propName, meta, path);
+	return { path, fileName, bytes, meta };
 }

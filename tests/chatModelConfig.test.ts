@@ -30,6 +30,7 @@ const params = (over: Partial<ClaudeCodeParams> = {}): ClaudeCodeParams => ({
 		maxAttachmentMb: 50,
 		maxAttachmentCount: 16,
 		allowedExtensions: [],
+		video: { handling: 'stage', mode: 'auto', maxImages: 15, maxVideoMb: 2048 },
 	},
 	additional: { wrapUpGraceSeconds: 60 },
 	nodeVersion: 1.3,

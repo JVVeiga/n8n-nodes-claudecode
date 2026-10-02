@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { prepareAttachments } from '../nodes/ClaudeCode/attachments/prepare';
+import { defaultVideoDeps } from '../nodes/ClaudeCode/attachments/video';
 import { ffmpegCandidates, findFont } from '../nodes/shared/video/binary';
 import { extractFrames, type ExtractSpec } from '../nodes/shared/video/extract';
 import { parseProbe } from '../nodes/shared/video/probe';
 import type { SamplingSpec } from '../nodes/shared/video/types';
+import { binaryProperty, createFakeContext, itemWithBinary } from './helpers/executeFunctions';
 
 /**
  * A real ffmpeg over generated clips: every strategy, mosaics, subtitles, refusals. It uses
@@ -224,5 +227,49 @@ describe('video extraction with the real ffmpeg', { skip }, () => {
 		assert.ok('problem' in result);
 		assert.equal(result.problem.message, 'No usable ffmpeg was found');
 		assert.match(result.problem.description ?? '', /configured \(.*nope\): not found/);
+	});
+
+	it('a video attachment becomes labelled image blocks through prepareAttachments', async () => {
+		const ctx = createFakeContext({
+			items: [
+				itemWithBinary({
+					clip: binaryProperty(readFileSync(join(dir, 'clip.mp4')), {
+						fileName: 'clip.mp4',
+						mimeType: 'video/mp4',
+					}),
+				}),
+			],
+		}).ctx;
+		const out = await prepareAttachments(
+			ctx,
+			0,
+			{
+				all: true,
+				names: [],
+				inlineTextLimitKb: 256,
+				maxAttachmentMb: 50,
+				maxAttachmentCount: 16,
+				allowedExtensions: [],
+				video: { handling: 'frames', mode: 'auto', maxImages: 6, maxVideoMb: 2048 },
+			},
+			'What is on screen?',
+			[],
+			{
+				timeoutMs: 60_000,
+				videoDeps: {
+					...defaultVideoDeps,
+					extract: (input, s) => extractFrames(input, { ...s, ffmpegPath: ffmpeg ?? '' }),
+				},
+			},
+		);
+		assert.ok('plan' in out, JSON.stringify(out));
+		const blocks = out.promptContent as Array<{ type: string; text?: string }>;
+		assert.equal(blocks.filter((b) => b.type === 'image').length, 6);
+		assert.match(
+			blocks[0].text ?? '',
+			/^Video: 6 frames from the video clip\.mp4 \(00:00:30 long\)/,
+		);
+		assert.equal(out.plan.report?.videos?.[0].images, 6);
+		assert.equal(out.plan.report?.videos?.[0].labels, findFont() ? 'burned' : 'none');
 	});
 });

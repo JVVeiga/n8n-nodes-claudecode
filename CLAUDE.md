@@ -111,6 +111,9 @@ nodes/
       ffmpeg.ts                the ONLY module that spawns ffmpeg: execFile, never throws
       extract.ts               probe -> keyframe scan -> plan -> passes -> files + report
       subtitles.ts             an exported SRT, without the tags ffmpeg adds
+      hint.ts                  the sentence that says how to read the images (both paths)
+      videoType.ts             is this binary a video, from metadata alone
+      binaryFile.ts            an n8n binary -> its size and a file, streamed from the binary store
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -120,7 +123,9 @@ nodes/
       collect.ts               getBinaryDataBuffer + validation — the only impure reader
       plan.ts                  Attachment[] -> ContentBlockParam[] + staging list (pure)
       stage.ts                 the temp dir, and the cleanup the node must run
-      prepare.ts               collect -> plan -> stage -> the user turn; used by both nodes
+      prepare.ts               collect -> plan -> videos -> stage -> the user turn; used by both nodes
+      video.ts                 video attachments -> captioned image blocks within the 20-image cap
+      videoSpec.ts             the four video options -> VideoAttachmentSpec; Auto by version
     description/               the declarative schema — pure data, no branching
       properties.ts            top-level parameters
       additionalOptions.ts     the Additional Options collection
@@ -260,7 +265,8 @@ nodes/
 | Change which git commands the Kit runs | `shared/git.ts` — refs are checked first in `shared/gitRefs.ts` |
 | Change how a video is sampled (mode, budget, strategy) | `shared/video/plan.ts` |
 | Change an ffmpeg pass | `shared/video/args.ts` — and run `tests/videoFfmpeg.test.ts`, which uses the real binary |
-| Change the Video Frames output or its prompt hint | `ClaudeCodeVideoFrames/output.ts` |
+| Change the Video Frames output | `ClaudeCodeVideoFrames/output.ts`; the prompt hint is `shared/video/hint.ts` |
+| Change how a video attachment is sent, budgeted or reported | `attachments/video.ts`; which binaries count as video, `shared/video/videoType.ts` |
 
 ### Rules that are not obvious
 
@@ -413,6 +419,10 @@ nodes/
   forwards only `image/*`, PDF and text binaries (`shouldPassthroughBinary`), so a video never
   reaches the Chat Model; the frames have to exist before the Agent node. Evidence:
   `.specs/features/video-attachments/spikes/findings.md`.
+- **A video attachment never goes through `getBinaryDataBuffer`.** `collect.ts` diverts it on
+  metadata (`looksLikeVideo`) before the buffer read, and `video.ts` streams it to a work directory
+  removed before the model runs. Max Video Size replaces Max Attachment Size for it. With
+  `stage`, a video takes the old path untouched, which is what keeps 1.4 and Agent 1.1 identical.
 - **A frame's time is read from the frame, never computed from the request.** The `fps` filter
   picks mid-interval frames and its `%{pts}` is its own output pts: labels were 2–14 s off the
   content (spike S-2). `select` keeps the source pts, a seek knows its target, and `showinfo` on
@@ -442,16 +452,19 @@ it was created with, so raising `defaultVersion` only affects newly added nodes.
 | 1.1 | Timeout Wrap-Up Grace defaults to 60s; failure items reshaped to reach the error output |
 | 1.2 | one output envelope for all three formats |
 | 1.3 | Attach All Binaries set to Auto means ON |
-| 1.4 | answers from the final result when subagents run in the background; graceful timeout waits for pending subagents (current default) |
+| 1.4 | answers from the final result when subagents run in the background; graceful timeout waits for pending subagents |
+| 1.5 | Video Attachments set to Auto means a video is converted to frames, not staged (current default) |
 
 The Chat Model and the Task Tool got the same final-result change as their **1.1** (current
 default; 1 unchanged). Every version gate reads `nodeVersion` in params.ts
-(`answersFromFinalResult`, `subNodeAnswersFromFinalResult`), never a schema default.
+(`answersFromFinalResult`, `subNodeAnswersFromFinalResult`, `videoFramesByDefault`), never a schema
+default.
 
-The Claude Code Agent has versions of its own. **1.1** (current default) sums `duration_ms`,
-`num_turns` and `usage` over every result of the run, reports each structured delivery (`accepted`,
-`rejected`, `rejections`, `superseded`) and each subagent's `model`, and ends the user turn saying
-nobody is there to answer. 1 is unchanged, held byte-for-byte by `tests/agent-v1/`. The gate is
+The Claude Code Agent has versions of its own. **1.1** sums `duration_ms`, `num_turns` and `usage`
+over every result of the run, reports each structured delivery (`accepted`, `rejected`,
+`rejections`, `superseded`) and each subagent's `model`, and ends the user turn saying nobody is
+there to answer. **1.2** (current default) is 1.1 plus a video attachment converted to frames
+(`agentVideoFramesByDefault`). 1 is unchanged, held byte-for-byte by `tests/agent-v1/`. The gate is
 `agentBehaviour` in its params.ts.
 
 **Never remove a version** — a stored workflow pinned to it would stop loading. **Never change what
@@ -466,7 +479,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1478 tests, node:test, no framework (9 skip without ffmpeg)
+npm test                                    # 1499 tests, node:test, no framework (10 skip without ffmpeg)
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -489,7 +502,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 113 named behaviours against real executions:
+with the node installed and asserts 116 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)

@@ -98,7 +98,14 @@ export async function runItems(
 			// output discarded.
 			ctx.onExecutionCancellation(() => abortController.abort());
 
-			const prepared = await prepareAttachments(ctx, itemIndex, params.attachments, params.prompt);
+			const prepared = await prepareAttachments(
+				ctx,
+				itemIndex,
+				params.attachments,
+				params.prompt,
+				[],
+				{ timeoutMs: timeoutSeconds * 1000, signal: abortController.signal },
+			);
 			if ('problem' in prepared) {
 				throw fail(prepared.problem.message, prepared.problem.description);
 			}

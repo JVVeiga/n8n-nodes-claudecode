@@ -1,6 +1,12 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { EXTENSION_OPTIONS } from './extensionOptions';
 import { FALLBACK_MODEL_OPTIONS } from './models';
+import {
+	maxVideoSizeOption,
+	videoAttachmentsOption,
+	videoMaxImagesOption,
+	videoSamplingOption,
+} from '../../shared/runOptions';
 
 export const PERMISSION_MODE_OPTION: INodeProperties = {
 	displayName: 'Permission Mode',
@@ -163,6 +169,10 @@ export const ADDITIONAL_OPTIONS: INodeProperties = {
 			description:
 				'Maximum number of binary properties to send from one item. More than this fails the item. Mainly relevant with Attach All Binaries, where the count comes from upstream rather than from you.',
 		},
+		videoAttachmentsOption('1.5'),
+		videoSamplingOption(),
+		videoMaxImagesOption(),
+		maxVideoSizeOption(),
 		{
 			displayName: 'Max Budget (USD)',
 			name: 'maxBudgetUsd',
