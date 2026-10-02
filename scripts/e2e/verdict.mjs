@@ -708,6 +708,15 @@ const checks = [
     const a = j?.diagnostics?.attachments;
     return j?.success === true && a?.staged?.files?.[0]?.name === 'numbers.mp4' && !('videos' in (a ?? {}));
   }],
+  ['106 Agent 1.3 stages the frames and a subagent Reads one to answer', () => {
+    const j = get('case106')?.itemJson;
+    const sf = j?.diagnostics?.attachments?.videos?.[0]?.stagedFrames;
+    const sub = (j?.diagnostics?.subagents ?? []).find((s) => s.name === 'frame-reader');
+    console.log(`      106: ${String(j?.result).slice(0, 80)} | staged ${sf?.files} | frame-reader x${sub?.invocations} tools ${sub?.toolUses}`);
+    return j?.success === true && /SUB=3667\b/.test(String(j.result)) && sf?.files === 15 &&
+      sf.index === 'numbers-frames.json' && sf.subagentsWithoutRead.length === 0 &&
+      (sub?.invocations ?? 0) >= 1 && (sub?.toolUses ?? 0) >= 1;
+  }],
 ];
 
 // A check whose case never ran is a gap in the rig, not a regression in the node. Reporting it as
