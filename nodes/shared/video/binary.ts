@@ -1,55 +1,32 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { FfmpegSource } from './types';
 import { isUsableFontPath } from './args';
 
 /**
- * Which ffmpeg, and which font for the labels. `@ffmpeg-installer/linux-*` ship the binary inside
- * the tarball, so it survives n8n installing community packages with `--ignore-scripts`. Only the
- * Linux builds are bundled: both are GPLv3, while the darwin-arm64 build is configured
- * `--enable-nonfree` and declares itself not redistributable.
+ * Which ffmpeg, and which font for the labels. ffmpeg is not bundled: n8n's community installer
+ * strips `optionalDependencies` before `npm install`, so a platform binary declared there never
+ * arrives. It has to be on the server.
  */
 
 export type FfmpegCandidate = { path: string; source: FfmpegSource };
 
 export type BinaryDeps = {
-	platform: string;
-	arch: string;
-	/** Resolves a package's package.json, or throws when it is not installed. */
-	resolve: (id: string) => string;
+	env: NodeJS.ProcessEnv;
 	exists: (path: string) => boolean;
 	listDir: (path: string) => string[];
 };
 
 const defaultDeps: BinaryDeps = {
-	platform: process.platform,
-	arch: process.arch,
-	resolve: (id) => require.resolve(id),
+	env: process.env,
 	exists: existsSync,
 	listDir: (path) => readdirSync(path),
 };
 
-const BUNDLED: Record<string, string> = {
-	'linux-x64': '@ffmpeg-installer/linux-x64',
-	'linux-arm64': '@ffmpeg-installer/linux-arm64',
-};
-
-function bundledFfmpeg(deps: BinaryDeps): { path: string } | { note: string } {
-	const key = `${deps.platform}-${deps.arch}`;
-	const pkg = BUNDLED[key];
-	if (!pkg) {
-		return {
-			note: `bundled: none for ${key} (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH)`,
-		};
-	}
-	try {
-		return { path: join(dirname(deps.resolve(`${pkg}/package.json`)), 'ffmpeg') };
-	} catch {
-		return { note: `bundled: ${pkg} is not installed` };
-	}
-}
-
-/** A configured path is the only candidate, so a typo fails instead of running another binary. */
+/**
+ * A configured path, then FFMPEG_PATH, then `ffmpeg` on the PATH. An explicit choice is the only
+ * candidate, so a typo fails instead of silently running another binary.
+ */
 export function ffmpegCandidates(
 	configured: string,
 	deps: BinaryDeps = defaultDeps,
@@ -57,13 +34,9 @@ export function ffmpegCandidates(
 	if (configured.trim()) {
 		return { candidates: [{ path: configured.trim(), source: 'configured' }], notes: [] };
 	}
-	const candidates: FfmpegCandidate[] = [];
-	const notes: string[] = [];
-	const bundled = bundledFfmpeg(deps);
-	if ('path' in bundled) candidates.push({ path: bundled.path, source: 'bundled' });
-	else notes.push(bundled.note);
-	candidates.push({ path: 'ffmpeg', source: 'path' });
-	return { candidates, notes };
+	const fromEnv = (deps.env.FFMPEG_PATH ?? '').trim();
+	if (fromEnv) return { candidates: [{ path: fromEnv, source: 'env' }], notes: [] };
+	return { candidates: [{ path: 'ffmpeg', source: 'path' }], notes: [] };
 }
 
 const FONT_CANDIDATES = [

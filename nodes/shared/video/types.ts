@@ -70,7 +70,7 @@ export type ExtractedImage = {
 	timestamps: number[];
 };
 
-export type FfmpegSource = 'configured' | 'bundled' | 'path';
+export type FfmpegSource = 'configured' | 'env' | 'path';
 
 export type VideoFramesReport = {
 	video: {

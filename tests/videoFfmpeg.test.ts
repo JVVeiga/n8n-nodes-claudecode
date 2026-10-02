@@ -14,9 +14,8 @@ import { binaryProperty, createFakeContext, itemWithBinary } from './helpers/exe
 
 /**
  * A real ffmpeg over generated clips: every strategy, mosaics, subtitles, refusals. It uses
- * VIDEO_TEST_FFMPEG, else whatever the node itself would find (bundled on Linux, then the PATH),
- * and skips when there is none. To run it against the bundled Linux build from a Mac, see
- * CLAUDE.md, "Testing".
+ * VIDEO_TEST_FFMPEG, else whatever the node itself would find (FFMPEG_PATH, then the PATH), and
+ * skips when there is none. To run it in n8n's image from a Mac, see CLAUDE.md, "Testing".
  */
 
 const runs = (path: string): boolean => {
@@ -33,7 +32,7 @@ const ffmpeg: string | null =
 	ffmpegCandidates('').candidates.find((c) => runs(c.path))?.path ||
 	null;
 
-const skip = ffmpeg ? false : 'no ffmpeg: none bundled for this platform and none on the PATH';
+const skip = ffmpeg ? false : 'no ffmpeg: set VIDEO_TEST_FFMPEG or put ffmpeg on the PATH';
 
 let dir = '';
 const run = (args: string[]) => execFileSync(ffmpeg as string, args, { stdio: 'pipe' });
@@ -225,7 +224,7 @@ describe('video extraction with the real ffmpeg', { skip }, () => {
 	it('a configured path that does not exist is the only candidate tried', async () => {
 		const result = await extractFrames(clip(), spec({}, { ffmpegPath: join(dir, 'nope') }));
 		assert.ok('problem' in result);
-		assert.equal(result.problem.message, 'No usable ffmpeg was found');
+		assert.equal(result.problem.message, 'ffmpeg is not installed on the n8n server');
 		assert.match(result.problem.description ?? '', /configured \(.*nope\): not found/);
 	});
 

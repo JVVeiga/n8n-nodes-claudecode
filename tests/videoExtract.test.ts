@@ -52,7 +52,7 @@ function fakeDeps(
 			files.add(out.replace('%03d', '002'));
 			return ok({ stderr: fixture('pass-decode.txt') });
 		},
-		candidates: () => ({ candidates: [{ path: '/bundled/ffmpeg', source: 'bundled' }], notes: [] }),
+		candidates: () => ({ candidates: [{ path: 'ffmpeg', source: 'path' }], notes: [] }),
 		font: () => '/fonts/Arial.ttf',
 		mkdir: () => undefined,
 		listDir: (dir) =>
@@ -104,20 +104,20 @@ describe('extractFrames over a fake ffmpeg', () => {
 			result.images.map((i) => i.path),
 			['/work/images/img_001.jpg', '/work/images/img_002.jpg'],
 		);
-		assert.deepEqual(result.report.ffmpeg, { source: 'bundled', version: 'N-49006-test-static' });
+		assert.deepEqual(result.report.ffmpeg, { source: 'path', version: 'N-49006-test-static' });
 		assert.equal(result.report.labels, 'burned');
 		assert.deepEqual(result.report.notes, []);
 		assert.equal(result.subtitles, null, 'the landscape fixture has no subtitle track');
 	});
 
-	it('falls back from a broken bundled binary to the PATH, and reports which ran', async () => {
+	it('a candidate that cannot run is reported by why, and the next one is tried', async () => {
 		const { deps } = fakeDeps(
 			(args, binary) =>
-				binary === '/bundled/ffmpeg' ? ok({ code: null, spawnError: 'EACCES' }) : undefined,
+				binary === '/opt/ff' ? ok({ code: null, spawnError: 'EACCES' }) : undefined,
 			{
 				candidates: () => ({
 					candidates: [
-						{ path: '/bundled/ffmpeg', source: 'bundled' },
+						{ path: '/opt/ff', source: 'env' },
 						{ path: 'ffmpeg', source: 'path' },
 					],
 					notes: [],
@@ -129,22 +129,22 @@ describe('extractFrames over a fake ffmpeg', () => {
 		assert.equal(result.report.ffmpeg.source, 'path');
 	});
 
-	it('no usable binary names every place it looked', async () => {
+	it('no ffmpeg on the server says how to install one, Docker first', async () => {
 		const { deps } = fakeDeps(() => ok({ code: null, spawnError: 'ENOENT' }), {
-			candidates: () => ({
-				candidates: [{ path: 'ffmpeg', source: 'path' }],
-				notes: [
-					'bundled: none for freebsd-x64 (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH)',
-				],
-			}),
+			candidates: () => ({ candidates: [{ path: 'ffmpeg', source: 'path' }], notes: [] }),
 		});
 		const result = await extractFrames(INPUT, spec(), deps);
 		assert.ok('problem' in result);
-		assert.equal(result.problem.message, 'No usable ffmpeg was found');
-		assert.equal(
-			result.problem.description,
-			'Looked at: bundled: none for freebsd-x64 (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH); path (ffmpeg): not found. On Linux x64 or arm64, reinstall the package so its bundled ffmpeg is present; elsewhere install ffmpeg on the PATH (brew install ffmpeg, winget install ffmpeg) or set FFmpeg Path.',
+		assert.equal(result.problem.message, 'ffmpeg is not installed on the n8n server');
+		assert.match(
+			result.problem.description ?? '',
+			/^Looked at: path \(ffmpeg\): not found\. Install ffmpeg on the n8n server\./,
 		);
+		assert.match(
+			result.problem.description ?? '',
+			/COPY --from=mwader\/static-ffmpeg:7\.1 \/ffmpeg \/usr\/local\/bin\//,
+		);
+		assert.match(result.problem.description ?? '', /FFMPEG_PATH/);
 	});
 
 	it('a codec the build cannot decode is named, with the way out', async () => {
@@ -272,59 +272,35 @@ describe('extractFrames over a fake ffmpeg', () => {
 
 describe('which ffmpeg, which font', () => {
 	const deps = (over: Partial<BinaryDeps> = {}): BinaryDeps => ({
-		platform: 'linux',
-		arch: 'x64',
-		resolve: (id) => `/nm/${id}`,
+		env: {},
 		exists: () => false,
 		listDir: () => [],
 		...over,
 	});
 
-	it('the bundled Linux binary first, then the PATH', () => {
-		assert.deepEqual(ffmpegCandidates('', deps()).candidates, [
-			{ path: '/nm/@ffmpeg-installer/linux-x64/ffmpeg', source: 'bundled' },
-			{ path: 'ffmpeg', source: 'path' },
-		]);
-		assert.equal(
-			ffmpegCandidates('', deps({ arch: 'arm64' })).candidates[0].path,
-			'/nm/@ffmpeg-installer/linux-arm64/ffmpeg',
+	it('ffmpeg on the PATH when nothing is configured', () => {
+		assert.deepEqual(ffmpegCandidates('', deps()).candidates, [{ path: 'ffmpeg', source: 'path' }]);
+	});
+
+	it('FFMPEG_PATH is the only candidate when set', () => {
+		assert.deepEqual(
+			ffmpegCandidates('', deps({ env: { FFMPEG_PATH: ' /opt/ffmpeg ' } })).candidates,
+			[{ path: '/opt/ffmpeg', source: 'env' }],
 		);
 	});
 
-	it('bundles nothing outside Linux: the darwin-arm64 build is nonfree', () => {
-		const result = ffmpegCandidates('', deps({ platform: 'darwin', arch: 'arm64' }));
-		assert.deepEqual(result.candidates, [{ path: 'ffmpeg', source: 'path' }]);
-		assert.deepEqual(result.notes, [
-			'bundled: none for darwin-arm64 (only linux-x64 and linux-arm64 are bundled; install ffmpeg on the PATH)',
-		]);
-	});
-
-	it('a Linux install without its optional package falls back to the PATH, saying why', () => {
-		const result = ffmpegCandidates(
-			'',
-			deps({
-				resolve: () => {
-					throw new Error("Cannot find module '@ffmpeg-installer/linux-x64/package.json'");
-				},
-			}),
+	it('a configured path wins over FFMPEG_PATH, and is the only candidate', () => {
+		assert.deepEqual(
+			ffmpegCandidates('  /usr/local/bin/ff ', deps({ env: { FFMPEG_PATH: '/opt/ffmpeg' } }))
+				.candidates,
+			[{ path: '/usr/local/bin/ff', source: 'configured' }],
 		);
-		assert.deepEqual(result.candidates, [{ path: 'ffmpeg', source: 'path' }]);
-		assert.deepEqual(result.notes, ['bundled: @ffmpeg-installer/linux-x64 is not installed']);
 	});
 
-	it('the package declares exactly the two Linux builds, as optional', () => {
+	it('the package bundles no ffmpeg: n8n strips optionalDependencies, so it would never arrive', () => {
 		const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-		assert.deepEqual(Object.keys(pkg.optionalDependencies ?? {}).sort(), [
-			'@ffmpeg-installer/linux-arm64',
-			'@ffmpeg-installer/linux-x64',
-		]);
-		assert.ok(!('@ffmpeg-installer/ffmpeg' in (pkg.dependencies ?? {})));
-	});
-
-	it('a configured path is the only candidate', () => {
-		assert.deepEqual(ffmpegCandidates('  /opt/ffmpeg ', deps()).candidates, [
-			{ path: '/opt/ffmpeg', source: 'configured' },
-		]);
+		assert.equal(pkg.optionalDependencies, undefined);
+		assert.ok(!JSON.stringify(pkg.dependencies).includes('ffmpeg'));
 	});
 
 	it("finds n8n's Arial first, else the first .ttf under the font roots", () => {

@@ -9,7 +9,7 @@ export const videoFramesDescription: INodeTypeDescription = {
 	version: 1,
 	subtitle: '={{ { auto: "Auto", frames: "Frames", mosaic: "Mosaic" }[$parameter["mode"]] }}',
 	description:
-		'Turn a video into timestamped images Claude can read: single frames for a short clip, mosaics for a long one. Runs a bundled ffmpeg, never a model.',
+		'Turn a video into timestamped images Claude can read: single frames for a short clip, mosaics for a long one. Runs the ffmpeg installed on the n8n server, never a model.',
 	defaults: {
 		name: 'Claude Code Video Frames',
 	},
@@ -94,7 +94,7 @@ export const videoFramesDescription: INodeTypeDescription = {
 					type: 'string',
 					default: '',
 					description:
-						'An ffmpeg binary to use instead of the bundled one, for a codec the bundled build cannot decode (such as AV1). Empty uses the bundled ffmpeg, then ffmpeg on the PATH.',
+						"The ffmpeg binary to run. Empty uses FFMPEG_PATH, then ffmpeg on the PATH of the n8n server. ffmpeg is not bundled with this package: install it on the server (in n8n's Docker image: COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/).",
 				},
 				{
 					displayName: 'Include Subtitles',

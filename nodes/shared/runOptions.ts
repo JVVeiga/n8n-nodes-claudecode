@@ -250,7 +250,7 @@ export const videoAttachmentsOption = (since: string): INodeProperties => ({
 			name: 'Convert to Frames',
 			value: 'frames',
 			description:
-				'Send the video as timestamped images Claude can see, extracted with ffmpeg (bundled on Linux)',
+				'Send the video as timestamped images Claude can see, extracted with the ffmpeg installed on the n8n server',
 		},
 		{
 			name: 'Stage the File',
