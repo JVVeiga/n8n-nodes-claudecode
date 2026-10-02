@@ -1,4 +1,4 @@
-## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.6.0...HEAD)
+## [2.7.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.6.0...v2.7.0) (2026-10-02)
 
 Claude Code gains version 1.5 and the Agent 1.2, both now the default; existing nodes keep their
 version and what it emits. The 48 golden fixtures and the Agent 1 recordings are byte-identical.
