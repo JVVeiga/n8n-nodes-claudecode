@@ -2204,6 +2204,63 @@ const askAt = (clock) =>
 	cases.push(withVideoFrames(toAgent, 'Claude Code Agent', { mode: 'auto', maxImages: 15 }));
 }
 
+// Video attached straight to the node (cases 103-105): no Video Frames node in front.
+function withVideo(wf, target) {
+	wf.nodes.splice(1, 0, {
+		parameters: {
+			mode: 'runOnceForAllItems',
+			language: 'javaScript',
+			jsCode: `return [{ json: {}, binary: { data: { data: ${JSON.stringify(NUMBERS_MP4)}, mimeType: 'video/mp4', fileName: 'numbers.mp4' } } }];`,
+		},
+		id: nextId(),
+		name: 'Make video',
+		type: 'n8n-nodes-base.code',
+		typeVersion: 2,
+		position: [120, -200],
+	});
+	wf.connections['When clicking Execute'] = { main: [[{ node: 'Make video', type: 'main', index: 0 }]] };
+	wf.connections['Make video'] = { main: [[{ node: target, type: 'main', index: 0 }]] };
+	return wf;
+}
+
+{
+	const direct = workflow({
+		name: 'case103 video - attached straight to Claude Code 1.5, converted to frames',
+		notes:
+			'Claude Code 1.5, Attach All on, Video Attachments left on Auto. EXPECT ' +
+			`${VIDEO_BLOCK_NUMBER(4)} (00:00:20-00:00:25), diagnostics.attachments.videos[0] with 15 images, nothing staged.`,
+		claude: { prompt: askAt('00:00:22'), timeout: 180, projectPath: PROJECT, additionalOptions: {} },
+		readFields: ['result'],
+		version: 1.5,
+	});
+	direct.nodes.find((node) => node.name === 'Claude Code').parameters.attachAllBinaries = 'on';
+	cases.push(withVideo(direct, 'Claude Code'));
+
+	cases.push(
+		withVideo(
+			agentRootWorkflow({
+				name: 'case104 video - attached straight to the Claude Code Agent 1.2',
+				notes: `Agent 1.2, Attach All on, Video Attachments on Auto. EXPECT ${VIDEO_BLOCK_NUMBER(7)} (00:00:35-00:00:40).`,
+				params: { prompt: askAt('00:00:37'), model: 'claude-sonnet-5', attachAllBinaries: 'on' },
+				version: 1.2,
+			}),
+			'Claude Code Agent',
+		),
+	);
+
+	const stored = workflow({
+		name: 'case105 video - Claude Code 1.4 keeps staging a video, as before',
+		notes:
+			'The same clip on Claude Code 1.4 with Video Attachments absent (a stored workflow). EXPECT it staged ' +
+			'as numbers.mp4 and no diagnostics.attachments.videos key: what 1.4 always did.',
+		claude: { prompt: FAST_PROMPT, timeout: 120, projectPath: PROJECT, additionalOptions: {} },
+		readFields: ['result'],
+		version: 1.4,
+	});
+	stored.nodes.find((node) => node.name === 'Claude Code').parameters.attachAllBinaries = 'on';
+	cases.push(withVideo(stored, 'Claude Code'));
+}
+
 let n = 0;
 for (const wf of cases) {
 	const file = `${String(++n).padStart(2, '0')}-${wf.name.split(' ')[0]}.json`;
