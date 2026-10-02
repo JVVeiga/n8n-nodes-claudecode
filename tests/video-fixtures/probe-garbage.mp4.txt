@@ -1,0 +1,3 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x21e16fa0] Format mov,mp4,m4a,3gp,3g2,mj2 detected only with low score of 1, misdetection possible!
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x21e16fa0] moov atom not found
+garbage.mp4: Invalid data found when processing input

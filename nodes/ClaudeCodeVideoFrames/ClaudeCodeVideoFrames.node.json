@@ -1,0 +1,26 @@
+{
+	"node": "@joaoveiga/n8n-nodes-claudecode.claudeCodeVideoFrames",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["AI", "Utility"],
+	"alias": [
+		"video",
+		"frames",
+		"mosaic",
+		"thumbnail",
+		"screenshot",
+		"ffmpeg",
+		"mp4",
+		"screen recording",
+		"claude",
+		"vídeo",
+		"quadros"
+	],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/JVVeiga/n8n-nodes-claudecode#claude-code-video-frames"
+			}
+		]
+	}
+}

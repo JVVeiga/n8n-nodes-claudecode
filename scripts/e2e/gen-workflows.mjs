@@ -2,7 +2,7 @@
 // `n8n import:workflow --separate --input=<dir>`. Each is a manual trigger -> Claude Code node,
 // plus a Set node reading the payload fields the case is about, so the assertion is visible in the
 // UI without digging through JSON.
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 
@@ -2115,6 +2115,94 @@ cases.push({
 	pinData: {},
 	meta: { testCaseNotes: 'Canvas for the editor check. Named without "case" so run-cases skips it.' },
 });
+
+// Video (cases 100-102). fixture-project/data/numbers.mp4 is a 60 s, 640x360, 10 fps H.264 clip in
+// which every 5-second block shows a 4-digit number unrelated to the time (VIDEO_BLOCK_NUMBER), so
+// the model cannot answer from a time label: only the pixels of a frame from the right block carry
+// it. It travels inside the workflow as base64, like case40's PNG. It was made with:
+//   ffmpeg -f lavfi -i color=c=0x203040:s=640x360:r=10:d=60 -vf "drawtext=fontfile=<a .ttf>:
+//     text='%{eif\:mod(floor(t/5)*7919+1234\,9000)+1000\:d}':fontsize=110:fontcolor=white:
+//     x=(w-tw)/2:y=(h-th)/2" -c:v libx264 -preset veryfast -g 20 -pix_fmt yuv420p numbers.mp4
+// It is a file rather than generated here because the host may have no ffmpeg: the package only
+// bundles the Linux builds.
+const VIDEO_BLOCK_NUMBER = (block) => ((block * 7919 + 1234) % 9000) + 1000;
+
+const NUMBERS_MP4 = readFileSync(new URL('./fixture-project/data/numbers.mp4', import.meta.url)).toString('base64');
+const VIDEO_TYPE = '@joaoveiga/n8n-nodes-claudecode.claudeCodeVideoFrames';
+
+/** Puts "Make video" -> "Video Frames" between the trigger and `target`. NOT 'Claude Code…': run-cases reads the target. */
+function withVideoFrames(wf, target, frames) {
+	wf.nodes.splice(
+		1,
+		0,
+		{
+			parameters: {
+				mode: 'runOnceForAllItems',
+				language: 'javaScript',
+				jsCode: `return [{ json: {}, binary: { data: { data: ${JSON.stringify(NUMBERS_MP4)}, mimeType: 'video/mp4', fileName: 'numbers.mp4' } } }];`,
+			},
+			id: nextId(),
+			name: 'Make video',
+			type: 'n8n-nodes-base.code',
+			typeVersion: 2,
+			position: [120, -200],
+		},
+		{
+			parameters: { binaryProperty: 'data', mode: frames.mode, maxImages: frames.maxImages, options: frames.options ?? {} },
+			id: nextId(),
+			name: 'Video Frames',
+			type: VIDEO_TYPE,
+			typeVersion: 1,
+			position: [300, -200],
+		},
+	);
+	wf.connections['When clicking Execute'] = { main: [[{ node: 'Make video', type: 'main', index: 0 }]] };
+	wf.connections['Make video'] = { main: [[{ node: 'Video Frames', type: 'main', index: 0 }]] };
+	wf.connections['Video Frames'] = { main: [[{ node: target, type: 'main', index: 0 }]] };
+	return wf;
+}
+
+const askAt = (clock) =>
+	`The attached images are moments from a video, each labelled with its time. A large 4-digit number is shown on screen, and it changes every few seconds. What number is on screen at ${clock}? Answer with the 4-digit number only. If you see no images, answer NO_IMAGES.`;
+
+{
+	const toClaudeCode = workflow({
+		name: 'case100 video - frames to the Claude Code node',
+		notes:
+			`A 60s clip -> Video Frames (Frames, 15) -> Claude Code with Attach All on. EXPECT ` +
+			`${VIDEO_BLOCK_NUMBER(4)} (the number shown 00:00:20-00:00:25), which no label carries.`,
+		claude: { prompt: askAt('00:00:22'), timeout: 180, projectPath: PROJECT, additionalOptions: {} },
+		readFields: ['result'],
+		version: 1.4,
+	});
+	toClaudeCode.nodes.find((node) => node.name === 'Claude Code').parameters.attachAllBinaries = 'on';
+	cases.push(withVideoFrames(toClaudeCode, 'Claude Code', { mode: 'frames', maxImages: 15 }));
+
+	const mosaic = workflow({
+		name: 'case101 video - mosaics to the Claude Code node',
+		notes:
+			'Two 3x3 mosaics (18 moments) -> Claude Code. EXPECT ' +
+			`${VIDEO_BLOCK_NUMBER(9)} (00:00:45-00:00:50): the model has to find the tile by its burned-in label.`,
+		claude: { prompt: askAt('00:00:47'), timeout: 180, projectPath: PROJECT, additionalOptions: {} },
+		readFields: ['result'],
+		version: 1.4,
+	});
+	mosaic.nodes.find((node) => node.name === 'Claude Code').parameters.attachAllBinaries = 'on';
+	cases.push(withVideoFrames(mosaic, 'Claude Code', { mode: 'mosaic', maxImages: 2 }));
+
+	// The AI Agent drops video before its model is called; only images it passes through arrive.
+	const toAgent = agentWorkflow({
+		name: 'case102 video - frames through the AI Agent and the Claude Code Chat Model',
+		notes:
+			'Video Frames -> AI Agent (Automatically Passthrough Binary Images) + Claude Code Chat Model. ' +
+			`The prompt carries $json.promptHint. EXPECT ${VIDEO_BLOCK_NUMBER(7)} (00:00:35-00:00:40).`,
+		prompts: [`={{ $json.promptHint }}\n\n${askAt('00:00:37')}`],
+	});
+	toAgent.nodes.find((node) => node.name === 'Claude Code Agent').parameters.options = {
+		passthroughBinaryImages: true,
+	};
+	cases.push(withVideoFrames(toAgent, 'Claude Code Agent', { mode: 'auto', maxImages: 15 }));
+}
 
 let n = 0;
 for (const wf of cases) {

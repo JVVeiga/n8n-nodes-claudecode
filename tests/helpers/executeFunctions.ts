@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 
 /**
@@ -25,6 +26,8 @@ export type FakeContextOptions = {
 	credentials?: Record<string, Record<string, unknown>>;
 	nodeName?: string;
 	continueOnFail?: boolean;
+	/** Bytes by binary id, for items whose binary lives in n8n's store rather than inline. */
+	binaryStore?: Record<string, Buffer>;
 	/**
 	 * What `getInputConnectionData(type)` returns, by connection type ('ai_tool', 'ai_agent',
 	 * 'ai_outputParser'). The value is handed back as given — one object, an array, or undefined
@@ -212,6 +215,24 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 						);
 					}
 					return Buffer.from(entry.data, 'base64');
+				},
+				/** The inline form n8n's default (memory) mode produces. */
+				prepareBinaryData: async (buffer: Buffer, fileName?: string, mimeType?: string) => ({
+					data: buffer.toString('base64'),
+					mimeType: mimeType ?? 'application/octet-stream',
+					...(fileName ? { fileName, fileExtension: fileName.split('.').pop() ?? '' } : {}),
+					fileSize: String(buffer.length),
+				}),
+				// A binary with an `id` lives in n8n's binary store; `binaryStore` models it.
+				getBinaryMetadata: async (id: string) => {
+					const buffer = options.binaryStore?.[id];
+					if (!buffer) throw new Error(`FakeExecuteFunctions: no stored binary '${id}'.`);
+					return { fileSize: buffer.length };
+				},
+				getBinaryStream: async (id: string) => {
+					const buffer = options.binaryStore?.[id];
+					if (!buffer) throw new Error(`FakeExecuteFunctions: no stored binary '${id}'.`);
+					return Readable.from([buffer]);
 				},
 			},
 			{

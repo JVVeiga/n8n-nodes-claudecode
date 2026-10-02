@@ -1,3 +1,34 @@
+## [Unreleased](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.6.0...HEAD)
+
+Additive. No typeVersion moved, the 48 golden fixtures and the Agent 1 recordings are byte-identical.
+
+### Claude Code Video Frames
+
+A new node that turns a video binary into images Claude can read. The Claude API has no video
+input. The node samples the video into single frames for a clip, or into timestamped 3×3 mosaics
+for a long recording, and draws each moment's time on its image. The default 15 mosaics cover 135
+moments of a recording of any length, for about 40k input tokens. That is 15 so that, with a
+subtitles file, they fit the 16 attachments the Claude Code node and the Agent accept by default.
+
+It is a node of its own because n8n's AI Agent forwards only images, PDFs and text to its model,
+and a video on its input never reaches the Claude Code Chat Model. Put the node before the AI Agent
+(with **Automatically Passthrough Binary Images** on), the Claude Code node or the Claude Code
+Agent, and the frames arrive as ordinary images. `promptHint` in its output is one sentence to put
+in the prompt, saying how the images are ordered and what they cover.
+
+- Every reported time is read from the extracted frame itself. ffmpeg's usual sampling filter
+  relabels frames, which put that approach 2 to 14 seconds off.
+- The extraction strategy follows the file's keyframes: keyframes only, a seek per moment, or one
+  full decode. It is reported, together with the coverage and the ffmpeg that ran.
+- A text subtitle track inside the file is exported as an `.srt` binary property.
+- ffmpeg is bundled for Linux x64 and arm64 through `@ffmpeg-installer/linux-*`, optional
+  dependencies whose binary ships inside the npm package and so survives n8n installing community
+  packages with scripts disabled. npm installs only the one for the machine (31 MB on arm64, 65 MB
+  on x64). They are GPLv3 builds. On macOS and Windows the node uses ffmpeg from the PATH or
+  **FFmpeg Path**. The `@ffmpeg-installer` macOS Apple Silicon build is configured `--enable-nonfree`
+  and is not redistributable, so it is not used. The Linux builds cannot decode AV1; the node says
+  so, and **FFmpeg Path** points it at another ffmpeg.
+
 ## [2.6.0](https://github.com/JVVeiga/n8n-nodes-claudecode/compare/v2.5.0...v2.6.0) (2026-09-29)
 
 Additive. No typeVersion moved, the 48 golden fixtures and the Agent 1 recordings are byte-identical.

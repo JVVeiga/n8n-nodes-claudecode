@@ -63,8 +63,9 @@ shipped with a lint error that way. If you need to shorten the output, redirect 
 
 ## Architecture Overview
 
-Eight n8n nodes: four main-flow nodes (Claude Code, the Claude Code Agent, Claude Code Usage, and
-the Code Review Kit, which runs git and no model), three sub-nodes for n8n's AI Agent (a chat model
+Nine n8n nodes: five main-flow nodes (Claude Code, the Claude Code Agent, Claude Code Usage, the
+Code Review Kit, which runs git and no model, and Claude Code Video Frames, which runs ffmpeg and no
+model), three sub-nodes for n8n's AI Agent (a chat model
 and two tools), and one sub-node for the Claude Code Agent (a subagent). Every one of them is a thin
 shell; the work is in named modules, and anything two nodes would otherwise copy lives in `shared/`.
 
@@ -100,6 +101,16 @@ nodes/
     git.ts                     the ONLY module that spawns git: execFile('git', …), no shell; the
                                Kit's commands, and a file read at a ref for the Agent (RefReader)
     gitRefs.ts                 the ref check that runs before git does
+    video/                     a video -> timestamped frames or mosaics; no n8n in here
+      types.ts                 VideoInfo, SamplingSpec, SamplingPlan, the report
+      probe.ts                 `ffmpeg -i` stderr -> VideoInfo (pure; the bundle has no ffprobe)
+      showinfo.ts              showinfo lines -> each frame's real time (pure) — every time we report
+      plan.ts                  THE sampling policy: mode, targets, keyframes/seek/decode (pure)
+      args.ts                  plan -> ffmpeg argv (pure); never the fps filter
+      binary.ts                which ffmpeg (configured -> bundled -> PATH) and which font
+      ffmpeg.ts                the ONLY module that spawns ffmpeg: execFile, never throws
+      extract.ts               probe -> keyframe scan -> plan -> passes -> files + report
+      subtitles.ts             an exported SRT, without the tags ffmpeg adds
   ClaudeCode/
     ClaudeCode.node.ts         the INodeType class + runItems(ctx, deps)
     attachments/               n8n binary data -> content blocks, or files on disk
@@ -199,6 +210,12 @@ nodes/
     anchors.ts                 findings -> valid / moved with the reason (pure)
     fingerprint.ts             snippet normalisation + sha256 (pure; git supplies the text)
     dedupe.ts                  new / repeated / resolved by fingerprint (pure)
+  ClaudeCodeVideoFrames/       a video binary -> image binaries + what they show; no model
+    ClaudeCodeVideoFrames.node.ts the class + runVideoFrameItems(ctx, deps)
+    description.ts             its schema
+    params.ts                  the ONLY getNodeParameter reader for this node
+    input.ts                   the binary -> a temp file (streamed when it has an id)
+    output.ts                  frames -> frame_000… binaries, the json, promptHint
 ```
 
 ### Where to make a change
@@ -241,6 +258,9 @@ nodes/
 | Change the Subagent's execution log | `shared/subagentLog.ts` |
 | Change a Code Review Kit operation | `CodeReviewKit/operations.ts`, over the pure module: `diff.ts`, `anchors.ts`, `fingerprint.ts` or `dedupe.ts` |
 | Change which git commands the Kit runs | `shared/git.ts` — refs are checked first in `shared/gitRefs.ts` |
+| Change how a video is sampled (mode, budget, strategy) | `shared/video/plan.ts` |
+| Change an ffmpeg pass | `shared/video/args.ts` — and run `tests/videoFfmpeg.test.ts`, which uses the real binary |
+| Change the Video Frames output or its prompt hint | `ClaudeCodeVideoFrames/output.ts` |
 
 ### Rules that are not obvious
 
@@ -388,6 +408,24 @@ nodes/
   takes its cost, sums turns and duration, and `verification.costUsd` is the difference. A
   collector summing `total_cost_usd` across executions of one session double-counts, for every node
   that resumes.
+- **A video reaches Claude as images, and only through Claude Code Video Frames.** The Messages
+  API has no video or audio block (checked up to `@anthropic-ai/sdk` 0.131.0). n8n's AI Agent
+  forwards only `image/*`, PDF and text binaries (`shouldPassthroughBinary`), so a video never
+  reaches the Chat Model; the frames have to exist before the Agent node. Evidence:
+  `.specs/features/video-attachments/spikes/findings.md`.
+- **A frame's time is read from the frame, never computed from the request.** The `fps` filter
+  picks mid-interval frames and its `%{pts}` is its own output pts: labels were 2–14 s off the
+  content (spike S-2). `select` keeps the source pts, a seek knows its target, and `showinfo` on
+  the same pass is where every reported time comes from. A test pins "no `fps=` in any argv".
+- **ffmpeg is bundled for Linux only, as `optionalDependencies` on `@ffmpeg-installer/linux-x64`
+  and `linux-arm64`, never the `@ffmpeg-installer/ffmpeg` umbrella.** n8n installs community
+  packages with `--ignore-scripts=true` (`community-packages.service.js`), so a package that
+  downloads its binary in a postinstall (`ffmpeg-static`) installs with none. These carry the binary
+  in the tarball with its exec bit; measured working on the stock image, amd64 and arm64. Both are
+  GPLv3 (`-buildconf`: `--enable-gpl --enable-version3`, no nonfree). The umbrella would also pull
+  `darwin-arm64`, which is configured `--enable-nonfree` and reports itself "not legally
+  redistributable"; a test pins that only the two Linux packages are declared. macOS and Windows
+  use the PATH or FFmpeg Path. No AV1 decoder in either build, which is a named failure.
 - **The Agent's input order is chosen so the canvas labels do not overlap.** The editor spaces AI
   ports by count, not by label length, so the short label (Tools) sits in the middle and Subagents
   and Parser at the ends. Reordering `inputs` is a visual change no test catches; look at the
@@ -428,7 +466,7 @@ none of its own. That is why 2.0.0 is a major. Two comments in the tree claimed 
 ## Testing
 
 ```bash
-npm test                                    # 1388 tests, node:test, no framework
+npm test                                    # 1478 tests, node:test, no framework (9 skip without ffmpeg)
 npm run lint && npm run build && npm test   # the gate for any change
 UPDATE_GOLDEN=1 npm test                    # regenerate the golden fixtures — see below
 ```
@@ -451,7 +489,7 @@ reformatting them breaks the suite.
 ### End-to-end, in Docker
 
 `scripts/e2e/` brings up real n8n in Docker
-with the node installed and asserts 110 named behaviours against real executions:
+with the node installed and asserts 113 named behaviours against real executions:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)
@@ -461,6 +499,15 @@ npm run e2e:up && npm run e2e:run && npm run e2e:verdict
 The node must be installed **inside** the container: the SDK ships platform-specific CLI binaries,
 so a macOS-host install fetches the darwin build and cannot run on linux. `e2e:run` costs real API
 spend — the timeout cases run real agent turns, budget under US$1 for a full pass.
+
+`tests/videoFfmpeg.test.ts` runs a real ffmpeg and skips when there is none, which on a Mac without
+`brew install ffmpeg` is always. To run it against the bundled Linux build:
+
+```bash
+npx tsc -p tsconfig.test.json && docker run --rm --platform linux/arm64 --entrypoint sh -v "$PWD":/repo:ro n8nio/n8n:latest -c \
+  'cd $(mktemp -d) && npm init -y >/dev/null && npm i --ignore-scripts @ffmpeg-installer/linux-arm64@4.1.4 >/dev/null &&
+   cd /repo && VIDEO_TEST_FFMPEG=$OLDPWD/node_modules/@ffmpeg-installer/linux-arm64/ffmpeg node --test .tmp/tests/tests/videoFfmpeg.test.js'
+```
 
 `readUsage.ts` has no unit tests on purpose: it spawns a real CLI, and this suite covers it.
 

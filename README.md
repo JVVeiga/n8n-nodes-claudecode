@@ -53,6 +53,11 @@ in as images, so vision works without any tool being enabled; a file too large o
 content block can carry is written to a temporary directory the agent can read from instead. See
 [Attachments](#attachments).
 
+**Video, as frames Claude can read.** Claude cannot watch a video. **Claude Code Video Frames** samples
+one into timestamped images, single frames for a clip and labelled mosaics for an hour-long
+recording, with the bundled ffmpeg. The images then go to the AI Agent, the Claude Code node or
+the Claude Code Agent like any other image. See [Claude Code Video Frames](#claude-code-video-frames).
+
 **Sessions you can resume.** A **Session ID** on Continue, so concurrent executions stop sharing
 one conversation.
 
@@ -63,7 +68,7 @@ sections you get. See [Output Formats](#output-formats).
 
 **Start here** — [Install](#install) · [Your First Workflow](#your-first-workflow) · [Templates](./workflow-templates/) · [What people build with it](#what-people-build-with-it)
 
-**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Claude Code Chat Model](#claude-code-chat-model) · [Agent Tools](#claude-code-tools-for-ai-agents) · [Claude Code Agent](#claude-code-agent) · [Claude Code Subagent](#claude-code-subagent) · [Code Review Kit](#code-review-kit) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
+**Reference** — [Authentication](#authentication) · [Features](#features) · [Attachments](#attachments) · [Timeouts](#timeouts) · [Output Formats](#output-formats) · [Claude Code Chat Model](#claude-code-chat-model) · [Agent Tools](#claude-code-tools-for-ai-agents) · [Claude Code Agent](#claude-code-agent) · [Claude Code Subagent](#claude-code-subagent) · [Code Review Kit](#code-review-kit) · [Video Frames](#claude-code-video-frames) · [Usage & Plan Limits](#usage--plan-limits) · [Node versions](#node-versions) · [Configuration Examples](#configuration-examples)
 
 **Also** — [Notes worth knowing](#notes-worth-knowing) · [Development & Contributing](#development--contributing) · [Credits](#credits)
 
@@ -972,6 +977,68 @@ the clone is modified. In Docker the clone has to be inside the container.
 The [Claude Code Review Team](./workflow-templates/claude-code-review-team.json) template wires the
 three new nodes together.
 
+## Claude Code Video Frames
+
+Claude cannot watch video: the API takes images, PDFs and text, nothing else. This node turns a
+video binary into images Claude can read, each with the moment it shows drawn in its top-left
+corner. It runs a bundled ffmpeg and no model, so it costs no tokens itself.
+
+```
+Read/Write Files (video) → Claude Code Video Frames → AI Agent + Claude Code Chat Model
+                                                    → Claude Code / Claude Code Agent
+```
+
+- **Before the AI Agent**, turn on **Automatically Passthrough Binary Images** in the Agent. n8n's
+  AI Agent forwards only images, PDFs and text to its model; a video on its input is dropped
+  without a word, which is why this has to be a node of its own. The Agent passes the pixels
+  without their file names, so put `{{ $json.promptHint }}` in the prompt: it says how many images
+  there are, how mosaic tiles are ordered and which stretch they cover.
+- **Before the Claude Code node or the Agent**, leave **Attach All Binaries** on. The images arrive
+  inline, like any other image.
+
+| Mode | What you get | For |
+|---|---|---|
+| **Auto** (default) | Frames when each covers 5 s or less, mosaics beyond | Anything |
+| **Frames** | One image per moment, 1280 px on the long edge | Small text on screen, short clips |
+| **Mosaic** | 3×3 moments per image (2×2 or 4×4 in Options), 1920 px | Long recordings: 15 mosaics cover 135 moments |
+
+**Max Images** (default 15) is how many images come out, whatever the length. 15, plus a subtitles
+file, fits the 16 attachments the Claude Code node and the Agent accept by default; the Agent's
+limit cannot be raised. Above 20 images the API shrinks every image in the request. Fifteen 1080p
+mosaics are about 40k input tokens. Moments are spread evenly, never closer than **Minimum
+Interval**, and **Start Time** / **End Time** look closely at one stretch.
+
+Each image is a binary property, `frame_000`, `frame_001` and so on, in time order. Its file name
+carries the time too (`frame_003_00-04-10.jpg`). The JSON lists every image's timestamps, the
+sampling mode, the extraction strategy, the coverage and the ffmpeg that ran. A text subtitle
+track inside the file comes out as `subtitles` (`.srt`). The AI Agent forwards text files on its
+own. The video itself is dropped from the item unless **Keep Input Binary** is on, so a later
+Attach All does not pick it up again.
+
+**Every time it reports is read from the frame it extracted**, not computed from the moment it
+asked for. ffmpeg's usual sampling filter picks a different frame than the one requested and
+relabels it, which put the obvious approach 2 to 14 seconds off in testing. How the frames are
+pulled depends on the file's keyframes: keyframes only when they are dense enough (under a second
+for any length), one seek per moment, or one full decode, about 4 minutes per hour of 1080p on 2
+CPUs. **Timeout** (default 300 s) bounds it.
+
+**What to know**
+
+- No speech: audio is not transcribed. A recording whose content is what is *said* needs a
+  transcription step of its own.
+- **ffmpeg is bundled for Linux only** (x64 and arm64), which is what n8n runs in Docker. It works
+  on the stock n8n image, with no custom image, because the binary is inside the npm package rather
+  than downloaded by an install script (n8n installs community packages with scripts disabled). npm
+  installs only the one for your machine: 31 MB on arm64, 65 MB on x64. **On macOS or Windows**,
+  install ffmpeg yourself (`brew install ffmpeg`, `winget install ffmpeg`) or set **FFmpeg Path**.
+  The node says so if it finds none.
+- The bundled builds date from 2018–2019. They decode H.264, HEVC, VP9 and MPEG-4 but **not AV1**.
+  For AV1, set **FFmpeg Path** to a newer ffmpeg.
+- A mosaic tile is 640 px wide. Large content reads well; a form field or a log line may not. Use
+  **Frames**, a smaller grid, or a narrower Start/End Time for those.
+- Videos stored in n8n's binary store (filesystem or S3 mode) are streamed to a temp file, never
+  held in memory. **Max Video Size** defaults to 2 GB.
+
 ## Usage & Plan Limits
 
 The package ships a second node, **Claude Code Usage**, for the question the query node cannot
@@ -1276,7 +1343,7 @@ Use `npm run commit` for an interactive commit message builder.
 ### Tests
 
 ```bash
-npm test    # 1366 tests — node:test, no framework, no extra dependencies
+npm test    # 1478 tests — node:test, no framework; 9 need an ffmpeg and skip without one
 ```
 
 The gate for any change is `npm run lint && npm run build && npm test`.
@@ -1340,3 +1407,11 @@ The idea, the original node structure, and the n8n integration groundwork are th
 
 MIT, throughout the lineage. The original copyright notice is kept intact in
 [LICENSE.md](LICENSE.md).
+
+Claude Code Video Frames runs ffmpeg as a separate program, with an argument list. On Linux it
+comes from `@ffmpeg-installer/linux-x64` or `@ffmpeg-installer/linux-arm64`, optional dependencies
+that npm downloads from their publisher. This package's tarball does not contain them. Both are
+static builds configured `--enable-gpl --enable-version3` and no `--enable-nonfree`, so they are
+GPLv3; their source is the FFmpeg project's (the builds come from johnvansickle.com/ffmpeg). The
+`@ffmpeg-installer` macOS Apple Silicon build is deliberately not used: it is configured
+`--enable-nonfree`, and ffmpeg itself reports it as not legally redistributable.

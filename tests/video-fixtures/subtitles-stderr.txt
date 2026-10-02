@@ -1,0 +1,31 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'subtitled.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+  Duration: 00:00:12.02, start: 0.000000, bitrate: 2884 kb/s
+    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1280x720 [SAR 1:1 DAR 16:9], 2807 kb/s, 30 fps, 30 tbr, 15360 tbn, 60 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+    Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 73 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+    Stream #0:2(und): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)
+    Metadata:
+      handler_name    : SubtitleHandler
+Output #0, srt, to 'pipe:':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+    Stream #0:0(und): Subtitle: subrip (srt) (default)
+    Metadata:
+      handler_name    : SubtitleHandler
+      encoder         : Lavc58.52.102 srt
+Stream mapping:
+  Stream #0:2 -> #0:0 (mov_text (native) -> subrip (srt))
+Press [q] to stop, [?] for help
+size=       0kB time=00:00:05.00 bitrate=   0.3kbits/s speed=5.15e+04x    
+video:0kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 61.261261%

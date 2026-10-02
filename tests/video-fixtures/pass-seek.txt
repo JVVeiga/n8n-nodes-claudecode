@@ -1,0 +1,37 @@
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'landscape.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+  Duration: 00:00:12.02, start: 0.000000, bitrate: 2884 kb/s
+    Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 1280x720 [SAR 1:1 DAR 16:9], 2807 kb/s, 30 fps, 30 tbr, 15360 tbn, 60 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+    Stream #0:1(und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 73 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+[swscaler @ 0x33507400] deprecated pixel format used, make sure you did set range correctly
+[Parsed_showinfo_2 @ 0x331450d0] config in time_base: 1/15360, frame_rate: 30/1
+[Parsed_showinfo_2 @ 0x331450d0] config out time_base: 0/0, frame_rate: 0/0
+Output #0, image2, to '/tmp/tmp.Ocfkdo/s_000.jpg':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf58.27.103
+    Stream #0:0(und): Video: mjpeg, yuvj420p(pc), 640x360 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 30 fps, 30 tbn, 30 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+      encoder         : Lavc58.52.102 mjpeg
+    Side data:
+      cpb: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: -1
+[Parsed_showinfo_2 @ 0x331450d0] n:   0 pts:    256 pts_time:0.0166667 pos:  2622926 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:P checksum:94E45630 plane_checksum:[1398962B 0FAE2C39 031593BD] mean:[126 130 129 ] stdev:[65.6 86.5 91.2 ]
+[Parsed_showinfo_2 @ 0x331450d0] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+[Parsed_showinfo_2 @ 0x331450d0] n:   1 pts:    768 pts_time:0.05    pos:  2679129 fmt:yuvj420p sar:1/1 s:640x360 i:P iskey:0 type:B checksum:0CDA3CF5 plane_checksum:[6221E92E FB2CF6B2 A6A95CF7] mean:[126 131 130 ] stdev:[65.5 86.1 90.5 ]
+[Parsed_showinfo_2 @ 0x331450d0] color_range:pc color_space:unknown color_primaries:unknown color_trc:unknown
+frame=    1 fps=0.0 q=3.0 Lsize=N/A time=00:00:00.03 bitrate=N/A speed=1.49x    
+video:24kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown

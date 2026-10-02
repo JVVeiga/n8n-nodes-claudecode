@@ -67,12 +67,17 @@
       "dist/nodes/ClaudeCodeUsageTool/ClaudeCodeUsageTool.node.js",
       "dist/nodes/ClaudeCodeAgent/ClaudeCodeAgent.node.js",
       "dist/nodes/ClaudeCodeSubagent/ClaudeCodeSubagent.node.js",
-      "dist/nodes/CodeReviewKit/CodeReviewKit.node.js"
+      "dist/nodes/CodeReviewKit/CodeReviewKit.node.js",
+      "dist/nodes/ClaudeCodeVideoFrames/ClaudeCodeVideoFrames.node.js"
     ]
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.284",
     "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "optionalDependencies": {
+    "@ffmpeg-installer/linux-arm64": "4.1.4",
+    "@ffmpeg-installer/linux-x64": "4.1.0"
   },
   "devDependencies": {
     "@langchain/core": "^1.2.9",

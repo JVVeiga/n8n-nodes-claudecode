@@ -1,0 +1,16 @@
+Input #0, image2, from '/tmp/tmp.Ocfkdo/t_%03d.jpg':
+  Duration: 00:00:03.00, start: 0.000000, bitrate: N/A
+    Stream #0:0: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 640x360 [SAR 1:1 DAR 16:9], 1 fps, 1 tbr, 1 tbn, 1 tbc
+Stream mapping:
+  Stream #0:0 -> #0:0 (mjpeg (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+Output #0, image2, to '/tmp/tmp.Ocfkdo/c_%03d.jpg':
+  Metadata:
+    encoder         : Lavf58.27.103
+    Stream #0:0: Video: mjpeg, yuvj420p(pc), 1280x720 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 0.25 fps, 0.25 tbn, 0.25 tbc
+    Metadata:
+      encoder         : Lavc58.52.102 mjpeg
+    Side data:
+      cpb: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: -1
+frame=    1 fps=0.0 q=3.0 Lsize=N/A time=00:00:04.00 bitrate=N/A speed= 613x    
+video:73kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown

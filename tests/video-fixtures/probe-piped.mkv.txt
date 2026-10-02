@@ -1,0 +1,14 @@
+Input #0, matroska,webm, from 'piped.mkv':
+  Metadata:
+    COMPATIBLE_BRANDS: isomiso2avc1mp41
+    MAJOR_BRAND     : isom
+    MINOR_VERSION   : 512
+    ENCODER         : Lavf58.27.103
+  Duration: N/A, start: 0.000000, bitrate: N/A
+    Stream #0:0: Video: h264 (High), yuv420p(progressive), 1280x720 [SAR 1:1 DAR 16:9], 30 fps, 30 tbr, 1k tbn, 60 tbc (default)
+    Metadata:
+      HANDLER_NAME    : VideoHandler
+    Stream #0:1: Audio: aac (LC), 44100 Hz, mono, fltp (default)
+    Metadata:
+      HANDLER_NAME    : SoundHandler
+At least one output file must be specified
